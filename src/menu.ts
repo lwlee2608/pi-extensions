@@ -5,6 +5,8 @@ import {
 import { FavoritesManager } from "./manager.ts";
 import { type Favorite, FavoritesStore, modelKey } from "./store.ts";
 
+const PAGE_SIZE = 10;
+
 export const DEFAULT_APP_KEYBINDINGS = {
   "pi-model-plus.add": ["ctrl+n"],
   "pi-model-plus.remove": ["ctrl+r"],
@@ -26,6 +28,7 @@ export class FavoritesMenu implements Component, Focusable {
   private readonly input = new Input({ placeholder: "Search favorites..." });
   private favorites: Favorite[];
   private list!: SelectList;
+  private listKeys: string[] = [];
   private browser?: FavoritesManager;
   private busy = false;
   private status = "";
@@ -55,7 +58,8 @@ export class FavoritesMenu implements Component, Focusable {
       return { value: key, label: `★ ${key}${status}`, description: model?.name };
     });
     const filtered = fuzzyFilter(items, this.input.getValue(), (item) => `${item.value} ${item.description ?? ""}`);
-    this.list = new SelectList(filtered, 10, this.options.theme);
+    this.listKeys = filtered.map((item) => item.value);
+    this.list = new SelectList(filtered, PAGE_SIZE, this.options.theme);
     if (selected) this.list.setSelectedIndex(Math.max(0, filtered.findIndex((item) => item.value === selected)));
   }
 
@@ -81,6 +85,7 @@ export class FavoritesMenu implements Component, Focusable {
       return;
     }
     const kb = this.options.keybindings;
+    const page = kb.matches(data, "tui.select.pageUp") ? -1 : kb.matches(data, "tui.select.pageDown") ? 1 : 0;
     if (kb.matches(data, "tui.select.cancel")) {
       this.options.done();
       return;
@@ -122,7 +127,10 @@ export class FavoritesMenu implements Component, Focusable {
         if (this.options.models.some((item) => modelKey(item) === selected)) this.options.done(favorite);
         else this.status = "Model unavailable. Check /login or remove its bookmark.";
       }
-    } else if ((["tui.select.up", "tui.select.down", "tui.select.pageUp", "tui.select.pageDown"] as const).some((action) => kb.matches(data, action))) {
+    } else if (page) {
+      const selected = this.list.getSelectedItem();
+      if (selected) this.list.setSelectedIndex(this.listKeys.indexOf(selected.value) + page * PAGE_SIZE);
+    } else if (kb.matches(data, "tui.select.up") || kb.matches(data, "tui.select.down")) {
       this.list.handleInput(data);
     } else {
       const previous = this.input.getValue();

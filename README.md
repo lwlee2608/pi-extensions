@@ -28,6 +28,7 @@ Run **`/model-plus`**. This is the extension's only command.
 | --- | --- |
 | Type | Filter saved models. |
 | Up / Down | Move the selection. |
+| Page Up / Page Down | Move by 10 filtered entries, stopping at either end. |
 | Enter | Switch to the selected model. |
 | Ctrl+N | Open the full model browser to add favorites. |
 | Ctrl+R | Remove the selected bookmark, including unavailable models. |
@@ -35,7 +36,7 @@ Run **`/model-plus`**. This is the extension's only command.
 
 In the model browser, type to search by provider, model ID, or name. Press Enter to toggle a bookmark (`★`). You can mark several models without closing the browser. Escape returns to the refreshed favorites menu. Changes save immediately and do not switch the active model.
 
-Enter, arrow keys, and Escape follow Pi's selection keybindings. To change the menu's add/remove shortcuts, add overrides to `~/.pi/agent/keybindings.json`:
+Enter, arrow keys, Page Up/Down, and Escape follow Pi's selection keybindings. To change the menu's add/remove shortcuts, add overrides to `~/.pi/agent/keybindings.json`:
 
 ```json
 {

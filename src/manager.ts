@@ -4,6 +4,8 @@ import {
 } from "@earendil-works/pi-tui";
 import { type Favorite, modelKey } from "./store.ts";
 
+const PAGE_SIZE = 10;
+
 interface Options {
   models: (Favorite & { name: string })[];
   favorites: Favorite[];
@@ -19,6 +21,7 @@ export class FavoritesManager implements Component, Focusable {
   private readonly input = new Input({ placeholder: "Search models..." });
   private readonly favorites: Set<string>;
   private list!: SelectList;
+  private listKeys: string[] = [];
   private busy = false;
   private status = "Changes save immediately. The active model stays unchanged.";
 
@@ -38,7 +41,8 @@ export class FavoritesManager implements Component, Focusable {
       label: `${this.favorites.has(modelKey(model)) ? "★" : "☆"} ${modelKey(model)}`,
       description: model.name,
     }));
-    this.list = new SelectList(items, 10, this.options.theme);
+    this.listKeys = items.map((item) => item.value);
+    this.list = new SelectList(items, PAGE_SIZE, this.options.theme);
     if (selected) this.list.setSelectedIndex(Math.max(0, items.findIndex((item) => item.value === selected)));
   }
 
@@ -70,9 +74,11 @@ export class FavoritesManager implements Component, Focusable {
       }
       return;
     }
-    if ((["tui.select.up", "tui.select.down", "tui.select.pageUp", "tui.select.pageDown"] as const).some(
-      (action) => kb.matches(data, action),
-    )) {
+    const page = kb.matches(data, "tui.select.pageUp") ? -1 : kb.matches(data, "tui.select.pageDown") ? 1 : 0;
+    if (page) {
+      const selected = this.list.getSelectedItem();
+      if (selected) this.list.setSelectedIndex(this.listKeys.indexOf(selected.value) + page * PAGE_SIZE);
+    } else if (kb.matches(data, "tui.select.up") || kb.matches(data, "tui.select.down")) {
       this.list.handleInput(data);
     } else {
       const previous = this.input.getValue();

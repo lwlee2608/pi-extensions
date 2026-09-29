@@ -11,7 +11,11 @@ const models = [
   { provider: "example", id: "alpha", name: "Alpha Reasoner" },
   { provider: "another", id: "beta", name: "Beta Coder" },
 ];
-async function fixture(t: { after: (fn: () => Promise<void>) => void }, favorites: Favorite[] = []) {
+async function fixture(
+  t: { after: (fn: () => Promise<void>) => void },
+  favorites: Favorite[] = [],
+  availableModels = models,
+) {
   const dir = await mkdtemp(join(tmpdir(), "pi-model-plus-menu-"));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const store = new FavoritesStore(join(dir, "favorites.json"));
@@ -20,7 +24,7 @@ async function fixture(t: { after: (fn: () => Promise<void>) => void }, favorite
   const identity = (text: string) => text;
   const result: (Favorite | undefined)[] = [];
   const menu = new FavoritesMenu({
-    models, favorites, store, current: models[0], keybindings,
+    models: availableModels, favorites, store, current: availableModels[0], keybindings,
     theme: { selectedPrefix: identity, selectedText: identity, description: identity, scrollInfo: identity, noMatch: identity },
     render: () => {}, done: (favorite) => result.push(favorite),
   });
@@ -99,6 +103,53 @@ test("unmatched search fits narrow terminals and cannot switch models", async (t
   await f.menu.handleInput("\r");
   assert.deepEqual(f.result, []);
 });
+
+for (const browser of [false, true]) {
+  test(`${browser ? "model browser" : "favorites menu"} pages through filtered results and clamps at either end`, async (t) => {
+    const catalog = Array.from({ length: 25 }, (_, i) => ({
+      provider: "example", id: `model-${i}`, name: i % 2 === 0 ? "Target" : "Other",
+    }));
+    const f = await fixture(t, catalog, catalog);
+    const pageDown = browser ? "\u0006" : "\u001b[6~";
+    const pageUp = browser ? "\u0002" : "\u001b[5~";
+    if (browser) {
+      f.keybindings.setUserBindings({ "tui.select.pageDown": "ctrl+f", "tui.select.pageUp": "ctrl+b" });
+      await f.menu.handleInput("\u000e");
+    }
+    const assertSelected = (index: number) => {
+      const line = f.menu.render(120).find((line) => line.startsWith("→ "));
+      assert.match(line ?? "", new RegExp(`example/model-${index}(?: |$)`));
+    };
+    for (const [key, index] of [
+      [pageDown, 10], [pageDown, 20], [pageDown, 24], [pageDown, 24],
+      [pageUp, 14], [pageUp, 4], [pageUp, 0], [pageUp, 0],
+    ] as const) {
+      await f.menu.handleInput(key);
+      assertSelected(index);
+    }
+    await f.menu.handleInput("zzzzzzzz");
+    await f.menu.handleInput(pageDown);
+    await f.menu.handleInput(pageUp);
+    await f.menu.handleInput("\r");
+    assert.deepEqual(f.result, []);
+    assert.equal((await f.store.read()).length, 25);
+    await f.menu.handleInput("\u0015");
+    await f.menu.handleInput("Target");
+    await f.menu.handleInput(pageDown);
+    assertSelected(20);
+    await f.menu.handleInput(pageDown);
+    assertSelected(24);
+    await f.menu.handleInput(pageUp);
+    assertSelected(4);
+    await f.menu.handleInput("\r");
+    if (browser) {
+      assert.equal((await f.store.read()).some((model) => model.id === "model-4"), false);
+      assert.equal((await f.store.read()).length, 24);
+    } else {
+      assert.deepEqual(f.result, [catalog[4]]);
+    }
+  });
+}
 
 test("failed removal keeps bookmark visible and reports the error", async (t) => {
   const f = await fixture(t, [models[0]]);
