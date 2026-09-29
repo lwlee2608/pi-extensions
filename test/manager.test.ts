@@ -58,9 +58,12 @@ test("failed writes do not mark models as saved; focus and narrow widths work", 
   }
 });
 
-test("unmatched search cannot toggle a model", async () => {
+test("unmatched search fits narrow terminals and cannot toggle a model", async () => {
   const f = fixture();
   await f.manager.handleInput("zzzzzzzz");
+  for (const width of [20, 21, 22, 40]) {
+    for (const line of f.manager.render(width)) assert.ok(visibleWidth(line) <= width);
+  }
   await f.manager.handleInput("\r");
   assert.equal(f.favorites.size, 0);
 });

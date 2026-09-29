@@ -87,7 +87,7 @@ export class FavoritesManager implements Component, Focusable {
     return [
       truncateToWidth("Add favorite models", width),
       ...this.input.render(width),
-      ...this.list.render(width),
+      ...this.list.render(width).map((line) => truncateToWidth(line, width)),
       truncateToWidth(this.status, width),
       truncateToWidth(`Type to search · ${kb.getKeys("tui.select.confirm").join("/")} toggle ★ · ${kb.getKeys("tui.select.cancel").join("/")} back`, width),
     ];

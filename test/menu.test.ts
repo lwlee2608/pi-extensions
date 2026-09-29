@@ -90,6 +90,16 @@ test("shortcuts are configurable and menu respects narrow widths", async (t) => 
   assert.match(f.menu.render(100).join("\n"), /Add favorite models/);
 });
 
+test("unmatched search fits narrow terminals and cannot switch models", async (t) => {
+  const f = await fixture(t, models);
+  await f.menu.handleInput("zzzzzzzz");
+  for (const width of [20, 21, 22, 40]) {
+    for (const line of f.menu.render(width)) assert.ok(visibleWidth(line) <= width);
+  }
+  await f.menu.handleInput("\r");
+  assert.deepEqual(f.result, []);
+});
+
 test("failed removal keeps bookmark visible and reports the error", async (t) => {
   const f = await fixture(t, [models[0]]);
   await writeFile(f.store.path, "{}");

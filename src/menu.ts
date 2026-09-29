@@ -138,7 +138,9 @@ export class FavoritesMenu implements Component, Focusable {
     return [
       truncateToWidth("Model Plus — favorite models", width),
       ...this.input.render(width),
-      ...(this.favorites.length ? this.list.render(width) : [truncateToWidth("No favorites yet. Add models to get started.", width)]),
+      ...(this.favorites.length
+        ? this.list.render(width).map((line) => truncateToWidth(line, width))
+        : [truncateToWidth("No favorites yet. Add models to get started.", width)]),
       truncateToWidth(this.status, width),
       truncateToWidth(`${this.keys("pi-model-plus.add").join("/")} add · ${this.keys("pi-model-plus.remove").join("/")} remove`, width),
       truncateToWidth(`${kb.getKeys("tui.select.confirm").join("/")} switch · ${kb.getKeys("tui.select.cancel").join("/")} close`, width),
