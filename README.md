@@ -80,15 +80,24 @@ No build step is required. Pi loads the TypeScript source.
 
 ## Publishing
 
-After reviewing, committing, and pushing the package:
+GitHub Actions runs type checks, tests, and a package dry run on pull requests and pushes to `main`. After checks pass on `main`, it publishes the version in `package.json` if that version is not already on npm. Versions are bumped manually, not by CI.
+
+### One-time setup
+
+CI publishes through npm [trusted publishing](https://docs.npmjs.com/trusted-publishers) (OIDC), so no npm token or repository secret is needed. On npmjs.com, under the package's **Settings → Trusted Publisher**, add GitHub Actions with repository `lwlee2608/pi-model-plus`, workflow `npm-publish.yml`, and **Allow `npm publish`** enabled. npm adds provenance to each published version.
+
+### Release a version
 
 ```sh
-npm run check
-node --test test/*.test.ts
-npm pack --dry-run --ignore-scripts
-npm login
-npm publish --access public --ignore-scripts
+npm version patch --no-git-tag-version  # or minor / major
+git add package.json package-lock.json
+git commit -m "Bump package version for release"
+git push origin main
 ```
+
+Commit both version files with the release changes (or merge them through a pull request). The first push with the workflow can publish the current version if it is not already on npm. You can also retry from **Actions → CI and npm publish → Run workflow**, selecting `main`; already-published versions are skipped.
+
+No build step, npm token, or local `npm login` is required for CI publication. The workflow publishes the TypeScript source using `--ignore-scripts`.
 
 The `pi-package` keyword makes the npm package eligible for discovery at [pi.dev/packages](https://pi.dev/packages). Gallery indexing is separate from npm publication; a listing is not guaranteed to appear immediately.
 
