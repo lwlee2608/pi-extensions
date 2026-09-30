@@ -12,15 +12,18 @@ export const DEFAULT_APP_KEYBINDINGS = {
   "pi-model-plus.remove": ["ctrl+r"],
 } satisfies Record<string, KeyId[]>;
 
+export type ModelSelection = Favorite & { saveAsDefault?: true };
+
 interface Options {
   models: (Favorite & { name: string })[];
   current?: Favorite;
+  defaultModel?: Favorite;
   favorites: Favorite[];
   store: FavoritesStore;
   keybindings: KeybindingsManager;
   theme: SelectListTheme;
   render: () => void;
-  done: (favorite?: Favorite) => void;
+  done: (selection?: ModelSelection) => void;
 }
 
 export class FavoritesMenu implements Component, Focusable {
@@ -55,11 +58,15 @@ export class FavoritesMenu implements Component, Focusable {
       const key = modelKey(favorite);
       const model = this.options.models.find((item) => modelKey(item) === key);
       const status = !model ? " (unavailable)" : this.options.current && key === modelKey(this.options.current) ? " (current)" : "";
-      return { value: key, label: `★ ${key}${status}`, description: model?.name };
+      const defaultBadge = this.options.defaultModel && key === modelKey(this.options.defaultModel) ? " (default)" : "";
+      return { value: key, label: `★ ${key}${status}${defaultBadge}`, description: model?.name };
     });
-    const filtered = fuzzyFilter(items, this.input.getValue(), (item) => `${item.value} ${item.description ?? ""}`);
+    const query = this.input.getValue();
+    const searchDefault = query.trim().length > 0 && "default".startsWith(query.trim().toLowerCase());
+    const filtered = fuzzyFilter(items, query, (item) =>
+      `${item.value} ${item.description ?? ""}${searchDefault && this.options.defaultModel && item.value === modelKey(this.options.defaultModel) ? " default" : ""}`);
     this.listKeys = filtered.map((item) => item.value);
-    this.list = new SelectList(filtered, PAGE_SIZE, this.options.theme);
+    this.list = new SelectList(filtered, PAGE_SIZE, this.options.theme, { minPrimaryColumnWidth: 32, maxPrimaryColumnWidth: 80 });
     if (selected) this.list.setSelectedIndex(Math.max(0, filtered.findIndex((item) => item.value === selected)));
   }
 
@@ -120,12 +127,13 @@ export class FavoritesMenu implements Component, Focusable {
           this.busy = false;
         }
       }
-    } else if (kb.matches(data, "tui.select.confirm")) {
+    } else if (kb.matches(data, "tui.select.confirm") || kb.matches(data, "app.models.save")) {
       const selected = this.list.getSelectedItem()?.value;
       const favorite = this.favorites.find((item) => modelKey(item) === selected);
       if (favorite) {
-        if (this.options.models.some((item) => modelKey(item) === selected)) this.options.done(favorite);
-        else this.status = "Model unavailable. Check /login or remove its bookmark.";
+        if (this.options.models.some((item) => modelKey(item) === selected)) {
+          this.options.done(kb.matches(data, "tui.select.confirm") ? favorite : { ...favorite, saveAsDefault: true });
+        } else this.status = "Model unavailable. Check /login or remove its bookmark.";
       }
     } else if (page) {
       const selected = this.list.getSelectedItem();
@@ -151,7 +159,7 @@ export class FavoritesMenu implements Component, Focusable {
         : [truncateToWidth("No favorites yet. Add models to get started.", width)]),
       truncateToWidth(this.status, width),
       truncateToWidth(`${this.keys("pi-model-plus.add").join("/")} add · ${this.keys("pi-model-plus.remove").join("/")} remove`, width),
-      truncateToWidth(`${kb.getKeys("tui.select.confirm").join("/")} switch · ${kb.getKeys("tui.select.cancel").join("/")} close`, width),
+      truncateToWidth(`${kb.getKeys("tui.select.confirm").join("/")} switch · ${kb.getKeys("app.models.save").join("/")} set default · ${kb.getKeys("tui.select.cancel").join("/")} close`, width),
     ];
   }
 

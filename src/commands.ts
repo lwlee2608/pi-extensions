@@ -1,6 +1,7 @@
 import { type ExtensionAPI, type ExtensionContext, getSelectListTheme } from "@earendil-works/pi-coding-agent";
-import { FavoritesMenu } from "./menu.ts";
-import { type Favorite, FavoritesStore, modelKey } from "./store.ts";
+import { DefaultModelStore } from "./default-model.ts";
+import { FavoritesMenu, type ModelSelection } from "./menu.ts";
+import { FavoritesStore, modelKey } from "./store.ts";
 
 type Context = Pick<ExtensionContext, "hasUI" | "model" | "mode"> & {
   ui: Pick<ExtensionContext["ui"], "notify" | "select" | "custom">;
@@ -8,9 +9,9 @@ type Context = Pick<ExtensionContext, "hasUI" | "model" | "mode"> & {
 };
 type Model = ReturnType<Context["modelRegistry"]["getAvailable"]>[number];
 
-export function createCommand(store: FavoritesStore, setModel: ExtensionAPI["setModel"]) {
+export function createCommand(store: FavoritesStore, setModel: ExtensionAPI["setModel"], defaults = new DefaultModelStore()) {
   return {
-    description: "Favorite models: Enter switches, Ctrl+N adds, Ctrl+R removes",
+    description: "Favorite models: Enter switches, Ctrl+S sets default, Ctrl+N adds, Ctrl+R removes",
     handler: async (args: string, ctx: Context) => {
       if (args.trim()) {
         ctx.ui.notify("Usage: /model-plus (add and remove bookmarks inside the menu)", "warning");
@@ -24,12 +25,15 @@ export function createCommand(store: FavoritesStore, setModel: ExtensionAPI["set
         const favorites = await store.read();
         const models = ctx.modelRegistry.getAvailable().sort((a, b) => modelKey(a).localeCompare(modelKey(b)));
         let model: Model | undefined;
+        let saveAsDefault = false;
         if (ctx.mode === "tui") {
-          const selected = await ctx.ui.custom<Favorite | undefined>((tui, _theme, keybindings, done) => new FavoritesMenu({
-            models, current: ctx.model, favorites, store, keybindings,
+          const defaultModel = defaults.read();
+          const selected = await ctx.ui.custom<ModelSelection | undefined>((tui, _theme, keybindings, done) => new FavoritesMenu({
+            models, current: ctx.model, defaultModel, favorites, store, keybindings,
             theme: getSelectListTheme(), render: () => tui.requestRender(), done,
           }));
           if (!selected) return;
+          saveAsDefault = selected.saveAsDefault === true;
           model = ctx.modelRegistry.getAvailable().find((item) => modelKey(item) === modelKey(selected));
         } else {
           if (favorites.length === 0) {
@@ -51,7 +55,15 @@ export function createCommand(store: FavoritesStore, setModel: ExtensionAPI["set
           return;
         }
         if (await setModel(model)) {
-          ctx.ui.notify(`Switched to ${modelKey(model)}`, "info");
+          if (saveAsDefault) {
+            try {
+              await defaults.save(model);
+            } catch (error) {
+              ctx.ui.notify(`Switched to ${modelKey(model)}, but could not save default: ${error instanceof Error ? error.message : String(error)}`, "error");
+              return;
+            }
+          }
+          ctx.ui.notify(saveAsDefault ? `Default model: ${modelKey(model)}` : `Switched to ${modelKey(model)}`, "info");
         } else {
           ctx.ui.notify(`Could not switch to ${modelKey(model)}. Check /login and your provider configuration.`, "warning");
         }
