@@ -80,7 +80,7 @@ No build step is required. Pi loads the TypeScript source.
 
 ## Publishing
 
-GitHub Actions runs type checks, tests, and a package dry run on pull requests and pushes to `main`. After checks pass on `main`, it publishes the version in `package.json` if that version is not already on npm. Versions are bumped manually, not by CI.
+GitHub Actions runs type checks, tests, and a package dry run on pull requests, pushes to `main`, and version tags. Pushing a `v*` tag that matches the version in `package.json` publishes that version to npm (unless already published) and creates a GitHub release with generated notes. Versions are bumped manually, not by CI.
 
 ### One-time setup
 
@@ -89,13 +89,11 @@ CI publishes through npm [trusted publishing](https://docs.npmjs.com/trusted-pub
 ### Release a version
 
 ```sh
-npm version patch --no-git-tag-version  # or minor / major
-git add package.json package-lock.json
-git commit -m "Bump package version for release"
-git push origin main
+npm version patch  # or minor / major; commits package.json and package-lock.json and tags vX.Y.Z
+git push origin main --follow-tags
 ```
 
-Commit both version files with the release changes (or merge them through a pull request). The first push with the workflow can publish the current version if it is not already on npm. You can also retry from **Actions → CI and npm publish → Run workflow**, selecting `main`; already-published versions are skipped.
+Run this on an up-to-date, clean `main`. CI fails if the tag does not match `package.json`. To retry a failed release, re-run the tag's workflow run, or use **Actions → CI and npm publish → Run workflow** and select the tag; already-published versions and existing releases are skipped.
 
 No build step, npm token, or local `npm login` is required for CI publication. The workflow publishes the TypeScript source using `--ignore-scripts`.
 
