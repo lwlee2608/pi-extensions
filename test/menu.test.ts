@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth } from "@earendil-works/pi-tui";
-import { FavoritesMenu } from "../src/menu.ts";
+import { FavoritesMenu, type ModelSelection } from "../src/menu.ts";
 import { type Favorite, FavoritesStore } from "../src/store.ts";
 
 const models = [
@@ -20,11 +20,11 @@ async function fixture(
   t.after(() => rm(dir, { recursive: true, force: true }));
   const store = new FavoritesStore(join(dir, "favorites.json"));
   for (const favorite of favorites) await store.update(favorite, "toggle");
-  const keybindings = new KeybindingsManager(TUI_KEYBINDINGS);
+  const keybindings = new KeybindingsManager({ ...TUI_KEYBINDINGS, "app.models.save": { defaultKeys: "ctrl+s" } });
   const identity = (text: string) => text;
-  const result: (Favorite | undefined)[] = [];
+  const result: (ModelSelection | undefined)[] = [];
   const menu = new FavoritesMenu({
-    models: availableModels, favorites, store, current: availableModels[0], keybindings,
+    models: availableModels, favorites, store, current: availableModels[0], defaultModel: availableModels[0], keybindings,
     theme: { selectedPrefix: identity, selectedText: identity, description: identity, scrollInfo: identity, noMatch: identity },
     render: () => {}, done: (favorite) => result.push(favorite),
   });
@@ -71,6 +71,7 @@ test("removing a filtered favorite keeps the menu open, including the last bookm
 test("unavailable models can be removed but not selected", async (t) => {
   const f = await fixture(t, [{ provider: "gone", id: "missing" }]);
   await f.menu.handleInput("\r");
+  await f.menu.handleInput("\u0013");
   assert.match(f.menu.render(100).join("\n"), /unavailable/);
   assert.deepEqual(f.result, []);
   await f.menu.handleInput("\u0012");
@@ -150,6 +151,43 @@ for (const browser of [false, true]) {
     }
   });
 }
+
+test("Ctrl+S selects the filtered favorite as default without changing bookmarks", async (t) => {
+  const f = await fixture(t, models);
+  assert.match(f.menu.render(120).join("\n"), /example\/alpha \(current\) \(default\)/);
+  assert.match(f.menu.render(120).join("\n"), /ctrl\+s set default/);
+  await f.menu.handleInput("beta");
+  await f.menu.handleInput("\u0013");
+  assert.deepEqual(f.result, [{ ...models[1], saveAsDefault: true }]);
+  assert.equal((await f.store.read()).length, 2);
+});
+
+test("save default follows Pi keybinding overrides and can be disabled", async (t) => {
+  const f = await fixture(t, models);
+  f.keybindings.setUserBindings({ "app.models.save": "ctrl+d" });
+  assert.match(f.menu.render(120).join("\n"), /ctrl\+d set default/);
+  await f.menu.handleInput("\u0013");
+  assert.deepEqual(f.result, []);
+  await f.menu.handleInput("\u0004");
+  assert.deepEqual(f.result, [{ ...models[0], saveAsDefault: true }]);
+  f.keybindings.setUserBindings({ "app.models.save": [] });
+  await f.menu.handleInput("\u0013");
+  await f.menu.handleInput("\u0004");
+  assert.equal(f.result.length, 1);
+});
+
+test("default badge is searchable and empty results cannot set a default", async (t) => {
+  const f = await fixture(t, models);
+  await f.menu.handleInput("default");
+  await f.menu.handleInput("\u0013");
+  assert.deepEqual(f.result, [{ ...models[0], saveAsDefault: true }]);
+  await f.menu.handleInput("zzzzzzzz");
+  await f.menu.handleInput("\u0013");
+  assert.equal(f.result.length, 1);
+  const empty = await fixture(t);
+  await empty.menu.handleInput("\u0013");
+  assert.deepEqual(empty.result, []);
+});
 
 test("failed removal keeps bookmark visible and reports the error", async (t) => {
   const f = await fixture(t, [models[0]]);

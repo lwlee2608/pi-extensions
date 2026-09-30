@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { createCommand } from "../src/commands.ts";
+import { DefaultModelStore } from "../src/default-model.ts";
 import { FavoritesStore } from "../src/store.ts";
 
 type Context = Parameters<ReturnType<typeof createCommand>["handler"]>[1];
@@ -30,8 +31,9 @@ async function fixture(t: { after: (fn: () => Promise<void>) => void }) {
       select: async (_title, items) => { options = items; return items[0]; },
     },
   };
-  const command = createCommand(store, async (next) => { switched.push(next); return true; });
-  return { store, ctx, command, notifications, switched, options: () => options };
+  const defaults = new DefaultModelStore(dir);
+  const command = createCommand(store, async (next) => { switched.push(next); return true; }, defaults);
+  return { store, defaults, dir, ctx, command, notifications, switched, options: () => options };
 }
 
 test("RPC picker switches through Pi API and cancellation leaves model unchanged", async (t) => {
@@ -86,6 +88,46 @@ test("terminal menu opens even with no favorites or available models", async (t)
   await f.command.handler("", f.ctx);
   assert.equal(opened, true);
   assert.deepEqual(f.switched, []);
+});
+
+test("terminal save switches and persists a default, while Enter and cancellation do not", async (t) => {
+  const f = await fixture(t);
+  f.ctx.mode = "tui";
+  f.ctx.ui.custom = async () => model as never;
+  await f.command.handler("", f.ctx);
+  assert.equal(f.defaults.read(), undefined);
+  f.ctx.ui.custom = async () => ({ ...model, saveAsDefault: true }) as never;
+  await f.command.handler("", f.ctx);
+  assert.deepEqual(f.defaults.read(), { provider: model.provider, id: model.id });
+  assert.match(f.notifications.at(-1)!, /Default model: example\/org\/model/);
+  assert.deepEqual(f.switched, [model, model]);
+  f.ctx.ui.custom = async () => undefined as never;
+  await f.command.handler("", f.ctx);
+  assert.equal(f.switched.length, 2);
+});
+
+test("unavailable models and failed switches never persist defaults", async (t) => {
+  const f = await fixture(t);
+  f.ctx.mode = "tui";
+  f.ctx.ui.custom = async () => ({ ...model, saveAsDefault: true }) as never;
+  for (const setModel of [async () => false, async () => { throw new Error("switch failed"); }]) {
+    await createCommand(f.store, setModel, f.defaults).handler("", f.ctx);
+    assert.equal(f.defaults.read(), undefined);
+  }
+  f.ctx.modelRegistry.getAvailable = () => [];
+  await f.command.handler("", f.ctx);
+  assert.equal(f.defaults.read(), undefined);
+  assert.deepEqual(f.switched, []);
+});
+
+test("save failures distinguish the successful switch from the failed persistence", async (t) => {
+  const f = await fixture(t);
+  await writeFile(join(f.dir, "settings.json"), "invalid json");
+  f.ctx.mode = "tui";
+  f.ctx.ui.custom = async () => ({ ...model, saveAsDefault: true }) as never;
+  await f.command.handler("", f.ctx);
+  assert.deepEqual(f.switched, [model]);
+  assert.match(f.notifications.at(-1)!, /Switched to .*but could not save default/);
 });
 
 test("corrupt favorites are reported without overwriting the file", async (t) => {
