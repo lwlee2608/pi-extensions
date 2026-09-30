@@ -1,6 +1,6 @@
 {
   "name": "pi-model-plus",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Bookmark favorite Pi models and switch between them with /model-plus.",
   "type": "module",
   "license": "MIT",
@@ -11,10 +11,20 @@
   },
   "homepage": "https://github.com/lwlee2608/pi-model-plus#readme",
   "bugs": "https://github.com/lwlee2608/pi-model-plus/issues",
-  "keywords": ["pi-package", "pi-extension", "models", "favorites", "bookmarks"],
-  "files": ["src"],
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "models",
+    "favorites",
+    "bookmarks"
+  ],
+  "files": [
+    "src"
+  ],
   "pi": {
-    "extensions": ["./src/index.ts"]
+    "extensions": [
+      "./src/index.ts"
+    ]
   },
   "engines": {
     "node": ">=22.19.0"
