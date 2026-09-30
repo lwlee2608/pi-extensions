@@ -66,7 +66,7 @@ export class FavoritesMenu implements Component, Focusable {
     const filtered = fuzzyFilter(items, query, (item) =>
       `${item.value} ${item.description ?? ""}${searchDefault && this.options.defaultModel && item.value === modelKey(this.options.defaultModel) ? " default" : ""}`);
     this.listKeys = filtered.map((item) => item.value);
-    this.list = new SelectList(filtered, PAGE_SIZE, this.options.theme, { maxPrimaryColumnWidth: 80 });
+    this.list = new SelectList(filtered, PAGE_SIZE, this.options.theme, { minPrimaryColumnWidth: 32, maxPrimaryColumnWidth: 80 });
     if (selected) this.list.setSelectedIndex(Math.max(0, filtered.findIndex((item) => item.value === selected)));
   }
 

@@ -156,6 +156,9 @@ test("Ctrl+S selects the filtered favorite as default without changing bookmarks
   const f = await fixture(t, models);
   assert.match(f.menu.render(120).join("\n"), /example\/alpha \(current\) \(default\)/);
   assert.match(f.menu.render(120).join("\n"), /ctrl\+s set default/);
+  for (const width of [80, 90]) {
+    assert.match(f.menu.render(width).join("\n"), /Alpha Reasoner/);
+  }
   await f.menu.handleInput("beta");
   await f.menu.handleInput("\u0013");
   assert.deepEqual(f.result, [{ ...models[1], saveAsDefault: true }]);
