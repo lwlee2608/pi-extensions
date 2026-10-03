@@ -1,6 +1,6 @@
 {
   "name": "@lwlee2608/pi-session-board",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Observe independent Pi terminal sessions with /sessions.",
   "type": "module",
   "license": "MIT",
