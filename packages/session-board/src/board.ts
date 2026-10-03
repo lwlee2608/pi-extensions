@@ -13,6 +13,9 @@ const groups = [
   ["unknown", "Unknown", "warning", "?"],
 ] as const;
 
+const spinnerFrames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const animationInterval = 80;
+
 function elapsed(ms: number): string {
   const seconds = Math.max(0, Math.floor(ms / 1000));
   return seconds < 60 ? `${seconds}s` : seconds < 3600 ? `${Math.floor(seconds / 60)}m`
@@ -44,14 +47,17 @@ export function rowLine(row: Row, current: string | undefined, now: number, widt
     const projectSpace = Math.min(visibleWidth(project), Math.max(1, space - nameSpace - 3));
     return `${fit(project, projectSpace)} / ${fit(name, space - projectSpace - 3)}`;
   };
-  const marker = row.registrationId === current ? "›" : groups.find(g => g[0] === row.status)![3];
+  const currentMarker = row.registrationId === current ? "›" : " ";
+  const marker = row.status === "working" ? spinnerFrames[Math.floor(now / animationInterval) % spinnerFrames.length]
+    : groups.find(g => g[0] === row.status)![3];
   const badge = row.waitingUnavailable ? "?" : " ";
   const age = `${row.status === "unknown" ? "seen " : ""}${elapsed(now - (row.status === "unknown" ? row.heartbeatAt : row.statusSince))}`;
-  if (width < 36) return fit(`${marker}${badge} ${identity(Math.max(0, width - 3))}`, width);
+  const prefix = `${currentMarker}${marker}${badge} `;
+  if (width < 36) return fit(`${prefix}${identity(Math.max(0, width - 4))}`, width);
   const ageWidth = Math.max(5, age.length);
-  const nameWidth = Math.min(40, Math.floor((width - 3) * 0.4));
-  const activityWidth = Math.max(0, width - nameWidth - ageWidth - 7);
-  return `${marker}${badge} ${identity(nameWidth)}  ${fit(activityLabel(row), activityWidth)}  ${age.padStart(ageWidth)}`;
+  const nameWidth = Math.min(40, Math.floor((width - 4) * 0.4));
+  const activityWidth = Math.max(0, width - nameWidth - ageWidth - 8);
+  return `${prefix}${identity(nameWidth)}  ${fit(activityLabel(row), activityWidth)}  ${age.padStart(ageWidth)}`;
 }
 
 export class Board {
@@ -65,6 +71,7 @@ export class Board {
   private saving = false;
   private notice = "";
   private timer: ReturnType<typeof setInterval>;
+  private animationTimer: ReturnType<typeof setInterval>;
   private disposed = false;
   private reading = false;
   private root: string;
@@ -87,6 +94,9 @@ export class Board {
     this.done = done;
     this.visible = visible;
     this.timer = setInterval(() => void this.refresh(), 1000);
+    this.animationTimer = setInterval(() => {
+      if (!this.disposed && this.visible() && this.rows.some(row => row.status === "working")) this.requestRender();
+    }, animationInterval);
     void this.refresh();
   }
 
@@ -171,6 +181,7 @@ export class Board {
     const keys: string[] = [];
     const counts: string[] = [];
     this.selection();
+    const now = Date.now();
     for (const [status, label, color] of groups) {
       const rows = this.rows.filter(row => row.status === status);
       if (!rows.length) continue;
@@ -181,7 +192,7 @@ export class Board {
       for (const row of rows) {
         const selected = row.registrationId === this.selected;
         const line = this.theme.fg(selected ? "accent" : row.registrationId === this.current ? "text" : color,
-          rowLine(row, this.current, Date.now(), inner));
+          rowLine(row, this.current, now, inner));
         content.push(selected ? `\x1b[7m${line}\x1b[27m` : line);
         keys.push(row.registrationId);
       }
@@ -210,5 +221,9 @@ export class Board {
   }
 
   invalidate(): void {}
-  dispose(): void { this.disposed = true; clearInterval(this.timer); }
+  dispose(): void {
+    this.disposed = true;
+    clearInterval(this.timer);
+    clearInterval(this.animationTimer);
+  }
 }
