@@ -5,10 +5,12 @@ Bookmark favorite models in [Pi](https://pi.dev) and switch between them without
 ## Install
 
 ```sh
-pi install npm:pi-model-plus
+pi install npm:@lwlee2608/pi-model-plus
 ```
 
 Run `/reload` in an existing Pi session after installation.
+
+Previously published as `pi-model-plus`. To migrate, run `pi remove npm:pi-model-plus` and install the scoped package; saved bookmarks are kept.
 
 Requires Node.js 22.19 or newer. Developed and checked against `@earendil-works/pi-coding-agent` 1.0.0.
 

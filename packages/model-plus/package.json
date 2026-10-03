@@ -1,6 +1,6 @@
 {
-  "name": "pi-model-plus",
-  "version": "0.1.1",
+  "name": "@lwlee2608/pi-model-plus",
+  "version": "0.1.2",
   "description": "Bookmark favorite Pi models and switch between them with /model-plus.",
   "type": "module",
   "license": "MIT",

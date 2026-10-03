@@ -4,7 +4,7 @@
 
 | Package | Command | Description |
 | --- | --- | --- |
-| [`pi-model-plus`](packages/model-plus) | `/model-plus` | Bookmark favorite models and switch between them. |
+| [`@lwlee2608/pi-model-plus`](packages/model-plus) | `/model-plus` | Bookmark favorite models and switch between them. |
 | [`@lwlee2608/pi-session-board`](packages/session-board) | `/sessions` | Observe independent Pi terminal sessions. |
 
 ## Install
@@ -12,7 +12,7 @@
 Install one package from npm:
 
 ```sh
-pi install npm:pi-model-plus
+pi install npm:@lwlee2608/pi-model-plus
 pi install npm:@lwlee2608/pi-session-board
 ```
 
