@@ -70,7 +70,7 @@ npm test
 pi -e ./packages/model-plus/src/index.ts
 ```
 
-No build step is required. Pi loads the TypeScript source. See the [repository README](https://github.com/lwlee2608/pi-model-plus#publishing) for releases.
+No build step is required. Pi loads the TypeScript source. See the [repository README](https://github.com/lwlee2608/pi-extensions#publishing) for releases.
 
 ## License
 

@@ -19,7 +19,7 @@ pi install npm:@lwlee2608/pi-session-board
 Or install all of them from git:
 
 ```sh
-pi install git:github.com/lwlee2608/pi-model-plus
+pi install git:github.com/lwlee2608/pi-extensions
 ```
 
 Run `/reload` in an existing Pi session after installation. Requires Node.js 22.19 or newer and Pi 1.0.0.
@@ -50,7 +50,7 @@ CI publishes through npm [trusted publishing](https://docs.npmjs.com/trusted-pub
    npm publish -w packages/<dir> --access public --ignore-scripts
    ```
 
-2. On npmjs.com, under the package's **Settings → Trusted Publisher**, add GitHub Actions with repository `lwlee2608/pi-model-plus`, workflow `npm-publish.yml`, no environment, and **Allow `npm publish`** enabled.
+2. On npmjs.com, under the package's **Settings → Trusted Publisher**, add GitHub Actions with repository `lwlee2608/pi-extensions`, workflow `npm-publish.yml`, no environment, and **Allow `npm publish`** enabled.
 
 ### Release a version
 

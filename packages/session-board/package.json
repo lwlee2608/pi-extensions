@@ -7,11 +7,11 @@
   "author": "lwlee2608",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lwlee2608/pi-model-plus.git",
+    "url": "git+https://github.com/lwlee2608/pi-extensions.git",
     "directory": "packages/session-board"
   },
-  "homepage": "https://github.com/lwlee2608/pi-model-plus/tree/main/packages/session-board#readme",
-  "bugs": "https://github.com/lwlee2608/pi-model-plus/issues",
+  "homepage": "https://github.com/lwlee2608/pi-extensions/tree/main/packages/session-board#readme",
+  "bugs": "https://github.com/lwlee2608/pi-extensions/issues",
   "keywords": [
     "pi-package",
     "pi-extension",

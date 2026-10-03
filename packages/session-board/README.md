@@ -23,7 +23,7 @@ From the repository root:
 npm ci --ignore-scripts
 npm run check
 npm test
-pi -e /absolute/path/to/pi-model-plus/packages/session-board/src/index.ts
+pi -e /absolute/path/to/pi-extensions/packages/session-board/src/index.ts
 ```
 
 Start another Pi terminal with the same extension. `/sessions` shows session names,
@@ -65,7 +65,7 @@ mkdir -p "$ROOT/agent" "$ROOT/A" "$ROOT/B"
 export PI_CODING_AGENT_DIR="$ROOT/agent" PI_TELEMETRY=0
 # In two terminals, use the same ROOT and extension path, but cd to A and B respectively:
 cd "$ROOT/A"
-pi --offline -ne -ns -np -nc -na -e /absolute/path/to/pi-model-plus/packages/session-board/src/index.ts --name A
+pi --offline -ne -ns -np -nc -na -e /absolute/path/to/pi-extensions/packages/session-board/src/index.ts --name A
 ```
 
 In B use `--name B`. In A open `/sessions`: both projects appear and A is current.
@@ -102,7 +102,7 @@ the Aborted activity label is shown only when Pi reports an aborted outcome.
 Use the disposable setup above and add these arguments in both terminals:
 
 ```sh
--e /absolute/path/to/pi-model-plus/packages/session-board/test/fixtures/offline.ts --model board-offline/fixture
+-e /absolute/path/to/pi-extensions/packages/session-board/test/fixtures/offline.ts --model board-offline/fixture
 ```
 
 The fixture is test-only, uses no network or credentials, and is excluded from
@@ -145,4 +145,4 @@ JSON. It deliberately does not implement a general-purpose model service.
 Pi loads the TypeScript source directly. Host packages are peers, not bundled
 runtime dependencies. Tests use temporary registry directories.
 
-See the [repository README](https://github.com/lwlee2608/pi-model-plus#publishing) for releases.
+See the [repository README](https://github.com/lwlee2608/pi-extensions#publishing) for releases.
