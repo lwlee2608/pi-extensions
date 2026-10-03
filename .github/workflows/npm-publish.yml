@@ -3,7 +3,7 @@ name: CI and npm publish
 on:
   push:
     branches: [main]
-    tags: ['v*']
+    tags: ['*-v*']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -25,11 +25,11 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run check
       - run: npm test
-      - run: npm pack --dry-run --ignore-scripts
+      - run: npm pack --dry-run --ignore-scripts --workspaces
 
   publish:
     needs: check
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/') && contains(github.ref_name, '-v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -45,16 +45,24 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
 
-      - name: Check tag matches package version
+      - name: Resolve package from tag
+        id: pkg
         run: |
-          expected="v$(node -p "require('./package.json').version")"
-          if [ "$GITHUB_REF_NAME" != "$expected" ]; then
-            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $expected."
+          dir="packages/${GITHUB_REF_NAME%-v*}"
+          if [ ! -f "$dir/package.json" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match any package under packages/."
             exit 1
           fi
+          expected="${GITHUB_REF_NAME%-v*}-v$(node -p "require('./$dir/package.json').version")"
+          if [ "$GITHUB_REF_NAME" != "$expected" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match $dir/package.json version ($expected)."
+            exit 1
+          fi
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
 
       - name: Check whether version is published
         id: version
+        working-directory: ${{ steps.pkg.outputs.dir }}
         run: |
           node --input-type=module <<'NODE'
           import { spawnSync } from 'node:child_process';
@@ -79,6 +87,7 @@ jobs:
 
       - name: Publish new version
         if: steps.version.outputs.publish == 'true'
+        working-directory: ${{ steps.pkg.outputs.dir }}
         run: npm publish --access public --ignore-scripts
 
       - name: Create GitHub release

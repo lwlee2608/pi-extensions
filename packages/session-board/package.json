@@ -1,0 +1,42 @@
+{
+  "name": "@lwlee2608/pi-session-board",
+  "version": "0.1.0",
+  "description": "Observe independent Pi terminal sessions with /sessions.",
+  "type": "module",
+  "license": "MIT",
+  "author": "lwlee2608",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lwlee2608/pi-model-plus.git",
+    "directory": "packages/session-board"
+  },
+  "homepage": "https://github.com/lwlee2608/pi-model-plus/tree/main/packages/session-board#readme",
+  "bugs": "https://github.com/lwlee2608/pi-model-plus/issues",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "sessions"
+  ],
+  "files": [
+    "src"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "node --test test/*.test.ts"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
