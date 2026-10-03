@@ -1,53 +1,33 @@
 {
-  "name": "pi-model-plus",
-  "version": "0.1.1",
-  "description": "Bookmark favorite Pi models and switch between them with /model-plus.",
+  "name": "pi-extensions",
+  "private": true,
+  "description": "Pi extensions by lwlee2608.",
   "type": "module",
   "license": "MIT",
   "author": "lwlee2608",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/lwlee2608/pi-model-plus.git"
-  },
-  "homepage": "https://github.com/lwlee2608/pi-model-plus#readme",
-  "bugs": "https://github.com/lwlee2608/pi-model-plus/issues",
-  "keywords": [
-    "pi-package",
-    "pi-extension",
-    "models",
-    "favorites",
-    "bookmarks"
-  ],
-  "files": [
-    "src"
+  "workspaces": [
+    "packages/*"
   ],
   "pi": {
     "extensions": [
-      "./src/index.ts"
+      "./packages/model-plus/src/index.ts",
+      "./packages/session-board/src/index.ts"
     ]
   },
   "engines": {
     "node": ">=22.19.0"
   },
   "scripts": {
-    "check": "tsc --noEmit",
-    "test": "node --test test/*.test.ts"
-  },
-  "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "*",
-    "@earendil-works/pi-tui": "*"
-  },
-  "dependencies": {
-    "proper-lockfile": "4.1.2"
+    "check": "npm run check --workspaces",
+    "test": "npm test --workspaces"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "0.87.1",
-    "@earendil-works/pi-tui": "0.87.1",
+    "@earendil-works/pi-ai": "1.0.0",
+    "@earendil-works/pi-coding-agent": "1.0.0",
+    "@earendil-works/pi-tui": "1.0.0",
     "@types/node": "22.20.4",
     "@types/proper-lockfile": "4.1.4",
+    "typebox": "1.1.37",
     "typescript": "5.9.3"
-  },
-  "publishConfig": {
-    "access": "public"
   }
 }
