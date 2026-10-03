@@ -28,10 +28,12 @@ pi -e /absolute/path/to/pi-extensions/packages/session-board/src/index.ts
 
 Start another Pi terminal with the same extension. `/sessions` shows session names,
 short project names, activity, and elapsed time in aligned single-line rows.
-Status counts sit above the grouped list. `›` marks the current terminal; unnamed
-sessions use the last eight characters of their registration ID. Use `/name` in
+Status counts sit above the grouped list. Working sessions show an animated spinner
+while generating, running tools, or compacting. `›` marks the current terminal in a
+separate column; unnamed sessions use the last eight characters of their registration ID. Use `/name` in
 each terminal for a recognizable task name. The board covers the conversation
-while open and restores it on exit. The board refreshes each second; use ↑/↓ to select a highlighted row,
+while open and restores it on exit. Session data refreshes each second; the spinner
+updates every 80 ms without extra registry reads. Use ↑/↓ to select a highlighted row,
 Page Up/Down to move by a page, `r` to rename, and Esc to close. Closing it does not interrupt the agent.
 Groups are Needs input, Failed, Working, Idle, and Unknown. A recovered tool error
 is not a failed run. Idle means the run stopped, not that your task is complete.

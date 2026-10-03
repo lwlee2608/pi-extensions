@@ -16,7 +16,7 @@ const row: Row = {
 
 test("rows show current identity, project, activity and status age", () => {
   const line = rowLine(row, "current", 121000, 80);
-  assert.match(line, /^›  api\s+\/ Fix auth/);
+  assert.match(line, /^›[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]  api\s+\/ Fix auth/);
   assert.match(line, /Generating\s+2m$/);
   assert.equal(visibleWidth(line), 80);
   assert.match(rowLine({ ...row, status: "unknown" }, undefined, 22000, 80), /seen 20s$/);
@@ -27,6 +27,69 @@ test("rows show current identity, project, activity and status age", () => {
     assert.match(rowLine({ ...long, registrationId: "prefix-12345678" }, undefined, 1000, width), /12345678/);
     assert.match(rowLine({ ...long, registrationId: "prefix-87654321" }, undefined, 1000, width), /87654321/);
   }
+});
+
+test("working markers animate without shifting rows or hiding current and limitation markers", () => {
+  for (const width of [1, 12, 32, 36, 80]) {
+    for (const current of [undefined, row.registrationId]) {
+      const frames = Array.from({ length: 10 }, (_, frame) =>
+        rowLine({ ...row, waitingUnavailable: true }, current, frame * 80, width));
+      assert.ok(frames.every(line => visibleWidth(line) === width));
+      if (width < 4) continue;
+      assert.equal(new Set(frames.map(line => line[1])).size, 10);
+      assert.ok(frames.every(line => line[0] === (current ? "›" : " ") && line[2] === "?"));
+      assert.ok(frames.every(line => line.slice(2) === frames[0].slice(2)));
+      assert.equal(rowLine({ ...row, waitingUnavailable: true }, current, 800, width), frames[0]);
+    }
+  }
+  for (const status of ["idle", "needs-input", "failed", "unknown"] as const) {
+    const stopped = { ...row, status };
+    assert.equal(rowLine(stopped, undefined, 0, 80), rowLine(stopped, undefined, 80, 80));
+  }
+});
+
+test("animation redraws between registry polls, pauses when hidden, and stops on disposal", async t => {
+  const root = await mkdtemp(join(tmpdir(), "board-animation-"));
+  let board: Board | undefined;
+  t.mock.timers.enable({ apis: ["setInterval", "Date"], now: 1000 });
+  try {
+    await new Registration(root).publish({ sessionId: "id", name: "Busy", cwd: "/p", status: "working", statusSince: 1000 });
+    let refreshed!: () => void;
+    const ready = new Promise<void>(resolve => { refreshed = resolve; });
+    let renders = 0;
+    let visible = true;
+    board = new Board(root, undefined, { fg: (_color, text) => text }, () => { renders++; refreshed(); }, () => 24, () => {}, () => visible);
+    await ready;
+    const before = board.render(80);
+    t.mock.timers.tick(80);
+    assert.equal(renders, 2);
+    assert.notDeepEqual(board.render(80), before);
+    visible = false;
+    t.mock.timers.tick(80);
+    assert.equal(renders, 2);
+    visible = true;
+    t.mock.timers.tick(80);
+    assert.equal(renders, 3);
+    board.dispose(); board.dispose();
+    t.mock.timers.tick(2000);
+    assert.equal(renders, 3);
+  } finally { board?.dispose(); t.mock.timers.reset(); await rm(root, { recursive: true, force: true }); }
+});
+
+test("idle boards do not request animation redraws", async t => {
+  const root = await mkdtemp(join(tmpdir(), "board-idle-"));
+  let board: Board | undefined;
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  try {
+    await new Registration(root).publish({ sessionId: "id", name: "Idle", cwd: "/p", status: "idle", statusSince: Date.now() });
+    let refreshed!: () => void;
+    const ready = new Promise<void>(resolve => { refreshed = resolve; });
+    let renders = 0;
+    board = new Board(root, undefined, { fg: (_color, text) => text }, () => { renders++; refreshed(); }, () => 24, () => {});
+    await ready;
+    t.mock.timers.tick(960);
+    assert.equal(renders, 1);
+  } finally { board?.dispose(); t.mock.timers.reset(); await rm(root, { recursive: true, force: true }); }
 });
 
 test("full-area surface fills every cell and scrolling reaches the last row", async () => {
@@ -97,7 +160,7 @@ test("Unicode/control text fits narrow widths and themes are evaluated on each r
 
 test("compact limitation marker precedes long metadata and unfocused board yields the screen", () => {
   const limited = rowLine({ ...row, cwd: "/very/long/checkout/".repeat(10), tools: ["bash", "read"], waitingUnavailable: true }, undefined, 1000, 80);
-  assert.match(limited, /^·\?/);
+  assert.match(limited, /^ [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]\?/);
   const board = new Board("/nonexistent-board-test", undefined, { fg: (_color, text) => text }, () => {}, () => 40, () => {}, () => false);
   try { assert.deepEqual(board.render(80), []); } finally { board.dispose(); }
 });
