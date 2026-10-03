@@ -19,7 +19,7 @@ test("installs only in TUI, follows live state, and cleans up timers and subscri
   const statuses = new Map<string, string>();
   let branchChanged = () => {};
   const ctx = {
-    mode: "rpc", cwd: "/test", model: { name: "Model A", contextWindow: 200000 },
+    mode: "rpc", cwd: "/test", model: { name: "OpenAI: Model A", id: "model-a", provider: "velocirouter", contextWindow: 200000 },
     isIdle: () => true,
     getContextUsage: () => ({ tokens: 1000, contextWindow: 200000, percent: 0.5 }),
     sessionManager: {
@@ -52,15 +52,16 @@ test("installs only in TUI, follows live state, and cleans up timers and subscri
   ctx.mode = "tui";
   emit("session_start");
   assert.equal(subscriptions, 1);
-  assert.match(line(), /Model A \[high\].*\$1.00.*0s$/);
+  assert.match(line(), /\(velocirouter\) model-a \[high\].*\$1.00.*0s$/);
+  assert.doesNotMatch(line(), /OpenAI/);
   line(); assert.equal(scans, 1);
   leaf = "b"; cost = 2;
   assert.match(line(), /\$2.00/);
   leaf = "a"; cost = 1;
   emit("session_tree");
   assert.match(line(), /\$1.00/);
-  ctx.model.name = "Model B"; thinking = "low";
-  assert.match(line(), /Model B \[low\]/);
+  ctx.model.name = "Model B"; ctx.model.id = "model-b"; ctx.model.provider = "anthropic"; thinking = "low";
+  assert.match(line(), /\(anthropic\) model-b \[low\]/);
   statuses.set("test", "status"); branch = "feature"; branchChanged();
   assert.equal(footer!.render(300)[1], "/test (feature) • status");
 

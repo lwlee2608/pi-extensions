@@ -3,7 +3,7 @@
 A muted, two-line footer for [Pi](https://pi.dev). Enabled automatically in interactive mode, using your current theme. No special font required.
 
 ```text
-Opus 5.5 [high] [━━━━━━━━────────────] 40% 280k / 700k tokens • $17.37 (98% cached, 475.6k new) • 19s
+(velocirouter) gpt-6-astra-fast [high] [━━━━━━━━────────────] 40% 280k / 700k tokens • $17.37 (98% cached, 475.6k new) • 19s
 ~/src/project (main) • extension statuses
 ```
 
@@ -31,7 +31,7 @@ Run `/reload` after installation. Requires Node.js 22.19 or newer and Pi 1.0.0.
 
 ## Display
 
-- **Model and thinking:** the active model's display name and thinking level.
+- **Provider, model, and thinking:** the active provider, model ID, and thinking level. Uses Pi's provider field, not the vendor label in the model's display name.
 - **Context:** a 20-cell progress bar, percentage, and estimated tokens / context window. Unknown context (such as immediately after compaction) shows `?`.
 - **Cost:** Pi's reported cost for the active session branch, including tool, compaction, summary, and background usage entries. This is an estimate, not a subscription bill.
 - **Cache:** cached input / total input across that branch. `new` is uncached input plus cache writes, excluding output tokens; it is cumulative, not the current context size.
