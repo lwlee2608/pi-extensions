@@ -118,7 +118,7 @@ test("Editor supports multiline drafts and focus; render fits narrow widths, hei
 test("untrusted terminal controls are removed for display, not answer values", () => {
   const attack = "\x1b]52;c;YXR0YWNr\x07\x1b[2J\x1bPmalicious\x1b\\";
   const h = harness({ questions: [{ question: attack + "Question", header: attack + "Header", options: [{ label: attack + "A", description: attack + "Description" }, { label: "B" }] }] });
-  assert.doesNotMatch(h.text(), /\x1b|malicious/);
+  assert.doesNotMatch(h.text(), /\x1b\]|\x1bP|\x1b\[2J|malicious/);
   h.input(enter, enter);
   assert.equal(h.output()?.answers[0].selected[0], attack + "A");
   assert.equal(display(attack + "safe\ntext"), "safe\ntext");

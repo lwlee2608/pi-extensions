@@ -1,11 +1,12 @@
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import { CURSOR_MARKER, Editor, Key, matchesKey, truncateToWidth, wrapTextWithAnsi, type Component, type Focusable, type KeybindingsManager, type TUI } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, Editor, Key, matchesKey, isKeyRelease, isKeyRepeat, truncateToWidth, wrapTextWithAnsi, type Component, type Focusable, type KeybindingsManager, type OverlayHandle, type TUI } from "@earendil-works/pi-tui";
 import { display, editorDisplay } from "./display.ts";
 import { result, type Result } from "./result.ts";
 import { validate, type Params } from "./schema.ts";
 import { QuestionnaireState } from "./state.ts";
 import { actionKeys, actionMatches } from "./keys.ts";
 import { Preview, columns } from "./preview.ts";
+import { completeOverlay } from "./overlay.ts";
 
 export class Questionnaire implements Component, Focusable {
   readonly state: QuestionnaireState;
@@ -209,6 +210,8 @@ export class Questionnaire implements Component, Focusable {
       const right = this.preview.render(wide ? width - bodyWidth - 3 : width, wide ? available : available - room);
       viewport = wide ? columns(viewport, right, bodyWidth, width) : [...viewport, ...right];
     }
+    const toggleKeys = actionKeys(this.keys, "pi-ask-user.toggle");
+    if (toggleKeys.length) hint = `${toggleKeys.join("/")} hide · ${hint}`;
     const lines = height < 3 ? viewport : [title, ...viewport, theme.fg("dim", hint)];
     return lines.slice(0, height).map(line => truncateToWidth(line, width));
   }
@@ -219,32 +222,45 @@ export async function runQuestionnaire(ctx: ExtensionContext, params: Params, si
   validate(params);
   signal?.throwIfAborted();
   let abort: (() => void) | undefined;
-  let mounted = false;
+  let handle: OverlayHandle | undefined;
+  let unsubscribe: (() => void) | undefined;
   let aborted = false;
   try {
     const outcome = await ctx.ui.custom<Result | Error>((tui, theme, keys, done) => {
+      if ((tui as TUI & { readonly hasOverlayEntries: boolean }).hasOverlayEntries) throw new Error("Close the existing dialog before opening a questionnaire.");
       let settled = false;
       const finish = (value: Result | Error) => {
         if (settled) return;
         settled = true;
-        done(value);
+        unsubscribe?.();
+        unsubscribe = undefined;
+        if (handle) completeOverlay(tui, handle, () => done(value));
+        else done(value);
       };
       abort = () => {
         aborted = true;
-        if (mounted) finish(new Error("Questionnaire aborted."));
+        if (handle) finish(new Error("Questionnaire aborted."));
       };
       signal?.addEventListener("abort", abort, { once: true });
       if (signal?.aborted) abort();
+      unsubscribe = ctx.ui.onTerminalInput(data => {
+        if (settled || !handle || !actionMatches(keys, "pi-ask-user.toggle", data)) return;
+        if (!handle.isHidden() && !handle.isFocused()) return;
+        if (handle.isHidden() && tui.hasOverlay()) return;
+        if (!isKeyRelease(data) && !isKeyRepeat(data)) handle.setHidden(!handle.isHidden());
+        return { consume: true };
+      });
       return new Questionnaire(params, tui, theme, keys, finish);
     }, {
       overlay: true,
       overlayOptions: { width: "95%", maxHeight: "100%", margin: 1 },
-      onHandle: () => { mounted = true; if (aborted) abort?.(); },
+      onHandle: overlay => { handle = overlay; if (aborted) abort?.(); },
     });
     if (outcome instanceof Error) throw outcome;
     if (!outcome) throw new Error("Questionnaire UI unavailable.");
     return outcome;
   } finally {
+    unsubscribe?.();
     if (abort) signal?.removeEventListener("abort", abort);
   }
 }
