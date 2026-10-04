@@ -10,7 +10,7 @@ export const parameters = Type.Object({
       description: Type.Optional(Type.String()),
       preview: Type.Optional(Type.String()),
     }), { minItems: 2, maxItems: 8 }),
-    multiSelect: Type.Optional(Type.Boolean({ default: false })),
+    multiSelect: Type.Optional(Type.Boolean({ default: false, description: "true shows checkboxes so the user can pick several options; use for \"select all that apply\" or choices that are not mutually exclusive. false picks exactly one." })),
   }), { minItems: 1, maxItems: 8 }),
 });
 

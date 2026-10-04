@@ -39,6 +39,7 @@ test("schema bounds, blank and duplicate labels, optional fields, and full decla
   assert.throws(() => validate({ questions: [{ ...question, options: [{ label: " A " }, { label: "A" }] }] }));
   validate({ questions: Array.from({ length: 8 }, () => ({ question: "Q", options: Array.from({ length: 8 }, (_, i) => ({ label: String(i), preview: "# Markdown" })) })) });
   assert.ok(description.length + JSON.stringify(parameters).length <= 1800);
+  assert.match(JSON.stringify(parameters), /"multiSelect":\{[^}]*"description"/);
   assert.match(description, /On cancellation, do not repeat the questions or assume answers/);
 });
 
