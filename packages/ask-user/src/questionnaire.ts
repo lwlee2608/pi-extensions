@@ -227,7 +227,7 @@ export async function runQuestionnaire(ctx: ExtensionContext, params: Params, si
   let aborted = false;
   try {
     const outcome = await ctx.ui.custom<Result | Error>((tui, theme, keys, done) => {
-      if (tui.hasOverlay()) throw new Error("Close the existing dialog before opening a questionnaire.");
+      if ((tui as TUI & { readonly hasOverlayEntries: boolean }).hasOverlayEntries) throw new Error("Close the existing dialog before opening a questionnaire.");
       let settled = false;
       const finish = (value: Result | Error) => {
         if (settled) return;

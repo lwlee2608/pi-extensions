@@ -194,13 +194,17 @@ test("ownership adapter restores the host method even if completion throws", () 
 });
 
 test("older overlays block mounting so their completion cannot remove a hidden questionnaire", async () => {
-  const view = ui();
-  const older = view.tui.showOverlay({ render: () => [], invalidate() {} });
-  await assert.rejects(runQuestionnaire(view.ctx, core), /Close the existing dialog/);
-  assert.equal(view.listeners.size, 0);
-  assert.equal(older.isFocused(), true);
-  view.reference.hideOverlay();
-  assert.equal(view.tui.hasOverlayEntries, false);
+  for (const mode of ["visible", "hidden", "responsive"] as const) {
+    const view = ui();
+    const older = view.tui.showOverlay({ render: () => [], invalidate() {} }, mode === "responsive" ? { visible: () => false } : undefined);
+    if (mode === "hidden") older.setHidden(true);
+    await assert.rejects(runQuestionnaire(view.ctx, core), /Close the existing dialog/);
+    assert.equal(view.listeners.size, 0);
+    assert.equal(view.tui.hasOverlayEntries, true);
+    view.reference.hideOverlay();
+    assert.equal(view.tui.hasOverlayEntries, false);
+    assert.equal(view.closes(), 0);
+  }
 });
 
 test("repeated completions restore exact renderer method and do not retain proxy wrappers", () => {
