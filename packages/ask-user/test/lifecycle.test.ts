@@ -109,11 +109,13 @@ test("abort before mount, during UI, and shutdown reject rather than return canc
   assert.equal(view.closes(), 1);
 });
 
-test("inline questionnaire replaces editor focus, submits a single question on choice, and restores focus", async () => {
+test("inline questionnaire takes editor focus, ignores type-ahead, submits a single question on choice, and restores focus", async () => {
   const view = ui();
   const pending = runQuestionnaire(view.ctx, { questions: core.questions.slice(0, 1) });
   await Promise.resolve();
   assert.equal(view.tui.getFocusedComponent(), view.component());
+  view.input("1");
+  await new Promise(resolve => setTimeout(resolve, 450));
   view.input("2");
   assert.deepEqual(await pending, { cancelled: false, answers: [{ questionIndex: 1, selected: ["PostgreSQL"] }] });
   assert.equal(view.tui.getFocusedComponent(), view.main);

@@ -18,7 +18,9 @@ const down = "\x1b[B", up = "\x1b[A", enter = "\r", esc = "\x1b";
 export function harness(params = core, rows = 30, bindings = new KeybindingsManager(TUI_KEYBINDINGS)) {
   let output: Result | undefined;
   const terminal = { rows };
-  const questionnaire = new Questionnaire(params, { terminal, requestRender() {} } as unknown as TUI, theme, bindings, value => { output = value; });
+  const clock = { time: 0 };
+  const questionnaire = new Questionnaire(params, { terminal, requestRender() {} } as unknown as TUI, theme, bindings, value => { output = value; }, () => clock.time);
+  clock.time = 1000;
   questionnaire.focused = true;
   const input = (...keys: string[]) => keys.forEach(key => questionnaire.handleInput(key));
   return { questionnaire, terminal, input, output: () => output, text: (width = 90) => questionnaire.render(width).join("\n") };
@@ -72,6 +74,29 @@ test("one question submits on choice; batches block submission until every quest
   assert.equal(h.questionnaire.state.tab, 1);
   h.input("\x1b[C", enter);
   assert.deepEqual(h.output()?.answers.map(answer => answer.selected), [["PostgreSQL"], ["Search"]]);
+});
+
+test("keys typed ahead of the questionnaire never answer it until input pauses", () => {
+  const open = (params: typeof core) => {
+    const clock = { time: 0 };
+    let output: Result | undefined;
+    const questionnaire = new Questionnaire(params, { terminal: { rows: 30 }, requestRender() {} } as unknown as TUI, theme,
+      new KeybindingsManager(TUI_KEYBINDINGS), value => { output = value; }, () => clock.time);
+    const input = (time: number, ...keys: string[]) => { clock.time = time; keys.forEach(key => questionnaire.handleInput(key)); };
+    return { questionnaire, input, output: () => output };
+  };
+  const h = open({ questions: core.questions.slice(0, 1) });
+  h.input(0, "2", enter, " ", "n");
+  h.input(300, "a", down);
+  h.input(650, "1", enter);
+  assert.equal(h.output(), undefined);
+  assert.equal(h.questionnaire.state.answers[0].cursor, 1);
+  assert.doesNotMatch(h.questionnaire.render(90).join("\n"), /Question note/);
+  h.input(1100, enter);
+  assert.deepEqual(h.output()?.answers[0].selected, ["PostgreSQL"]);
+  const early = open(core);
+  early.input(0, esc);
+  assert.deepEqual(early.output(), { cancelled: true, answers: [] });
 });
 
 test("single-select rows have no checkboxes; multi-select rows do; number keys pick, toggle, or open the editor", () => {

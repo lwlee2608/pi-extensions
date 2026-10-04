@@ -24,6 +24,7 @@ Space toggle · Enter confirm · ↑/↓ navigate · Tab/←→ switch · n note
 - In the editor: Enter applies, Shift+Enter adds a newline, Esc leaves without applying. Uncommitted text remains available when reopened. Ctrl+] remains the editor's jump-forward action.
 - `n`: edit a question note, or the global note from review. Saving an empty note clears it; Esc retains the draft without replacing a saved note.
 - PageUp / PageDown: scroll the focused option's preview. Previews sit beside options on wide terminals and below them on narrow terminals; stacked previews appear only when the terminal is tall enough. Editing always uses the full width.
+- Type-ahead guard: if you are still typing when the questionnaire opens, Enter, 1–9, Space, and `n` are ignored until you pause for 400 ms, so keystrokes meant for Pi's editor cannot answer a question. Esc and navigation work immediately.
 - Esc outside the editor requests cancellation. Existing answers or drafts require explicit **Discard answers** confirmation; **Keep editing** is the default.
 
 Pi's configured selection and editor bindings apply. Custom actions read `pi-ask-user.note`, `pi-ask-user.previewUp`, and `pi-ask-user.previewDown` from Pi's keybindings, accepting a key string, an array of keys, or `[]` to disable. Defaults are `n`, `pageUp`, and `pageDown`. These IDs do not receive automatic conflict detection; avoid editor/navigation conflicts. Custom text may accompany multi-select choices. Cancellation returns no drafts. RPC, JSON, and print runs do not expose the tool.

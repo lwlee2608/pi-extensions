@@ -9,6 +9,7 @@ import { Preview, columns } from "./preview.ts";
 
 const RESERVED_ROWS = 4;
 const PREVIEW_ROWS = 12;
+const TYPE_AHEAD_MS = 400;
 const keyNames: Record<string, string> = { up: "↑", down: "↓", left: "←", right: "→", escape: "Esc", enter: "Enter", tab: "Tab", space: "Space", pageUp: "PgUp", pageDown: "PgDn" };
 const keyLabel = (keys: string[]) => keys[0]?.split("+").map(part => keyNames[part] ?? (part.length > 1 ? part[0].toUpperCase() + part.slice(1) : part)).join("+");
 const fit = (text: string, width: number) => visibleWidth(text) <= width ? text : truncateToWidth(text, width, "…").replaceAll("\x1b[0m", "");
@@ -28,13 +29,17 @@ export class Questionnaire implements Component, Focusable {
   private hasFocus = false;
   private scroll = 0;
   private followFocus = false;
+  private readonly now: () => number;
+  private quietUntil: number;
 
-  constructor(params: Params, tui: TUI, theme: Theme, keys: KeybindingsManager, done: (value: Result) => void) {
+  constructor(params: Params, tui: TUI, theme: Theme, keys: KeybindingsManager, done: (value: Result) => void, now = Date.now) {
     this.state = new QuestionnaireState(params.questions);
     this.tui = tui;
     this.theme = theme;
     this.keys = keys;
     this.done = done;
+    this.now = now;
+    this.quietUntil = now() + TYPE_AHEAD_MS;
     this.editor = this.createEditor();
   }
 
@@ -104,7 +109,17 @@ export class Questionnaire implements Component, Focusable {
     return question?.options[this.state.answers[this.state.tab]?.cursor]?.preview ?? "";
   }
 
+  // Pi focuses the questionnaire mid-keystroke, so text typed for the main editor must not answer it.
+  // Answering keys wait until input pauses once; Esc and navigation work immediately.
+  private typedAhead(data: string): boolean {
+    const time = this.now();
+    if (time >= this.quietUntil) return false;
+    this.quietUntil = time + TYPE_AHEAD_MS;
+    return this.keys.matches(data, "tui.select.confirm") || /^[1-9]$/.test(data) || matchesKey(data, Key.space) || actionMatches(this.keys, "pi-ask-user.note", data);
+  }
+
   handleInput(data: string): void {
+    if (this.typedAhead(data)) return;
     if (!this.editing && !this.confirming && (matchesKey(data, Key.ctrl("up")) || matchesKey(data, Key.ctrl("down")))) {
       this.scroll = Math.max(0, this.scroll + (matchesKey(data, Key.ctrl("up")) ? -1 : 1));
       this.followFocus = false;

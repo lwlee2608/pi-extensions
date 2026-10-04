@@ -28,6 +28,7 @@
 ### Interaction
 - **Layout** — Inline via non-overlay `ctx.ui.custom()`: Pi swaps its input editor for the questionnaire and restores the editor text afterwards. Render at natural height, capped below the terminal height, with a top rule, a header tab bar (`☐`/`☒` per question plus `✔ Submit`, only with more than one question), numbered options with a `❯` cursor, and a short footer. Checkboxes appear only for multi-select; a saved single-select answer shows `✔`.
 - **Batch flow** — Tabs for questions plus a review tab. Users can revisit answers and retain drafts. Require every question answered and explicit Submit from review. A one-question batch has no tabs or review: choosing an answer submits it (supersedes the earlier one-question review requirement).
+- **Type-ahead guard** — Pi focuses the questionnaire while the user may still be typing a follow-up. Answering keys (Enter, 1–9, Space, note) are ignored until input first pauses for 400 ms after opening; Esc and navigation are never blocked.
 - **Single-select** — Select one authored option or use a custom answer. Only the active answer is submitted; switching modes does not erase the inactive text draft.
 - **Multi-select** — Allow selected options plus a custom typed answer. A question is answered with at least one selected option or nonblank custom text. Notes alone do not answer a question.
 - **Custom answers** — Always provide a built-in custom-answer row; no input flag is needed. Use Pi's multiline Editor.
