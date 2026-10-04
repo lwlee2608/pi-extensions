@@ -47,7 +47,7 @@
 - **Demo** — User-run deterministic walkthrough in an isolated profile. No model calls or credentials. A development-only command opens the same questionnaire runner as the real tool and displays its result; automated integration tests exercise tool registration and execution. The fixture is not published.
 
 ## Progress
-Phase 1 of 3 · 5/14 tasks complete; PR #4 passed three review rounds. No installation or global settings changes.
+Phase 2 of 3 · 9/14 tasks implemented; Phase 1 merged via PR #4 after three review rounds. Phase 2 review pending. No installation or global settings changes.
 
 Phase 1 verification: workspace checks and all repository tests pass; 15 ask-user tests cover the core flow and lifecycle. Declaration size is 796 characters. Core/single/cancel fixtures ran in disposable PTYs in regular and fullscreen modes without model calls. Package dry run passes. Final user-run demo remains pending. CI's pull-request branch filter now includes `integrate/**` so phase PRs receive the required checks.
 
@@ -66,13 +66,15 @@ Users can answer single/multi-select questions, type custom answers, revisit tab
 
 **Verify:** `npm run check -w packages/ask-user && npm test -w packages/ask-user`. Tests must prove array bounds, invalid/duplicate labels, declaration size ≤1,800, no injected prompt rules, mixed multi-select/custom answers, complete-only submission, single-question review, immediate cancellation of an untouched batch, confirmation for selected answers or saved/inactive/uncommitted drafts, state preservation on Keep editing/Esc, and no drafts in confirmed cancellation results. Verify cancellation guidance remains within the declaration budget. Verify abort cleanup, exclusion in RPC/JSON/print on session start and before agent start, rejection of direct non-TUI execution, preservation of other tools, and no forced TUI reactivation. Run the isolated demo launcher below with `/ask-user-demo core`, `/ask-user-demo single`, and `/ask-user-demo cancel`; the first fixture must return the selected labels and custom text, the second must still require review, and the third must return only the cancellation envelope. Preview/notes fixture behavior belongs to phase 2.
 
+Phase 2 verification: all workspace checks/tests pass (19 ask-user tests). Rich fixtures ran in isolated regular/fullscreen PTYs at 120 and 60 columns, including preview scrolling and saved-versus-draft question/global notes. Declaration remains 796 characters.
+
 ### Phase 2 — Compare options and explain decisions
 Users can inspect rich previews and attach notes without adding model prompt overhead.
 
-- [ ] Add responsive Markdown previews and bounded scrolling in both selection modes (`packages/ask-user/src/preview.ts`, `packages/ask-user/src/questionnaire.ts`).
-- [ ] Add per-answer/global note editing and review display, with saved values separate from uncommitted drafts (`packages/ask-user/src/state.ts`, `packages/ask-user/src/questionnaire.ts`).
-- [ ] Include submitted notes in compact model results while keeping previews and inactive drafts out (`packages/ask-user/src/result.ts`, `packages/ask-user/src/index.ts`).
-- [ ] Extend fixtures, keyboard/rendering tests, and usage documentation for previews, notes, Unicode, and resize (`packages/ask-user/test/fixtures/demo.ts`, `packages/ask-user/test/*.test.ts`, `packages/ask-user/README.md`).
+- [x] Add responsive Markdown previews and bounded scrolling in both selection modes (`packages/ask-user/src/preview.ts`, `packages/ask-user/src/questionnaire.ts`).
+- [x] Add per-answer/global note editing and review display, with saved values separate from uncommitted drafts (`packages/ask-user/src/state.ts`, `packages/ask-user/src/questionnaire.ts`).
+- [x] Include submitted notes in compact model results while keeping previews and inactive drafts out (`packages/ask-user/src/result.ts`, `packages/ask-user/src/index.ts`).
+- [x] Extend fixtures, keyboard/rendering tests, and usage documentation for previews, notes, Unicode, and resize (`packages/ask-user/test/fixtures/demo.ts`, `packages/ask-user/test/*.test.ts`, `packages/ask-user/README.md`).
 
 **Verify:** `npm run check -w packages/ask-user && npm test -w packages/ask-user`. Tests must prove previews for both modes, width-safe stacked/wide layouts, preview scrolling, full-width editing, saved-versus-draft notes, global notes, discard confirmation for note-only work (including uncommitted global notes), theme invalidation, and no preview echo in result content. Verify custom-action string/array overrides and disabled bindings follow the model-plus resolver pattern. In `/ask-user-demo rich`, compare previews at 120 and 60 columns, add notes, edit and cancel a changed note, and confirm only the saved notes appear in the result.
 

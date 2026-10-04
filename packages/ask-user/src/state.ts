@@ -6,16 +6,20 @@ export interface AnswerState {
   custom: string;
   draft: string;
   cursor: number;
+  notes: string;
+  noteDraft: string;
 }
 
 export class QuestionnaireState {
   readonly questions: Question[];
   readonly answers: AnswerState[];
   tab = 0;
+  globalNote = "";
+  globalNoteDraft = "";
 
   constructor(questions: Question[]) {
     this.questions = questions;
-    this.answers = questions.map(() => ({ selected: new Set(), customActive: false, custom: "", draft: "", cursor: 0 }));
+    this.answers = questions.map(() => ({ selected: new Set(), customActive: false, custom: "", draft: "", cursor: 0, notes: "", noteDraft: "" }));
   }
 
   select(index: number, option: number): void {
@@ -43,6 +47,13 @@ export class QuestionnaireState {
   }
 
   complete(): boolean { return this.questions.every((_, index) => this.answered(index)); }
-  hasWork(): boolean { return this.answers.some(answer => answer.selected.size > 0 || answer.custom.length > 0 || answer.draft.length > 0); }
+  hasWork(): boolean {
+    return this.globalNote.length > 0 || this.globalNoteDraft.length > 0 || this.answers.some(answer =>
+      answer.selected.size > 0 || answer.custom.length > 0 || answer.draft.length > 0 || answer.notes.length > 0 || answer.noteDraft.length > 0);
+  }
+  saveNote(index: number, text: string): void {
+    if (index === this.questions.length) { this.globalNote = text.trim(); this.globalNoteDraft = text; }
+    else { this.answers[index].notes = text.trim(); this.answers[index].noteDraft = text; }
+  }
   advance(): void { this.tab = Math.min(this.questions.length, this.tab + 1); }
 }
