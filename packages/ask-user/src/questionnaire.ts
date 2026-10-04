@@ -1,5 +1,5 @@
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import { CURSOR_MARKER, Editor, Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type Focusable, type KeybindingsManager, type TUI } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, Editor, Input, Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type Focusable, type KeybindingsManager, type TUI } from "@earendil-works/pi-tui";
 import { display, editorDisplay } from "./display.ts";
 import { result, type Result } from "./result.ts";
 import { validate, type Params } from "./schema.ts";
@@ -21,7 +21,8 @@ export class Questionnaire implements Component, Focusable {
   private readonly keys: KeybindingsManager;
   private readonly done: (value: Result) => void;
   private editor: Editor;
-  private editing: "custom" | "note" | undefined;
+  private editing = false;
+  private field?: { tab: number; input: Input };
   private readonly preview = new Preview();
   private confirming = false;
   private discard = false;
@@ -55,33 +56,29 @@ export class Questionnaire implements Component, Focusable {
     });
     editor.onChange = () => {
       const text = this.editor.getExpandedText();
-      if (this.editing === "custom") this.state.answers[this.state.tab].draft = text;
-      else if (this.editing === "note") {
-        if (this.reviewing) this.state.globalNoteDraft = text;
-        else this.state.answers[this.state.tab].noteDraft = text;
-      }
+      if (this.reviewing) this.state.globalNoteDraft = text;
+      else this.state.answers[this.state.tab].noteDraft = text;
     };
     editor.onSubmit = text => {
-      const kind = this.editing;
-      this.editing = undefined;
+      this.editing = false;
       this.editor.focused = false;
       this.resetScroll();
-      if (kind === "note") this.state.saveNote(this.state.tab, text);
-      else {
-        this.state.saveCustom(this.state.tab, text);
-        this.confirmAnswer();
-      }
+      this.state.saveNote(this.state.tab, text);
       this.tui.requestRender();
     };
     return editor;
   }
 
   get focused(): boolean { return this.hasFocus; }
-  set focused(value: boolean) { this.hasFocus = value; this.editor.focused = value && !!this.editing; }
+  set focused(value: boolean) { this.hasFocus = value; this.editor.focused = value && this.editing; }
   invalidate(): void { this.editor.invalidate(); this.preview.invalidate(); }
 
   private get single(): boolean { return this.state.questions.length === 1; }
   private get reviewing(): boolean { return this.state.tab === this.state.questions.length; }
+  private get typing(): boolean {
+    const question = this.state.questions[this.state.tab];
+    return !!question && !this.editing && !this.confirming && this.state.answers[this.state.tab].cursor === question.options.length;
+  }
 
   private resetScroll(): void { this.scroll = 0; this.followFocus = false; }
 
@@ -96,12 +93,36 @@ export class Questionnaire implements Component, Focusable {
     else { this.confirming = true; this.discard = false; }
   }
 
-  private openEditor(kind: "custom" | "note"): void {
-    const answer = this.state.answers[this.state.tab];
+  private openNote(): void {
     this.editor = this.createEditor();
-    this.editor.setText(kind === "custom" ? answer.draft : answer ? answer.noteDraft : this.state.globalNoteDraft);
-    this.editing = kind;
+    this.editor.setText(this.state.answers[this.state.tab]?.noteDraft ?? this.state.globalNoteDraft);
+    this.editing = true;
     this.editor.focused = this.focused;
+  }
+
+  private customInput(): Input {
+    if (this.field?.tab === this.state.tab) return this.field.input;
+    const input = new Input({ prompt: "", placeholder: "Type something.", placeholderStyle: text => this.theme.fg("muted", text) });
+    input.setValue(this.state.answers[this.state.tab].draft);
+    this.field = { tab: this.state.tab, input };
+    return input;
+  }
+
+  private type(data: string): void {
+    const input = this.customInput();
+    input.handleInput(data);
+    const answer = this.state.answers[this.state.tab];
+    if (this.state.questions[this.state.tab].multiSelect || answer.customActive) this.state.saveCustom(this.state.tab, input.getValue());
+    else answer.draft = input.getValue();
+  }
+
+  private submitCustom(): void {
+    const answer = this.state.answers[this.state.tab];
+    if (!this.state.questions[this.state.tab].multiSelect) {
+      if (!answer.draft.trim()) return;
+      this.state.saveCustom(this.state.tab, answer.draft);
+    }
+    this.confirmAnswer();
   }
 
   private previewText(): string {
@@ -131,10 +152,11 @@ export class Questionnaire implements Component, Focusable {
     const up = this.keys.matches(data, "tui.select.up");
     const down = this.keys.matches(data, "tui.select.down");
     const digit = /^[1-9]$/.test(data) ? Number(data) - 1 : -1;
-    const next = matchesKey(data, Key.tab) || matchesKey(data, Key.right);
-    const previous = matchesKey(data, Key.shift("tab")) || matchesKey(data, Key.left);
+    const arrows = !this.typing;
+    const next = matchesKey(data, Key.tab) || (arrows && matchesKey(data, Key.right));
+    const previous = matchesKey(data, Key.shift("tab")) || (arrows && matchesKey(data, Key.left));
     if (this.editing) {
-      if (cancel) { this.editing = undefined; this.editor.focused = false; }
+      if (cancel) { this.editing = false; this.editor.focused = false; }
       else this.editor.handleInput(data);
     } else if (this.confirming) {
       if (cancel) this.confirming = false;
@@ -150,8 +172,11 @@ export class Questionnaire implements Component, Focusable {
       const count = this.state.questions.length + 1;
       this.state.tab = (this.state.tab + (next ? 1 : -1) + count) % count;
       this.resetScroll();
+    } else if (this.typing && !up && !down) {
+      if (confirm) this.submitCustom();
+      else this.type(data);
     } else if (actionMatches(this.keys, "pi-ask-user.note", data)) {
-      this.openEditor("note");
+      this.openNote();
     } else if (this.previewText() && (actionMatches(this.keys, "pi-ask-user.previewUp", data) || actionMatches(this.keys, "pi-ask-user.previewDown", data))) {
       this.preview.setText(this.previewText());
       this.preview.scroll(actionMatches(this.keys, "pi-ask-user.previewUp", data) ? -1 : 1);
@@ -169,12 +194,14 @@ export class Questionnaire implements Component, Focusable {
       if (up || down) {
         answer.cursor = Math.max(0, Math.min(question.options.length, answer.cursor + (up ? -1 : 1)));
         this.followFocus = true;
-      } else if (matchesKey(data, Key.space) && question.multiSelect && answer.cursor < question.options.length) {
+      } else if (matchesKey(data, Key.space) && question.multiSelect) {
         this.state.select(this.state.tab, answer.cursor);
-      } else if (confirm || (digit >= 0 && digit <= question.options.length)) {
+      } else if (digit === question.options.length) {
+        answer.cursor = digit;
+        this.followFocus = true;
+      } else if (confirm || (digit >= 0 && digit < question.options.length)) {
         if (digit >= 0) { answer.cursor = digit; this.followFocus = true; }
-        if (answer.cursor === question.options.length) this.openEditor("custom");
-        else if (question.multiSelect && digit >= 0) this.state.select(this.state.tab, answer.cursor);
+        if (question.multiSelect && digit >= 0) this.state.select(this.state.tab, answer.cursor);
         else {
           if (!question.multiSelect) this.state.select(this.state.tab, answer.cursor);
           this.confirmAnswer();
@@ -205,7 +232,7 @@ export class Questionnaire implements Component, Focusable {
     const hints: string[] = [];
     const hint = (keys: string | undefined, action: string) => { if (keys) hints.push(`${keys} ${action}`); };
     const navigate = `${keyLabel(this.keys.getKeys("tui.select.up"))}/${keyLabel(this.keys.getKeys("tui.select.down"))}`;
-    const switchHint = () => { if (!this.single) hint("Tab/←→", "switch"); };
+    const switchHint = (arrows = true) => { if (!this.single) hint(arrows ? "Tab/←→" : "Tab", "switch"); };
     const noteHint = () => hint(keyLabel(actionKeys(this.keys, "pi-ask-user.note")), "note");
     const confirmKey = keyLabel(this.keys.getKeys("tui.select.confirm"));
     const cancelKey = keyLabel(this.keys.getKeys("tui.select.cancel"));
@@ -219,7 +246,7 @@ export class Questionnaire implements Component, Focusable {
       hint(navigate, "navigate");
       cancelHint = `${cancelKey} keep editing`;
     } else if (this.editing) {
-      add(theme.bold(this.editing === "note" ? (this.reviewing ? "Global note" : "Question note") : display(state.questions[state.tab].question)));
+      add(theme.bold(this.reviewing ? "Global note" : "Question note"));
       body.push("");
       // Preserve SGR styling and cursor positioning, but remove executable terminal controls.
       const editorLines = this.editor.render(width).map(editorDisplay);
@@ -255,20 +282,27 @@ export class Questionnaire implements Component, Focusable {
       body.push("");
       const rows = [
         ...question.options.map((option, i) => ({ label: display(option.label), description: option.description, checked: answer.selected.has(i) })),
-        { label: answer.custom ? display(answer.custom) : "Type something.", description: undefined, checked: answer.customActive },
+        { label: answer.draft ? display(answer.draft) : "Type something.", description: undefined, checked: answer.customActive },
       ];
+      const typing = this.typing;
       rows.forEach((row, i) => {
         const box = question.multiSelect ? `[${row.checked ? "✔" : " "}] ` : "";
         const mark = !question.multiSelect && row.checked ? theme.fg("success", " ✔") : "";
+        if (typing && i === answer.cursor) {
+          const input = this.customInput();
+          input.focused = this.hasFocus;
+          const used = 2 + `${i + 1}. `.length + box.length + visibleWidth(mark);
+          row.label = editorDisplay(input.render(Math.max(1, bodyWidth - used))[0].trimEnd());
+        }
         choice(i, box + row.label + mark, i === answer.cursor);
         if (row.description) add(theme.fg("muted", display(row.description)), " ".repeat(2 + `${i + 1}. `.length + box.length));
       });
       if (answer.notes) { body.push(""); add(theme.fg("muted", `Note: ${display(answer.notes)}`)); }
-      if (question.multiSelect) hint("Space", "toggle");
+      if (question.multiSelect && !typing) hint("Space", "toggle");
       hint(confirmKey, question.multiSelect ? "confirm" : "select");
       hint(navigate, "navigate");
-      switchHint();
-      noteHint();
+      switchHint(!typing);
+      if (!typing) noteHint();
       if (hasPreview) hint(`${keyLabel(actionKeys(this.keys, "pi-ask-user.previewUp"))}/${keyLabel(actionKeys(this.keys, "pi-ask-user.previewDown"))}`, "preview");
     }
 

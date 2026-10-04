@@ -1,6 +1,6 @@
 # Pi Ask User
 
-A lean terminal-only `ask_user_question` tool. Supports 1–8 questions with 2–8 options, single/multi-select, multiline custom answers, Markdown previews, notes, review, and safe cancellation. Like Claude Code, it renders inline in place of Pi's input editor, so the transcript stays visible, and restores your editor text when done.
+A lean terminal-only `ask_user_question` tool. Supports 1–8 questions with 2–8 options, single/multi-select, inline custom answers, Markdown previews, notes, review, and safe cancellation. Like Claude Code, it renders inline in place of Pi's input editor, so the transcript stays visible, and restores your editor text when done.
 
 ```
 ────────────────────────────────────────
@@ -17,15 +17,16 @@ Space toggle · Enter confirm · ↑/↓ navigate · Tab/←→ switch · n note
 
 - Tab / Shift+Tab or ← / →: change question or open review. Tabs appear only with more than one question.
 - Up / Down: move through options or the review's Submit/Cancel choices.
-- 1–9: pick an option directly. In multi-select this toggles it; on the custom row it opens the editor.
+- 1–9: pick an option directly. In multi-select this toggles it; the last number moves to the custom row.
 - Ctrl+Up / Ctrl+Down: scroll question and option text without changing the focused option.
 - Space: toggle a multi-select option. Only multi-select questions show checkboxes.
-- Enter: choose a single option, confirm a multi-select answer, or open the custom-answer editor. A one-question batch submits on choice; larger batches submit from review once every question is answered.
-- In the editor: Enter applies, Shift+Enter adds a newline, Esc leaves without applying. Uncommitted text remains available when reopened. Ctrl+] remains the editor's jump-forward action.
+- Enter: choose a single option or the typed custom answer, or confirm a multi-select answer. A one-question batch submits on choice; larger batches submit from review once every question is answered.
+- Custom row: type directly on `Type something.`, like Claude Code. There, digits, Space, and `n` are text and ←/→ move the text cursor; use Tab/Shift+Tab to switch questions. In multi-select, nonblank text checks the row as you type, so you can still toggle other options before confirming. Unconfirmed single-select text is kept but not submitted.
+- In the note editor: Enter applies, Shift+Enter adds a newline, Esc leaves without applying. Uncommitted text remains available when reopened. Ctrl+] remains the editor's jump-forward action.
 - `n`: edit a question note, or the global note from review. Saving an empty note clears it; Esc retains the draft without replacing a saved note.
 - PageUp / PageDown: scroll the focused option's preview. Previews sit beside options on wide terminals and below them on narrow terminals; stacked previews appear only when the terminal is tall enough. Editing always uses the full width.
 - Type-ahead guard: if you are still typing when the questionnaire opens, Enter, 1–9, Space, and `n` are ignored until you pause for 400 ms, so keystrokes meant for Pi's editor cannot answer a question. Esc and navigation work immediately.
-- Esc outside the editor requests cancellation. Existing answers or drafts require explicit **Discard answers** confirmation; **Keep editing** is the default.
+- Esc outside the note editor requests cancellation. Existing answers or drafts require explicit **Discard answers** confirmation; **Keep editing** is the default.
 
 Pi's configured selection and editor bindings apply. Custom actions read `pi-ask-user.note`, `pi-ask-user.previewUp`, and `pi-ask-user.previewDown` from Pi's keybindings, accepting a key string, an array of keys, or `[]` to disable. Defaults are `n`, `pageUp`, and `pageDown`. These IDs do not receive automatic conflict detection; avoid editor/navigation conflicts. Custom text may accompany multi-select choices. Cancellation returns no drafts. RPC, JSON, and print runs do not expose the tool.
 

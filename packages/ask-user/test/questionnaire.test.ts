@@ -45,8 +45,7 @@ test("schema bounds, blank and duplicate labels, optional fields, and full decla
 test("real component handles mixed selections, custom text, revisits, explicit review, and compact output", () => {
   const h = harness();
   h.input(enter); // SQLite
-  h.input(" ", down, " ", down, down, enter); // Search + Export, open custom editor
-  h.input("Offline mode", enter);
+  h.input(" ", down, " ", down, down, "Offline mode", enter); // Search + Export + inline custom text
   assert.equal(h.questionnaire.state.tab, 2);
   assert.equal(h.output(), undefined);
   h.input("\t", down, enter); // revisit and select PostgreSQL
@@ -99,7 +98,7 @@ test("keys typed ahead of the questionnaire never answer it until input pauses",
   assert.deepEqual(early.output(), { cancelled: true, answers: [] });
 });
 
-test("single-select rows have no checkboxes; multi-select rows do; number keys pick, toggle, or open the editor", () => {
+test("single-select rows have no checkboxes; multi-select rows do; number keys pick, toggle, or focus the custom row", () => {
   const h = harness();
   const q1 = h.text();
   assert.match(q1, /^─+$/m);
@@ -115,6 +114,8 @@ test("single-select rows have no checkboxes; multi-select rows do; number keys p
   h.input("4", "Custom", enter);
   assert.equal(h.questionnaire.state.tab, 2);
   h.input("\x1b[D", "\x1b[D");
+  assert.equal(h.questionnaire.state.tab, 1); // ← edits the focused custom text
+  h.input("\x1b[Z");
   assert.match(h.text(), /2\. PostgreSQL ✔/);
   h.input("\x1b[D", "2");
   assert.match(h.text(), /Discard all answers/);
@@ -160,12 +161,12 @@ test("untouched cancel is immediate; work requires explicit discard and keep pre
   const untouched = harness(); untouched.input(esc);
   assert.deepEqual(untouched.output(), { cancelled: true, answers: [] });
   const h = harness();
-  h.input(down, down, enter, "draft", esc, esc);
+  h.input(down, down, "draft", esc);
   assert.match(h.text(), /❯ 1\. Keep editing/);
   assert.equal(h.output(), undefined);
   h.input(enter, esc, esc); // keep, request, escape confirmation
   assert.equal(h.questionnaire.state.answers[0].draft, "draft");
-  h.input(enter, enter); // reopen draft and save
+  h.input(enter); // save the retained draft
   assert.equal(h.questionnaire.state.answers[0].custom, "draft");
   h.input(esc, down, enter);
   assert.deepEqual(h.output(), { cancelled: true, answers: [] });
@@ -183,10 +184,13 @@ test("single-select inactive custom text is retained but never returned", () => 
   assert.throws(() => result(state), /Every question/);
 });
 
-test("Editor supports multiline drafts and focus; render fits narrow widths, height, and resize", () => {
+test("custom answers are typed inline on their row with focus; render fits narrow widths, height, and resize", () => {
   const h = harness({ questions: [{ question: "界".repeat(60), options: [{ label: "A".repeat(80) }, { label: "B" }] }] });
-  h.input(down, down, enter, "first", "\n", "second");
-  assert.equal(h.questionnaire.state.answers[0].draft, "first\nsecond");
+  h.input(down, down);
+  assert.match(h.text(), /❯ 3\. .*T.*ype something\./);
+  h.input("first", " ", "second", "\n");
+  assert.equal(h.questionnaire.state.answers[0].draft, "first second");
+  assert.match(h.text(), /❯ 3\. first second/);
   assert.match(h.text(), /\x1b_pi:c\x07/);
   h.questionnaire.focused = false;
   assert.doesNotMatch(h.text(), /\x1b_pi:c\x07/);
@@ -201,7 +205,18 @@ test("Editor supports multiline drafts and focus; render fits narrow widths, hei
     }
   }
   h.input(enter);
-  assert.equal(h.questionnaire.state.answers[0].custom, "first\nsecond");
+  assert.equal(h.output()?.answers[0].custom, "first second");
+});
+
+test("multi-select custom text stays editable inline while other options are toggled", () => {
+  const h = harness({ questions: core.questions.slice(1) });
+  h.input("4", "Offline 1 n", up, up, " ", "4", "\x7f");
+  assert.equal(h.output(), undefined);
+  assert.match(h.text(), /2\. \[✔\] Export/);
+  assert.match(h.text(), /❯ 4\. \[✔\] Offline 1/);
+  assert.doesNotMatch(h.text(), /Space toggle|n note/);
+  h.input(enter);
+  assert.deepEqual(h.output()?.answers, [{ questionIndex: 1, selected: ["Export"], custom: "Offline 1" }]);
 });
 
 test("untrusted terminal controls are removed for display, not answer values", () => {
@@ -217,7 +232,9 @@ test("editor sanitization preserves visible cursor and headers remain single-lin
   const h = harness({ questions: [{ ...core.questions[0], header: "First\nSecond\tThird" }, core.questions[1]] });
   assert.match(h.text(), /First Second Third/);
   assert.ok(h.questionnaire.render(90).every(line => !/[\n\t]/.test(line)));
-  h.input(down, down, enter, "abc", "\x1b[D");
+  h.input(down, down, "abc", "\x1b[D", "X");
+  assert.equal(h.questionnaire.state.tab, 0);
+  assert.equal(h.questionnaire.state.answers[0].draft, "abXc");
   assert.match(h.text(), /\x1b\[7m/);
   assert.equal(editorDisplay("\x1b]52;c;attack\x07\x1b[2J\x1b[7mx\x1b[0m"), "\x1b[7mx\x1b[0m");
 });
@@ -238,7 +255,7 @@ test("all long question and description lines can be read without moving selecti
 
 test("undo history never crosses question boundaries", () => {
   const h = harness();
-  h.input(down, down, enter, "private Q1", esc, "\t", down, down, down, enter, "\x1f");
+  h.input(down, down, "private Q1", "\t", down, down, down, "\x1f");
   assert.equal(h.questionnaire.state.answers[1].draft, "");
   assert.equal(h.questionnaire.state.answers[0].draft, "private Q1");
 });
@@ -325,10 +342,11 @@ test("custom-action defaults, string/array overrides, disabled bindings, and edi
   assert.equal(h.questionnaire.state.answers[0].noteDraft, "note");
 });
 
-test("uses remapped built-in navigation and preserves Ctrl+] in the Editor", () => {
+test("uses remapped built-in navigation and preserves Ctrl+] in the note Editor", () => {
   const h = harness(core, 30, new KeybindingsManager(TUI_KEYBINDINGS, { "tui.select.down": "ctrl+n" }));
-  h.input("\x0e", "\x0e", enter, "a b c", "\x01", "\x1d", "c", "X");
-  assert.equal(h.questionnaire.state.answers[0].draft, "a b Xc");
+  h.input("\x0e", "\x0e", "b", "\x01", "a");
+  assert.equal(h.questionnaire.state.answers[0].draft, "ab");
+  h.input(up, "n", "a b c", "\x01", "\x1d", "c", "X");
+  assert.equal(h.questionnaire.state.answers[0].noteDraft, "a b Xc");
   assert.equal(h.output(), undefined);
-  h.input(esc, up);
 });
