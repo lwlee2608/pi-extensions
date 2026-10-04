@@ -45,7 +45,7 @@ test("schema bounds, blank and duplicate labels, optional fields, and full decla
 test("real component handles mixed selections, custom text, revisits, explicit review, and compact output", () => {
   const h = harness();
   h.input(enter); // SQLite
-  h.input(" ", down, " ", down, down, "Offline mode", enter); // Search + Export + inline custom text
+  h.input(" ", down, " ", down, down, "Offline mode", enter, enter); // Search + Export + inline custom text, then Next
   assert.equal(h.questionnaire.state.tab, 2);
   assert.equal(h.output(), undefined);
   h.input("\t", down, enter); // revisit and select PostgreSQL
@@ -66,7 +66,7 @@ test("one question submits on choice; batches block submission until every quest
   assert.match(h.text(), /Unanswered/);
   h.input(enter);
   assert.equal(h.questionnaire.state.tab, 0);
-  h.input("\x1b[C", "1", enter, "\x1b[D");
+  h.input("\x1b[C", "1", down, down, down, down, enter, "\x1b[D");
   assert.equal(h.questionnaire.state.tab, 1);
   assert.equal(h.output(), undefined);
   h.input("\x1b[D", "2");
@@ -107,15 +107,13 @@ test("single-select rows have no checkboxes; multi-select rows do; number keys p
   assert.doesNotMatch(q1, /\[ \]/);
   h.input("2");
   assert.match(h.text(), /☒ Q1/);
-  assert.match(h.text(), /❯ 1\. \[ \] Search\n  2\. \[ \] Export\n  3\. \[ \] Audit\n  4\. \[ \] Type something\./);
+  assert.match(h.text(), /❯ 1\. \[ \] Search\n  2\. \[ \] Export\n  3\. \[ \] Audit\n  4\. \[ \] Type something\.\n {5}Next/);
   h.input("1", "3");
   assert.match(h.text(), /1\. \[✔\] Search\n  2\. \[ \] Export\n❯ 3\. \[✔\] Audit/);
   assert.equal(h.questionnaire.state.tab, 1);
-  h.input("4", "Custom", enter);
+  h.input("4", "Custom", enter, enter);
   assert.equal(h.questionnaire.state.tab, 2);
   h.input("\x1b[D", "\x1b[D");
-  assert.equal(h.questionnaire.state.tab, 1); // ← edits the focused custom text
-  h.input("\x1b[Z");
   assert.match(h.text(), /2\. PostgreSQL ✔/);
   h.input("\x1b[D", "2");
   assert.match(h.text(), /Discard all answers/);
@@ -208,15 +206,18 @@ test("custom answers are typed inline on their row with focus; render fits narro
   assert.equal(h.output()?.answers[0].custom, "first second");
 });
 
-test("multi-select custom text stays editable inline while other options are toggled", () => {
+test("multi-select Enter toggles; custom text stays editable inline; only the Submit row submits", () => {
   const h = harness({ questions: core.questions.slice(1) });
-  h.input("4", "Offline 1 n", up, up, " ", "4", "\x7f");
-  assert.equal(h.output(), undefined);
-  assert.match(h.text(), /2\. \[✔\] Export/);
+  assert.match(h.text(), /4\. \[ \] Type something\.\n {5}Submit/);
+  h.input("4", "Offline 1 n", "\x7f");
   assert.match(h.text(), /❯ 4\. \[✔\] Offline 1/);
-  assert.doesNotMatch(h.text(), /Space toggle|n note/);
+  assert.doesNotMatch(h.text(), /Space|n note/);
+  h.input(up, up, enter, enter, enter, "1", down, down, down, down);
+  assert.equal(h.output(), undefined);
+  assert.match(h.text(), /1\. \[✔\] Search\n  2\. \[✔\] Export\n  3\. \[ \] Audit\n  4\. \[✔\] Offline 1 \n❯ {4}Submit/);
+  assert.match(h.text(), /Enter submit/);
   h.input(enter);
-  assert.deepEqual(h.output()?.answers, [{ questionIndex: 1, selected: ["Export"], custom: "Offline 1" }]);
+  assert.deepEqual(h.output()?.answers, [{ questionIndex: 1, selected: ["Search", "Export"], custom: "Offline 1" }]);
 });
 
 test("untrusted terminal controls are removed for display, not answer values", () => {
@@ -301,7 +302,7 @@ test("Markdown link destinations remain visible with terminal hyperlinks enabled
 test("saved notes and global note appear in review/results, drafts and previews do not", () => {
   const h = harness(rich);
   h.input("n", "Prefer simpler operations", enter, enter);
-  h.input(" ", enter, "n", "Ship incrementally", enter);
+  h.input(" ", down, down, down, down, enter, "n", "Ship incrementally", enter);
   assert.match(h.text(), /Global note: Ship incrementally/);
   h.input("\t", "n", "\x01", "\x0b", "not saved", esc, "\t", "\t");
   assert.match(h.text(), /Prefer simpler operations/);

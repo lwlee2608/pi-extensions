@@ -11,16 +11,17 @@ Which features should we include?
 ❯ 1. [✔] Search
   2. [ ] Export
   3. [ ] Type something.
+     Next
 
-Space toggle · Enter confirm · ↑/↓ navigate · Tab/←→ switch · n note · Esc cancel
+Space/Enter toggle · ↑/↓ navigate · Tab/←→ switch · n note · Esc cancel
 ```
 
 - Tab / Shift+Tab or ← / →: change question or open review. Tabs appear only with more than one question.
 - Up / Down: move through options or the review's Submit/Cancel choices.
 - 1–9: pick an option directly. In multi-select this toggles it; the last number moves to the custom row.
 - Ctrl+Up / Ctrl+Down: scroll question and option text without changing the focused option.
-- Space: toggle a multi-select option. Only multi-select questions show checkboxes.
-- Enter: choose a single option or the typed custom answer, or confirm a multi-select answer. A one-question batch submits on choice; larger batches submit from review once every question is answered.
+- Space / Enter: toggle a multi-select option. Only multi-select questions show checkboxes. Like Claude Code, they end with a **Submit** row (**Next** in a batch) that confirms the question; it is dimmed until something is chosen.
+- Enter: choose a single option or the typed custom answer. In multi-select, Enter toggles; on the custom row it moves to Submit. A one-question batch submits on choice; larger batches submit from review once every question is answered.
 - Custom row: type directly on `Type something.`, like Claude Code. There, digits, Space, and `n` are text and ←/→ move the text cursor; use Tab/Shift+Tab to switch questions. In multi-select, nonblank text checks the row as you type, so you can still toggle other options before confirming. Unconfirmed single-select text is kept but not submitted.
 - In the note editor: Enter applies, Shift+Enter adds a newline, Esc leaves without applying. Uncommitted text remains available when reopened. Ctrl+] remains the editor's jump-forward action.
 - `n`: edit a question note, or the global note from review. Saving an empty note clears it; Esc retains the draft without replacing a saved note.

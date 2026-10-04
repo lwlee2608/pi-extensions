@@ -118,10 +118,9 @@ export class Questionnaire implements Component, Focusable {
 
   private submitCustom(): void {
     const answer = this.state.answers[this.state.tab];
-    if (!this.state.questions[this.state.tab].multiSelect) {
-      if (!answer.draft.trim()) return;
-      this.state.saveCustom(this.state.tab, answer.draft);
-    }
+    if (this.state.questions[this.state.tab].multiSelect) { answer.cursor++; this.followFocus = true; return; }
+    if (!answer.draft.trim()) return;
+    this.state.saveCustom(this.state.tab, answer.draft);
     this.confirmAnswer();
   }
 
@@ -191,21 +190,20 @@ export class Questionnaire implements Component, Focusable {
     } else {
       const question = this.state.questions[this.state.tab];
       const answer = this.state.answers[this.state.tab];
+      const lastRow = question.options.length + (question.multiSelect ? 1 : 0);
       if (up || down) {
-        answer.cursor = Math.max(0, Math.min(question.options.length, answer.cursor + (up ? -1 : 1)));
+        answer.cursor = Math.max(0, Math.min(lastRow, answer.cursor + (up ? -1 : 1)));
         this.followFocus = true;
-      } else if (matchesKey(data, Key.space) && question.multiSelect) {
-        this.state.select(this.state.tab, answer.cursor);
-      } else if (digit === question.options.length) {
+      } else if (digit >= 0 && digit <= question.options.length) {
         answer.cursor = digit;
         this.followFocus = true;
-      } else if (confirm || (digit >= 0 && digit < question.options.length)) {
-        if (digit >= 0) { answer.cursor = digit; this.followFocus = true; }
-        if (question.multiSelect && digit >= 0) this.state.select(this.state.tab, answer.cursor);
-        else {
-          if (!question.multiSelect) this.state.select(this.state.tab, answer.cursor);
-          this.confirmAnswer();
-        }
+        if (digit < question.options.length) this.state.select(this.state.tab, digit);
+        if (digit < question.options.length && !question.multiSelect) this.confirmAnswer();
+      } else if (question.multiSelect && answer.cursor < question.options.length && (confirm || matchesKey(data, Key.space))) {
+        this.state.select(this.state.tab, answer.cursor);
+      } else if (confirm) {
+        if (!question.multiSelect) this.state.select(this.state.tab, answer.cursor);
+        this.confirmAnswer();
       }
     }
     this.tui.requestRender();
@@ -297,9 +295,18 @@ export class Questionnaire implements Component, Focusable {
         choice(i, box + row.label + mark, i === answer.cursor);
         if (row.description) add(theme.fg("muted", display(row.description)), " ".repeat(2 + `${i + 1}. `.length + box.length));
       });
+      const onSubmit = question.multiSelect && answer.cursor === rows.length;
+      if (question.multiSelect) {
+        if (onSubmit) focusLine = body.length;
+        const label = theme.bold(this.single ? "Submit" : "Next");
+        const indent = " ".repeat(`${rows.length + 1}. `.length);
+        add(onSubmit ? theme.fg("accent", label) : state.answered(state.tab) ? label : theme.fg("muted", label), (onSubmit ? `${theme.fg("accent", "❯")} ` : "  ") + indent);
+      }
       if (answer.notes) { body.push(""); add(theme.fg("muted", `Note: ${display(answer.notes)}`)); }
-      if (question.multiSelect && !typing) hint("Space", "toggle");
-      hint(confirmKey, question.multiSelect ? "confirm" : "select");
+      if (!question.multiSelect) hint(confirmKey, "select");
+      else if (typing) hint(confirmKey, "done");
+      else if (onSubmit) hint(confirmKey, this.single ? "submit" : "next");
+      else hint(`Space/${confirmKey}`, "toggle");
       hint(navigate, "navigate");
       switchHint(!typing);
       if (!typing) noteHint();
