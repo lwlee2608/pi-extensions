@@ -8,7 +8,7 @@ A lean terminal-only `ask_user_question` tool. Supports 1â€“8 questions with 2â€
 - Space: toggle a multi-select option.
 - Enter: choose a single option, confirm a multi-select answer, or open the custom-answer editor. Submission happens only from review, with every question answered.
 - In the editor: Enter applies, Shift+Enter adds a newline, Esc leaves without applying. Uncommitted text remains available when reopened.
-- Alt+h: hide/reopen, including while editing. Drafts, selection, cursor, and scroll state stay intact. Ctrl+] remains Pi's jump-forward action in both editors. Close other overlays before reopening this one.
+- Alt+h: hide/reopen, including while editing. Drafts, selection, cursor, and scroll state stay intact. Ctrl+] remains Pi's jump-forward action in both editors. Close other overlays before opening or reopening this one. Opening while another dialog is visible returns an error rather than risking that dialog's cleanup.
 - `n`: edit a question note, or the global note from review. Saving an empty note clears it; Esc retains the draft without replacing a saved note.
 - PageUp / PageDown: scroll the focused option's preview. Previews sit beside options on wide terminals and below them on narrow terminals; editing always uses the full pane.
 - Esc outside the editor requests cancellation. Existing answers or drafts require explicit **Discard answers** confirmation; **Keep editing** is the default.
@@ -55,4 +55,4 @@ The manifest advertises `pi-package` and a source extension entry point for Pi d
 
 ## Host compatibility
 
-Requires Node.js 22.19+ and Pi 1.0.0+. Pi 1.0.0 custom-overlay completion removes the newest overlay instead of the caller's overlay. `src/overlay.ts` temporarily redirects that synchronous removal to the questionnaire's own handle and restores the original method in `finally`. This approved workaround prevents hidden aborts from closing other dialogs; no installed Pi files are patched. Its regression test uses Pi's real overlay stack. Recheck this adapter when upgrading Pi and remove it when owner-specific cleanup is fixed upstream.
+Requires Node.js 22.19+ and Pi 1.0.0+. Pi 1.0.0 custom-overlay completion removes the newest overlay instead of the caller's overlay. `src/overlay.ts` temporarily redirects that synchronous removal to the questionnaire's own handle and restores the original method in `finally`. This approved workaround prevents hidden aborts from closing other dialogs; no installed Pi files are patched. Its regression tests use Pi's real stable reference proxy and overlay stack, including repeated completion without retaining proxy wrappers. Recheck this adapter when upgrading Pi and remove it when owner-specific cleanup is fixed upstream.

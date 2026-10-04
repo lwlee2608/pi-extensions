@@ -193,6 +193,30 @@ test("ownership adapter restores the host method even if completion throws", () 
   assert.equal(view.tui.hasOverlayEntries, false);
 });
 
+test("older overlays block mounting so their completion cannot remove a hidden questionnaire", async () => {
+  const view = ui();
+  const older = view.tui.showOverlay({ render: () => [], invalidate() {} });
+  await assert.rejects(runQuestionnaire(view.ctx, core), /Close the existing dialog/);
+  assert.equal(view.listeners.size, 0);
+  assert.equal(older.isFocused(), true);
+  view.reference.hideOverlay();
+  assert.equal(view.tui.hasOverlayEntries, false);
+});
+
+test("repeated completions restore exact renderer method and do not retain proxy wrappers", () => {
+  const view = ui();
+  const original = view.tui.hideOverlay;
+  const symbols = Object.getOwnPropertySymbols(view.tui);
+  for (let i = 0; i < 100; i++) {
+    const handle = view.reference.showOverlay({ render: () => [], invalidate() {} });
+    completeOverlay(view.reference, handle, () => view.reference.hideOverlay());
+    assert.equal(view.tui.hideOverlay, original);
+    assert.equal(Object.hasOwn(view.tui, "hideOverlay"), false);
+    assert.deepEqual(Object.getOwnPropertySymbols(view.tui), symbols);
+  }
+  assert.equal(view.tui.hasOverlayEntries, false);
+});
+
 test("already-aborted and unavailable UI fail without reporting user cancellation", async () => {
   const view = ui();
   await assert.rejects(runQuestionnaire(view.ctx, core, AbortSignal.abort()), /abort/i);
