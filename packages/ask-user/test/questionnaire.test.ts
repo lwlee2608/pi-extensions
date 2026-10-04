@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth, getCapabilities, setCapabilities, type TUI } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, KeybindingsManager, TUI_KEYBINDINGS, visibleWidth, getCapabilities, setCapabilities, type TUI } from "@earendil-works/pi-tui";
 import { theme } from "./helpers.ts";
 import { Questionnaire } from "../src/questionnaire.ts";
 import { parameters, description, validate } from "../src/schema.ts";
 import { result, type Result } from "../src/result.ts";
 import { QuestionnaireState } from "../src/state.ts";
-import { core, rich } from "./fixtures/demo.ts";
+import { core, rich, limits } from "./fixtures/demo.ts";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import { Preview } from "../src/preview.ts";
 import { actionKeys, actionMatches } from "../src/keys.ts";
@@ -18,7 +18,9 @@ const down = "\x1b[B", up = "\x1b[A", enter = "\r", esc = "\x1b";
 export function harness(params = core, rows = 30, bindings = new KeybindingsManager(TUI_KEYBINDINGS)) {
   let output: Result | undefined;
   const terminal = { rows };
-  const questionnaire = new Questionnaire(params, { terminal, requestRender() {} } as unknown as TUI, theme, bindings, value => { output = value; });
+  const clock = { time: 0 };
+  const questionnaire = new Questionnaire(params, { terminal, requestRender() {} } as unknown as TUI, theme, bindings, value => { output = value; }, () => clock.time);
+  clock.time = 1000;
   questionnaire.focused = true;
   const input = (...keys: string[]) => keys.forEach(key => questionnaire.handleInput(key));
   return { questionnaire, terminal, input, output: () => output, text: (width = 90) => questionnaire.render(width).join("\n") };
@@ -37,14 +39,14 @@ test("schema bounds, blank and duplicate labels, optional fields, and full decla
   assert.throws(() => validate({ questions: [{ ...question, options: [{ label: " A " }, { label: "A" }] }] }));
   validate({ questions: Array.from({ length: 8 }, () => ({ question: "Q", options: Array.from({ length: 8 }, (_, i) => ({ label: String(i), preview: "# Markdown" })) })) });
   assert.ok(description.length + JSON.stringify(parameters).length <= 1800);
+  assert.match(JSON.stringify(parameters), /"multiSelect":\{[^}]*"description"/);
   assert.match(description, /On cancellation, do not repeat the questions or assume answers/);
 });
 
 test("real component handles mixed selections, custom text, revisits, explicit review, and compact output", () => {
   const h = harness();
   h.input(enter); // SQLite
-  h.input(" ", down, " ", down, down, enter); // Search + Export, open custom editor
-  h.input("Offline mode", enter);
+  h.input(" ", down, " ", down, down, "Offline mode", enter, enter); // Search + Export + inline custom text, then Next
   assert.equal(h.questionnaire.state.tab, 2);
   assert.equal(h.output(), undefined);
   h.input("\t", down, enter); // revisit and select PostgreSQL
@@ -55,28 +57,130 @@ test("real component handles mixed selections, custom text, revisits, explicit r
   ] });
 });
 
-test("one question still requires review and missing questions block submission", () => {
-  const h = harness({ questions: core.questions.slice(0, 1) });
-  h.input("\t", enter);
-  assert.equal(h.output(), undefined);
+test("one question submits on choice; batches block submission until every question is answered", () => {
+  const single = harness({ questions: core.questions.slice(0, 1) });
+  assert.doesNotMatch(single.text(), /Submit|Tab/);
+  single.input(down, enter);
+  assert.deepEqual(single.output(), { cancelled: false, answers: [{ questionIndex: 1, selected: ["PostgreSQL"] }] });
+  const h = harness();
+  h.input("\t", "\t");
   assert.match(h.text(), /Unanswered/);
-  h.input("\t", enter);
+  h.input(enter);
+  assert.equal(h.questionnaire.state.tab, 0);
+  h.input("\x1b[C", "1", down, down, down, down, enter, "\x1b[D");
   assert.equal(h.questionnaire.state.tab, 1);
   assert.equal(h.output(), undefined);
-  h.input(enter);
-  assert.equal(h.output()?.answers.length, 1);
+  h.input("\x1b[D", "2");
+  assert.equal(h.questionnaire.state.tab, 1);
+  h.input("\x1b[C", enter);
+  assert.deepEqual(h.output()?.answers.map(answer => answer.selected), [["PostgreSQL"], ["Search"]]);
+});
+
+test("keys typed ahead of the questionnaire never answer it until input pauses", () => {
+  const open = (params: typeof core) => {
+    const clock = { time: 0 };
+    let output: Result | undefined;
+    const questionnaire = new Questionnaire(params, { terminal: { rows: 30 }, requestRender() {} } as unknown as TUI, theme,
+      new KeybindingsManager(TUI_KEYBINDINGS), value => { output = value; }, () => clock.time);
+    const input = (time: number, ...keys: string[]) => { clock.time = time; keys.forEach(key => questionnaire.handleInput(key)); };
+    return { questionnaire, input, output: () => output };
+  };
+  const h = open({ questions: core.questions.slice(0, 1) });
+  h.input(0, "2", "\x1b[50u", "\x1b[27;1;50~", enter, " ", "n");
+  h.input(300, "a", down);
+  h.input(650, "1", enter);
+  assert.equal(h.output(), undefined);
+  assert.equal(h.questionnaire.state.answers[0].cursor, 1);
+  assert.doesNotMatch(h.questionnaire.render(90).join("\n"), /Question note/);
+  h.input(1100, enter);
+  assert.deepEqual(h.output()?.answers[0].selected, ["PostgreSQL"]);
+  const early = open(core);
+  early.input(0, esc);
+  assert.deepEqual(early.output(), { cancelled: true, answers: [] });
+});
+
+test("single-select rows have no checkboxes; multi-select rows do; number keys pick, toggle, or focus the custom row", () => {
+  const h = harness();
+  const q1 = h.text();
+  assert.match(q1, /^─+$/m);
+  assert.match(q1, /☐ Q1 .*☐ Q2 .*✔ Submit/);
+  assert.match(q1, /❯ 1\. SQLite\n  2\. PostgreSQL\n  3\. Type something\./);
+  assert.doesNotMatch(q1, /\[ \]/);
+  h.input("2");
+  assert.match(h.text(), /☒ Q1/);
+  assert.match(h.text(), /❯ 1\. \[ \] Search\n  2\. \[ \] Export\n  3\. \[ \] Audit\n  4\. \[ \] Type something\.\n {5}Next/);
+  h.input("1", "3");
+  assert.match(h.text(), /1\. \[✔\] Search\n  2\. \[ \] Export\n❯ 3\. \[✔\] Audit/);
+  assert.equal(h.questionnaire.state.tab, 1);
+  h.input("4", "Custom", enter, enter);
+  assert.equal(h.questionnaire.state.tab, 2);
+  h.input("\x1b[D", "\x1b[D");
+  assert.match(h.text(), /2\. PostgreSQL ✔/);
+  h.input("\x1b[D", "2");
+  assert.match(h.text(), /Discard all answers/);
+  h.input("1");
+  assert.equal(h.output(), undefined);
+  h.input("1");
+  assert.deepEqual(h.output()?.answers[1], { questionIndex: 2, selected: ["Search", "Audit"], custom: "Custom" });
+});
+
+test("number shortcuts support terminal protocols without consuming modified keys or custom text", () => {
+  for (const encode of [(n: number) => String(n), (n: number) => `\x1b[${48 + n}u`, (n: number) => `\x1b[27;1;${48 + n}~`]) {
+    const h = harness();
+    h.input("\x1b[50;5u", "\x1b[27;3;50~");
+    assert.equal(h.questionnaire.state.answered(0), false);
+    h.input(encode(2), encode(1), encode(3), "\t", encode(2));
+    assert.match(h.text(), /Discard all answers/);
+    h.input(encode(1), encode(1));
+    assert.deepEqual(h.output()?.answers.map(answer => answer.selected), [["PostgreSQL"], ["Search", "Audit"]]);
+  }
+  const custom = harness({ questions: core.questions.slice(1) });
+  custom.input("\x1b[52u", "\x1b[50u", enter, enter);
+  assert.equal(custom.output()?.answers[0].custom, "2");
+});
+
+test("inline layout uses natural height instead of filling the terminal", () => {
+  const h = harness({ questions: core.questions.slice(0, 1) }, 60);
+  const lines = h.questionnaire.render(80);
+  assert.equal(lines.length, 8);
+  assert.match(lines.at(-1)!, /^Enter select · ↑\/↓ navigate · n note · Esc cancel$/);
+});
+
+test("tab bar compacts inactive tabs on narrow terminals and every fixture fits any size", () => {
+  const h = harness(limits);
+  assert.match(h.text(400), /☐ Long navigation header 1 — 界 +☐ Long navigation header 2/);
+  assert.match(h.text(70), /☐ Long nav.*… +☐ 2 +☐ 3 .*☐ 8 +✔ /);
+  for (const params of [core, rich, limits]) {
+    const view = harness(params);
+    for (const rows of [3, 5, 12, 20, 40]) {
+      view.terminal.rows = rows;
+      for (const width of [1, 4, 20, 60, 120]) {
+        const lines = view.questionnaire.render(width);
+        assert.ok(lines.length <= Math.max(1, rows - 4));
+        assert.ok(lines.every(line => visibleWidth(line) <= width));
+      }
+    }
+  }
+});
+
+test("stacked previews need room; side-by-side previews do not", () => {
+  const h = harness(rich, 16);
+  assert.doesNotMatch(h.text(60), /Preview/);
+  assert.match(h.text(120), /Preview 1–/);
+  h.terminal.rows = 30;
+  assert.match(h.text(60), /\n\nPreview 1–/);
 });
 
 test("untouched cancel is immediate; work requires explicit discard and keep preserves drafts", () => {
   const untouched = harness(); untouched.input(esc);
   assert.deepEqual(untouched.output(), { cancelled: true, answers: [] });
   const h = harness();
-  h.input(down, down, enter, "draft", esc, esc);
-  assert.match(h.text(), /> Keep editing/);
+  h.input(down, down, "draft", esc);
+  assert.match(h.text(), /❯ 1\. Keep editing/);
   assert.equal(h.output(), undefined);
   h.input(enter, esc, esc); // keep, request, escape confirmation
   assert.equal(h.questionnaire.state.answers[0].draft, "draft");
-  h.input(enter, enter); // reopen draft and save
+  h.input(enter); // save the retained draft
   assert.equal(h.questionnaire.state.answers[0].custom, "draft");
   h.input(esc, down, enter);
   assert.deepEqual(h.output(), { cancelled: true, answers: [] });
@@ -94,10 +198,13 @@ test("single-select inactive custom text is retained but never returned", () => 
   assert.throws(() => result(state), /Every question/);
 });
 
-test("Editor supports multiline drafts and focus; render fits narrow widths, height, and resize", () => {
+test("custom answers are typed inline on their row with focus; render fits narrow widths, height, and resize", () => {
   const h = harness({ questions: [{ question: "界".repeat(60), options: [{ label: "A".repeat(80) }, { label: "B" }] }] });
-  h.input(down, down, enter, "first", "\n", "second");
-  assert.equal(h.questionnaire.state.answers[0].draft, "first\nsecond");
+  h.input(down, down);
+  assert.match(h.text(), /❯ 3\. .*T.*ype something\./);
+  h.input("first", " ", "second", "\n");
+  assert.equal(h.questionnaire.state.answers[0].draft, "first second");
+  assert.match(h.text(), /❯ 3\. first second/);
   assert.match(h.text(), /\x1b_pi:c\x07/);
   h.questionnaire.focused = false;
   assert.doesNotMatch(h.text(), /\x1b_pi:c\x07/);
@@ -112,22 +219,55 @@ test("Editor supports multiline drafts and focus; render fits narrow widths, hei
     }
   }
   h.input(enter);
-  assert.equal(h.questionnaire.state.answers[0].custom, "first\nsecond");
+  assert.equal(h.output()?.answers[0].custom, "first second");
+});
+
+test("long custom input keeps text and cursor on the focused row in small viewports", () => {
+  for (const multiSelect of [false, true]) {
+    const h = harness({ questions: limits.questions.map(question => ({ ...question, multiSelect })) }, 24);
+    h.input("9", "界x".repeat(100));
+    for (const width of [40, 80, 120]) {
+      const lines = h.questionnaire.render(width);
+      const focused = lines.find(line => line.startsWith("❯ 9. "));
+      assert.ok(focused);
+      assert.ok(focused.includes(CURSOR_MARKER));
+      assert.match(focused, /界x/);
+      assert.ok(lines.every(line => visibleWidth(line) <= width));
+      assert.ok(lines.length <= 20);
+    }
+  }
+});
+
+test("multi-select Enter toggles; custom text stays editable inline; only the Submit row submits", () => {
+  const h = harness({ questions: core.questions.slice(1) });
+  assert.match(h.text(), /4\. \[ \] Type something\.\n {5}Submit/);
+  h.input("4", "Offline 1 n", "\x7f");
+  assert.match(h.text(), /❯ 4\. \[✔\] Offline 1/);
+  assert.doesNotMatch(h.text(), /Space|n note/);
+  h.input(up, up, enter, enter, enter, "1", down, down, down, down);
+  assert.equal(h.output(), undefined);
+  assert.match(h.text(), /1\. \[✔\] Search\n  2\. \[✔\] Export\n  3\. \[ \] Audit\n  4\. \[✔\] Offline 1 \n❯ {4}Submit/);
+  assert.match(h.text(), /Enter submit/);
+  h.input(enter);
+  assert.deepEqual(h.output()?.answers, [{ questionIndex: 1, selected: ["Search", "Export"], custom: "Offline 1" }]);
 });
 
 test("untrusted terminal controls are removed for display, not answer values", () => {
   const attack = "\x1b]52;c;YXR0YWNr\x07\x1b[2J\x1bPmalicious\x1b\\";
   const h = harness({ questions: [{ question: attack + "Question", header: attack + "Header", options: [{ label: attack + "A", description: attack + "Description" }, { label: "B" }] }] });
   assert.doesNotMatch(h.text(), /\x1b\]|\x1bP|\x1b\[2J|malicious/);
-  h.input(enter, enter);
+  h.input(enter);
   assert.equal(h.output()?.answers[0].selected[0], attack + "A");
   assert.equal(display(attack + "safe\ntext"), "safe\ntext");
 });
 
 test("editor sanitization preserves visible cursor and headers remain single-line", () => {
-  const h = harness({ questions: [{ ...core.questions[0], header: "First\nSecond\tThird" }] });
+  const h = harness({ questions: [{ ...core.questions[0], header: "First\nSecond\tThird" }, core.questions[1]] });
+  assert.match(h.text(), /First Second Third/);
   assert.ok(h.questionnaire.render(90).every(line => !/[\n\t]/.test(line)));
-  h.input(down, down, enter, "abc", "\x1b[D");
+  h.input(down, down, "abc", "\x1b[D", "X");
+  assert.equal(h.questionnaire.state.tab, 0);
+  assert.equal(h.questionnaire.state.answers[0].draft, "abXc");
   assert.match(h.text(), /\x1b\[7m/);
   assert.equal(editorDisplay("\x1b]52;c;attack\x07\x1b[2J\x1b[7mx\x1b[0m"), "\x1b[7mx\x1b[0m");
 });
@@ -148,7 +288,7 @@ test("all long question and description lines can be read without moving selecti
 
 test("undo history never crosses question boundaries", () => {
   const h = harness();
-  h.input(down, down, enter, "private Q1", esc, "\t", down, down, down, enter, "\x1f");
+  h.input(down, down, "private Q1", "\t", down, down, down, "\x1f");
   assert.equal(h.questionnaire.state.answers[1].draft, "");
   assert.equal(h.questionnaire.state.answers[0].draft, "private Q1");
 });
@@ -194,7 +334,7 @@ test("Markdown link destinations remain visible with terminal hyperlinks enabled
 test("saved notes and global note appear in review/results, drafts and previews do not", () => {
   const h = harness(rich);
   h.input("n", "Prefer simpler operations", enter, enter);
-  h.input(" ", enter, "n", "Ship incrementally", enter);
+  h.input(" ", down, down, down, down, enter, "n", "Ship incrementally", enter);
   assert.match(h.text(), /Global note: Ship incrementally/);
   h.input("\t", "n", "\x01", "\x0b", "not saved", esc, "\t", "\t");
   assert.match(h.text(), /Prefer simpler operations/);
@@ -235,10 +375,11 @@ test("custom-action defaults, string/array overrides, disabled bindings, and edi
   assert.equal(h.questionnaire.state.answers[0].noteDraft, "note");
 });
 
-test("uses remapped built-in navigation and preserves Ctrl+] in the Editor", () => {
+test("uses remapped built-in navigation and preserves Ctrl+] in the note Editor", () => {
   const h = harness(core, 30, new KeybindingsManager(TUI_KEYBINDINGS, { "tui.select.down": "ctrl+n" }));
-  h.input("\x0e", "\x0e", enter, "a b c", "\x01", "\x1d", "c", "X");
-  assert.equal(h.questionnaire.state.answers[0].draft, "a b Xc");
+  h.input("\x0e", "\x0e", "b", "\x01", "a");
+  assert.equal(h.questionnaire.state.answers[0].draft, "ab");
+  h.input(up, "n", "a b c", "\x01", "\x1d", "c", "X");
+  assert.equal(h.questionnaire.state.answers[0].noteDraft, "a b Xc");
   assert.equal(h.output(), undefined);
-  h.input(esc, up);
 });

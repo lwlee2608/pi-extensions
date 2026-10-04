@@ -1,3 +1,4 @@
 import { type Theme } from "@earendil-works/pi-coding-agent";
 
-export const theme = { fg: (_color: string, text: string) => text } as Theme;
+const identity = (_color: string, text: string) => text;
+export const theme = { fg: identity, bg: identity, bold: (text: string) => text } as Theme;

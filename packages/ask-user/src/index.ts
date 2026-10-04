@@ -31,13 +31,19 @@ export default function (pi: ExtensionAPI): void {
       } finally { pending.delete(controller); }
     },
     renderCall(args, theme) {
-      return new Text(theme.fg("toolTitle", `Ask user · ${args.questions?.length ?? 0} questions`), 0, 0);
+      const count = args.questions?.length ?? 0;
+      return new Text(theme.fg("toolTitle", `Ask user · ${count} question${count === 1 ? "" : "s"}`), 0, 0);
     },
-    renderResult(result, _options, theme) {
+    renderResult(result, _options, theme, context) {
       const details = result.details;
       if (!details) return new Text(display(result.content.filter(item => item.type === "text").map(item => item.text).join("\n")), 0, 0);
       if (details.cancelled) return new Text(theme.fg("warning", "Questionnaire cancelled"), 0, 0);
-      const lines = details.answers.map(answer => `${answer.questionIndex}. ${display([...answer.selected, answer.custom].filter(Boolean).join("; "))}${answer.notes ? `\nNote: ${display(answer.notes)}` : ""}`);
+      const lines = details.answers.map(answer => {
+        const question = context?.args?.questions?.[answer.questionIndex - 1]?.question;
+        const label = question ? `${display(question)} ${theme.fg("muted", "→")}` : `${answer.questionIndex}.`;
+        const value = theme.fg("accent", display([...answer.selected, answer.custom].filter(Boolean).join("; ")));
+        return `${theme.fg("muted", "·")} ${label} ${value}${answer.notes ? `\n  ${theme.fg("muted", `Note: ${display(answer.notes)}`)}` : ""}`;
+      });
       if (details.globalNote) lines.push(`Global note: ${display(details.globalNote)}`);
       return new Text(lines.join("\n"), 0, 0);
     },
