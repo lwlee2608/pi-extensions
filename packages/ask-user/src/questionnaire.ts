@@ -143,6 +143,20 @@ export class Questionnaire implements Component, Focusable {
   render(width: number): string[] {
     if (width < 1) return [];
     const height = Math.max(1, this.tui.terminal.rows - 2);
+    const framed = width >= 5 && height >= 5;
+    const contentWidth = framed ? width - 4 : width;
+    const lines = this.renderContent(contentWidth, framed ? height - 2 : height);
+    const { theme } = this;
+    const padded = lines.map(line => truncateToWidth(line, contentWidth, "", true));
+    const panel = framed ? [
+      theme.fg("border", `╭${"─".repeat(width - 2)}╮`),
+      ...padded.map(line => `${theme.fg("border", "│")} ${line} ${theme.fg("border", "│")}`),
+      theme.fg("border", `╰${"─".repeat(width - 2)}╯`),
+    ] : padded;
+    return panel.map(line => theme.bg("customMessageBg", theme.fg("text", line)));
+  }
+
+  private renderContent(width: number, height: number): string[] {
     const { state, theme } = this;
     const header = state.tab === state.questions.length ? "Review" : state.questions[state.tab].header || `Q${state.tab + 1}`;
     const title = theme.fg("accent", `${state.tab + 1}/${state.questions.length + 1} ${display(header).replace(/[\n\t]/g, " ")} · Tab/Shift+Tab switch`);

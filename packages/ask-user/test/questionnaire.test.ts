@@ -115,6 +115,43 @@ test("Editor supports multiline drafts and focus; render fits narrow widths, hei
   assert.equal(h.questionnaire.state.answers[0].custom, "first\nsecond");
 });
 
+test("overlay frames and fills each row through review, editing, cancellation, and resize", () => {
+  const h = harness({ questions: core.questions.slice(0, 1) });
+  const check = () => {
+    for (const rows of [3, 4, 6, 7, 10, 30]) {
+      h.terminal.rows = rows;
+      for (const width of [1, 4, 5, 20, 60, 120]) {
+        const lines = h.questionnaire.render(width);
+        assert.ok(lines.length <= rows - 2);
+        assert.ok(lines.every(line => visibleWidth(line) === width));
+        if (width >= 5 && rows >= 7) {
+          assert.equal(lines[0], `╭${"─".repeat(width - 2)}╮`);
+          assert.equal(lines.at(-1), `╰${"─".repeat(width - 2)}╯`);
+          assert.ok(lines.slice(1, -1).every(line => line.startsWith("│ ") && line.endsWith(" │")));
+        }
+      }
+    }
+  };
+  check();
+  h.input(enter); check(); // review
+  h.input("n", "A note"); check(); // editor
+  h.input(esc, esc); check(); // discard confirmation
+});
+
+test("overlay applies the panel background to full-width rows", () => {
+  const painted: string[] = [];
+  const panelTheme = { ...theme, bg: (color: string, text: string) => {
+    assert.equal(color, "customMessageBg");
+    painted.push(text);
+    return text;
+  } } as typeof theme;
+  const questionnaire = new Questionnaire(core, { terminal: { rows: 30 }, requestRender() {} } as unknown as TUI,
+    panelTheme, new KeybindingsManager(TUI_KEYBINDINGS), () => {});
+  const lines = questionnaire.render(90);
+  assert.deepEqual(painted, lines);
+  assert.ok(painted.every(line => visibleWidth(line) === 90));
+});
+
 test("untrusted terminal controls are removed for display, not answer values", () => {
   const attack = "\x1b]52;c;YXR0YWNr\x07\x1b[2J\x1bPmalicious\x1b\\";
   const h = harness({ questions: [{ question: attack + "Question", header: attack + "Header", options: [{ label: attack + "A", description: attack + "Description" }, { label: "B" }] }] });
@@ -143,7 +180,7 @@ test("all long question and description lines can be read without moving selecti
   assert.equal(seen.size, 50);
   assert.equal(h.questionnaire.state.answers[0].cursor, 0);
   for (let i = 0; i < 120; i++) h.input("\x1b[1;5A");
-  assert.match(h.text(40), /Line-0\n/);
+  assert.match(h.text(40), /Line-0\s*│\n/);
 });
 
 test("undo history never crosses question boundaries", () => {
@@ -164,7 +201,7 @@ test("responsive previews work in both selection modes, scroll, resize, and inva
     assert.doesNotMatch(h.text(120), /Preview 1–/);
     h.input("\x1b[5~");
     assert.match(h.text(60), /Preview 1–/);
-    assert.doesNotMatch(h.text(60), /│/);
+    assert.ok(h.questionnaire.render(60).slice(1, -1).every(line => (line.match(/│/g) ?? []).length === 2));
     for (const width of [1, 4, 20, 60, 120]) {
       assert.ok(h.questionnaire.render(width).every(line => visibleWidth(line) <= width));
     }
