@@ -6,7 +6,7 @@ import { Questionnaire } from "../src/questionnaire.ts";
 import { parameters, description, validate } from "../src/schema.ts";
 import { result, type Result } from "../src/result.ts";
 import { QuestionnaireState } from "../src/state.ts";
-import { core, rich } from "./fixtures/demo.ts";
+import { core, rich, limits } from "./fixtures/demo.ts";
 import { initTheme } from "@earendil-works/pi-coding-agent";
 import { Preview } from "../src/preview.ts";
 import { actionKeys, actionMatches } from "../src/keys.ts";
@@ -55,16 +55,80 @@ test("real component handles mixed selections, custom text, revisits, explicit r
   ] });
 });
 
-test("one question still requires review and missing questions block submission", () => {
-  const h = harness({ questions: core.questions.slice(0, 1) });
-  h.input("\t", enter);
-  assert.equal(h.output(), undefined);
+test("one question submits on choice; batches block submission until every question is answered", () => {
+  const single = harness({ questions: core.questions.slice(0, 1) });
+  assert.doesNotMatch(single.text(), /Submit|Tab/);
+  single.input(down, enter);
+  assert.deepEqual(single.output(), { cancelled: false, answers: [{ questionIndex: 1, selected: ["PostgreSQL"] }] });
+  const h = harness();
+  h.input("\t", "\t");
   assert.match(h.text(), /Unanswered/);
-  h.input("\t", enter);
+  h.input(enter);
+  assert.equal(h.questionnaire.state.tab, 0);
+  h.input("\x1b[C", "1", enter, "\x1b[D");
   assert.equal(h.questionnaire.state.tab, 1);
   assert.equal(h.output(), undefined);
-  h.input(enter);
-  assert.equal(h.output()?.answers.length, 1);
+  h.input("\x1b[D", "2");
+  assert.equal(h.questionnaire.state.tab, 1);
+  h.input("\x1b[C", enter);
+  assert.deepEqual(h.output()?.answers.map(answer => answer.selected), [["PostgreSQL"], ["Search"]]);
+});
+
+test("single-select rows have no checkboxes; multi-select rows do; number keys pick, toggle, or open the editor", () => {
+  const h = harness();
+  const q1 = h.text();
+  assert.match(q1, /^─+$/m);
+  assert.match(q1, /☐ Q1 .*☐ Q2 .*✔ Submit/);
+  assert.match(q1, /❯ 1\. SQLite\n  2\. PostgreSQL\n  3\. Type something\./);
+  assert.doesNotMatch(q1, /\[ \]/);
+  h.input("2");
+  assert.match(h.text(), /☒ Q1/);
+  assert.match(h.text(), /❯ 1\. \[ \] Search\n  2\. \[ \] Export\n  3\. \[ \] Audit\n  4\. \[ \] Type something\./);
+  h.input("1", "3");
+  assert.match(h.text(), /1\. \[✔\] Search\n  2\. \[ \] Export\n❯ 3\. \[✔\] Audit/);
+  assert.equal(h.questionnaire.state.tab, 1);
+  h.input("4", "Custom", enter);
+  assert.equal(h.questionnaire.state.tab, 2);
+  h.input("\x1b[D", "\x1b[D");
+  assert.match(h.text(), /2\. PostgreSQL ✔/);
+  h.input("\x1b[D", "2");
+  assert.match(h.text(), /Discard all answers/);
+  h.input("1");
+  assert.equal(h.output(), undefined);
+  h.input("1");
+  assert.deepEqual(h.output()?.answers[1], { questionIndex: 2, selected: ["Search", "Audit"], custom: "Custom" });
+});
+
+test("inline layout uses natural height instead of filling the terminal", () => {
+  const h = harness({ questions: core.questions.slice(0, 1) }, 60);
+  const lines = h.questionnaire.render(80);
+  assert.equal(lines.length, 8);
+  assert.match(lines.at(-1)!, /^Enter select · ↑\/↓ navigate · n note · Esc cancel$/);
+});
+
+test("tab bar compacts inactive tabs on narrow terminals and every fixture fits any size", () => {
+  const h = harness(limits);
+  assert.match(h.text(400), /☐ Long navigation header 1 — 界 +☐ Long navigation header 2/);
+  assert.match(h.text(70), /☐ Long nav.*… +☐ 2 +☐ 3 .*☐ 8 +✔ /);
+  for (const params of [core, rich, limits]) {
+    const view = harness(params);
+    for (const rows of [3, 5, 12, 20, 40]) {
+      view.terminal.rows = rows;
+      for (const width of [1, 4, 20, 60, 120]) {
+        const lines = view.questionnaire.render(width);
+        assert.ok(lines.length <= Math.max(1, rows - 4));
+        assert.ok(lines.every(line => visibleWidth(line) <= width));
+      }
+    }
+  }
+});
+
+test("stacked previews need room; side-by-side previews do not", () => {
+  const h = harness(rich, 16);
+  assert.doesNotMatch(h.text(60), /Preview/);
+  assert.match(h.text(120), /Preview 1–/);
+  h.terminal.rows = 30;
+  assert.match(h.text(60), /\n\nPreview 1–/);
 });
 
 test("untouched cancel is immediate; work requires explicit discard and keep preserves drafts", () => {
@@ -72,7 +136,7 @@ test("untouched cancel is immediate; work requires explicit discard and keep pre
   assert.deepEqual(untouched.output(), { cancelled: true, answers: [] });
   const h = harness();
   h.input(down, down, enter, "draft", esc, esc);
-  assert.match(h.text(), /> Keep editing/);
+  assert.match(h.text(), /❯ 1\. Keep editing/);
   assert.equal(h.output(), undefined);
   h.input(enter, esc, esc); // keep, request, escape confirmation
   assert.equal(h.questionnaire.state.answers[0].draft, "draft");
@@ -115,54 +179,18 @@ test("Editor supports multiline drafts and focus; render fits narrow widths, hei
   assert.equal(h.questionnaire.state.answers[0].custom, "first\nsecond");
 });
 
-test("overlay frames and fills each row through review, editing, cancellation, and resize", () => {
-  const h = harness({ questions: core.questions.slice(0, 1) });
-  const check = () => {
-    for (const rows of [3, 4, 6, 7, 10, 30]) {
-      h.terminal.rows = rows;
-      for (const width of [1, 4, 5, 20, 60, 120]) {
-        const lines = h.questionnaire.render(width);
-        assert.ok(lines.length <= rows - 2);
-        assert.ok(lines.every(line => visibleWidth(line) === width));
-        if (width >= 5 && rows >= 7) {
-          assert.equal(lines[0], `╭${"─".repeat(width - 2)}╮`);
-          assert.equal(lines.at(-1), `╰${"─".repeat(width - 2)}╯`);
-          assert.ok(lines.slice(1, -1).every(line => line.startsWith("│ ") && line.endsWith(" │")));
-        }
-      }
-    }
-  };
-  check();
-  h.input(enter); check(); // review
-  h.input("n", "A note"); check(); // editor
-  h.input(esc, esc); check(); // discard confirmation
-});
-
-test("overlay applies the panel background to full-width rows", () => {
-  const painted: string[] = [];
-  const panelTheme = { ...theme, bg: (color: string, text: string) => {
-    assert.equal(color, "customMessageBg");
-    painted.push(text);
-    return text;
-  } } as typeof theme;
-  const questionnaire = new Questionnaire(core, { terminal: { rows: 30 }, requestRender() {} } as unknown as TUI,
-    panelTheme, new KeybindingsManager(TUI_KEYBINDINGS), () => {});
-  const lines = questionnaire.render(90);
-  assert.deepEqual(painted, lines);
-  assert.ok(painted.every(line => visibleWidth(line) === 90));
-});
-
 test("untrusted terminal controls are removed for display, not answer values", () => {
   const attack = "\x1b]52;c;YXR0YWNr\x07\x1b[2J\x1bPmalicious\x1b\\";
   const h = harness({ questions: [{ question: attack + "Question", header: attack + "Header", options: [{ label: attack + "A", description: attack + "Description" }, { label: "B" }] }] });
   assert.doesNotMatch(h.text(), /\x1b\]|\x1bP|\x1b\[2J|malicious/);
-  h.input(enter, enter);
+  h.input(enter);
   assert.equal(h.output()?.answers[0].selected[0], attack + "A");
   assert.equal(display(attack + "safe\ntext"), "safe\ntext");
 });
 
 test("editor sanitization preserves visible cursor and headers remain single-line", () => {
-  const h = harness({ questions: [{ ...core.questions[0], header: "First\nSecond\tThird" }] });
+  const h = harness({ questions: [{ ...core.questions[0], header: "First\nSecond\tThird" }, core.questions[1]] });
+  assert.match(h.text(), /First Second Third/);
   assert.ok(h.questionnaire.render(90).every(line => !/[\n\t]/.test(line)));
   h.input(down, down, enter, "abc", "\x1b[D");
   assert.match(h.text(), /\x1b\[7m/);
@@ -180,7 +208,7 @@ test("all long question and description lines can be read without moving selecti
   assert.equal(seen.size, 50);
   assert.equal(h.questionnaire.state.answers[0].cursor, 0);
   for (let i = 0; i < 120; i++) h.input("\x1b[1;5A");
-  assert.match(h.text(40), /Line-0\s*│\n/);
+  assert.match(h.text(40), /Line-0\n/);
 });
 
 test("undo history never crosses question boundaries", () => {
@@ -201,7 +229,7 @@ test("responsive previews work in both selection modes, scroll, resize, and inva
     assert.doesNotMatch(h.text(120), /Preview 1–/);
     h.input("\x1b[5~");
     assert.match(h.text(60), /Preview 1–/);
-    assert.ok(h.questionnaire.render(60).slice(1, -1).every(line => (line.match(/│/g) ?? []).length === 2));
+    assert.doesNotMatch(h.text(60), /│/);
     for (const width of [1, 4, 20, 60, 120]) {
       assert.ok(h.questionnaire.render(width).every(line => visibleWidth(line) <= width));
     }

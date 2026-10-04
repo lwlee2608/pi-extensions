@@ -1,16 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { getEventListeners } from "node:events";
-import type { ExtensionAPI, ExtensionContext, ExtensionToolContext, TerminalInputHandler, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { KeybindingsManager, TUI_KEYBINDINGS, TuiMainScreen, Editor, type Component, type Terminal } from "@earendil-works/pi-tui";
+import type { ExtensionAPI, ExtensionContext, ExtensionToolContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { KeybindingsManager, TUI_KEYBINDINGS, TuiMainScreen, Editor, type Terminal } from "@earendil-works/pi-tui";
 import { theme } from "./helpers.ts";
 import extension from "../src/index.ts";
 import { Questionnaire, runQuestionnaire } from "../src/questionnaire.ts";
 import { description, parameters } from "../src/schema.ts";
 import { core } from "./fixtures/demo.ts";
-import { completeOverlay } from "../src/overlay.ts";
-
-const { createInteractiveTuiReference } = await import(new URL("modes/interactive/tui-renderer.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
 
 function host() {
   let tool!: ToolDefinition;
@@ -25,36 +22,29 @@ function host() {
   return { tool, handlers, active: () => active, setActive: (names: string[]) => { active = names; } };
 }
 
-function ui(bindings: Record<string, any> = {}) {
-  let component: Questionnaire;
-  let closes = 0, removals = 0;
+function ui() {
+  let component: Questionnaire | undefined;
+  let closes = 0;
   const tui = new TuiMainScreen({ rows: 30, columns: 100, hideCursor() {}, write() {} } as unknown as Terminal);
   tui.requestRender = () => {};
-  const reference = createInteractiveTuiReference(() => tui);
   const identity = (text: string) => text;
   const main = new Editor(tui, { borderColor: identity, selectList: { selectedPrefix: identity, selectedText: identity, description: identity, scrollInfo: identity, noMatch: identity } });
   tui.setFocus(main);
-  const listeners = new Set<TerminalInputHandler>();
   const ctx = {
     mode: "tui",
     ui: {
-      onTerminalInput: (handler: TerminalInputHandler) => {
-        listeners.add(handler);
-        return () => { if (listeners.delete(handler)) removals++; };
-      },
-      custom: (factory: Function, options: any) => new Promise(resolve => {
-        component = factory(reference, theme, new KeybindingsManager({ ...TUI_KEYBINDINGS, "app.interrupt": { defaultKeys: "escape" } }, bindings), (value: unknown) => {
-          closes++; reference.hideOverlay(); resolve(value);
+      custom: (factory: Function, options: unknown) => new Promise(resolve => {
+        assert.equal(options, undefined);
+        let closed = false;
+        const created = factory(tui, theme, new KeybindingsManager(TUI_KEYBINDINGS), (value: unknown) => {
+          closes++; closed = true; component = undefined; tui.setFocus(main); resolve(value);
         });
-        queueMicrotask(() => options.onHandle?.(tui.showOverlay(component, options.overlayOptions)));
+        queueMicrotask(() => { if (!closed) { component = created; tui.setFocus(created); } });
       }),
     },
   } as unknown as ExtensionToolContext;
-  const input = (data: string) => {
-    for (const listener of listeners) if (listener(data)?.consume) return;
-    tui.getFocusedComponent()?.handleInput?.(data);
-  };
-  return { ctx, tui, reference, main, input, component: () => component, closes: () => closes, listeners, removals: () => removals };
+  const input = (data: string) => tui.getFocusedComponent()?.handleInput?.(data);
+  return { ctx, tui, main, input, component: () => component, closes: () => closes };
 }
 
 test("actual registration is lean, sequential, model-only, excludes non-TUI without reactivating disabled tools", async () => {
@@ -79,6 +69,14 @@ test("actual registration is lean, sequential, model-only, excludes non-TUI with
   h.handlers.get("session_start")!({}, { mode: "tui" });
   h.handlers.get("before_agent_start")!({}, { mode: "tui" });
   assert.deepEqual(h.active(), ["read"]);
+});
+
+test("result rendering pairs each answer with its question, like Claude Code", () => {
+  const h = host();
+  const details = { cancelled: false, answers: [{ questionIndex: 1, selected: ["SQLite"] }, { questionIndex: 2, selected: ["Search"], custom: "Offline", notes: "Soon" }], globalNote: "Ship" };
+  const render = (args: unknown) => h.tool.renderResult!({ content: [], details }, { expanded: false, isPartial: false }, theme, { args } as never).render(200).map(line => line.trimEnd()).join("\n");
+  assert.equal(render(core), "· Which storage should we use? → SQLite\n· Which features should we include? → Search; Offline\n  Note: Soon\nGlobal note: Ship");
+  assert.match(render(undefined), /^· 1\. SQLite/);
 });
 
 test("tool returns cancellation only on explicit user cancellation and cleans up its signal", async () => {
@@ -111,129 +109,28 @@ test("abort before mount, during UI, and shutdown reject rather than return canc
   assert.equal(view.closes(), 1);
 });
 
-test("hide while editing preserves draft/cursor and leaves main editor jump-forward intact", async () => {
+test("inline questionnaire replaces editor focus, submits a single question on choice, and restores focus", async () => {
   const view = ui();
-  const pending = runQuestionnaire(view.ctx, core);
+  const pending = runQuestionnaire(view.ctx, { questions: core.questions.slice(0, 1) });
   await Promise.resolve();
-  view.input("\x1b[B"); view.input("\x1b[B"); view.input("\r");
-  view.input("a b c"); view.input("\x01"); view.input("\x1d"); view.input("c"); view.input("X");
-  assert.equal(view.component().state.answers[0].draft, "a b Xc");
-  view.input("\x1bh");
-  assert.equal(view.tui.getFocusedComponent(), view.main);
-  view.input("a b c"); view.input("\x01"); view.input("\x1d"); view.input("c"); view.input("Y");
-  assert.equal(view.main.getText(), "a b Yc");
-  view.input("\x1bh"); view.input("Z");
-  assert.equal(view.component().state.answers[0].draft, "a b XZc");
-  view.input("\x1b"); view.input("\x1b"); view.input("\x1b[B"); view.input("\r");
-  assert.deepEqual(await pending, { cancelled: true, answers: [] });
-  assert.equal(view.listeners.size, 0);
-  assert.equal(view.removals(), 1);
-  assert.equal(view.tui.hasOverlayEntries, false);
-});
-
-test("interrupt while hidden reopens existing work for discard confirmation and otherwise reaches Pi", async () => {
-  const view = ui();
-  const pending = runQuestionnaire(view.ctx, core);
-  await Promise.resolve();
-  view.input("\x1bh"); view.input("\x1b");
-  assert.equal(view.tui.getFocusedComponent(), view.main);
-  view.input("\x1bh"); view.input("\r"); view.input("\x1bh");
-  assert.equal(view.tui.getFocusedComponent(), view.main);
-  view.input("\x1b");
   assert.equal(view.tui.getFocusedComponent(), view.component());
-  assert.doesNotMatch(view.component().render(100).join("\n"), /Discard/);
-  view.input("\x1b"); view.input("\x1b[B"); view.input("\r");
-  assert.deepEqual(await pending, { cancelled: true, answers: [] });
-});
-
-test("remapped toggles ignore repeat/release and other overlays keep input and cleanup ownership", async () => {
-  const view = ui({ "pi-ask-user.toggle": "alt+j" });
-  const controller = new AbortController();
-  const pending = runQuestionnaire(view.ctx, core, controller.signal);
-  await Promise.resolve();
-  view.input("\x1bh"); assert.equal(view.tui.getFocusedComponent(), view.component());
-  view.input("\x1b[106;3:2u"); view.input("\x1b[106;3:3u");
-  assert.equal(view.tui.getFocusedComponent(), view.component());
-  view.input("\x1bj"); assert.equal(view.tui.getFocusedComponent(), view.main);
-  const other = { focused: false, render: () => ["other"], invalidate() {} };
-  const overlay = view.tui.showOverlay(other);
-  view.input("\x1bj"); assert.equal(overlay.isFocused(), true);
-  controller.abort();
-  await assert.rejects(pending, /aborted/);
-  assert.equal(overlay.isFocused(), true);
-  overlay.hide();
-  assert.equal(view.tui.hasOverlayEntries, false);
+  view.input("2");
+  assert.deepEqual(await pending, { cancelled: false, answers: [{ questionIndex: 1, selected: ["PostgreSQL"] }] });
   assert.equal(view.tui.getFocusedComponent(), view.main);
-  assert.equal(view.removals(), 1);
-  controller.abort(); assert.equal(view.closes(), 1);
+  assert.equal(view.closes(), 1);
 });
 
-test("disabled toggle cannot hide and visible focus conflicts do not steal input", async () => {
-  for (const bindings of [{ "pi-ask-user.toggle": [] }, {}]) {
-    const view = ui(bindings), controller = new AbortController();
-    const pending = runQuestionnaire(view.ctx, core, controller.signal);
-    await Promise.resolve();
-    if (Object.keys(bindings).length) {
-      view.input("\x1bh"); assert.equal(view.tui.getFocusedComponent(), view.component());
-    }
-    const other = view.tui.showOverlay({ render: () => [], invalidate() {} });
-    view.input("\x1bh"); assert.equal(other.isFocused(), true);
-    controller.abort(); await assert.rejects(pending, /aborted/);
-    assert.equal(other.isFocused(), true);
-    other.hide(); assert.equal(view.tui.hasOverlayEntries, false);
-  }
-});
-
-test("shutdown while hidden removes listeners/overlay and a new call starts cleanly", async () => {
+test("shutdown removes the questionnaire and a new call starts cleanly", async () => {
   const h = host(), view = ui();
   const pending = h.tool.execute("id", core, undefined, undefined, view.ctx);
-  await Promise.resolve(); view.input("\x1bh");
+  await Promise.resolve(); view.input("1");
   h.handlers.get("session_shutdown")!({});
   await assert.rejects(pending, /aborted/);
-  assert.equal(view.tui.hasOverlayEntries, false);
-  assert.equal(view.listeners.size, 0);
+  assert.equal(view.tui.getFocusedComponent(), view.main);
   const next = h.tool.execute("next", core, undefined, undefined, view.ctx);
   await Promise.resolve(); view.input("\x1b");
-  await next;
-  assert.equal(view.removals(), 2);
-});
-
-test("ownership adapter restores the host method even if completion throws", () => {
-  const view = ui();
-  const overlay = view.tui.showOverlay({ render: () => [], invalidate() {} });
-  assert.throws(() => completeOverlay(view.reference, overlay, () => { view.reference.hideOverlay(); throw new Error("failure"); }), /failure/);
-  assert.equal(view.tui.hasOverlayEntries, false);
-  view.tui.showOverlay({ render: () => [], invalidate() {} });
-  view.reference.hideOverlay();
-  assert.equal(view.tui.hasOverlayEntries, false);
-});
-
-test("older overlays block mounting so their completion cannot remove a hidden questionnaire", async () => {
-  for (const mode of ["visible", "hidden", "responsive"] as const) {
-    const view = ui();
-    const older = view.tui.showOverlay({ render: () => [], invalidate() {} }, mode === "responsive" ? { visible: () => false } : undefined);
-    if (mode === "hidden") older.setHidden(true);
-    await assert.rejects(runQuestionnaire(view.ctx, core), /Close the existing dialog/);
-    assert.equal(view.listeners.size, 0);
-    assert.equal(view.tui.hasOverlayEntries, true);
-    view.reference.hideOverlay();
-    assert.equal(view.tui.hasOverlayEntries, false);
-    assert.equal(view.closes(), 0);
-  }
-});
-
-test("repeated completions restore exact renderer method and do not retain proxy wrappers", () => {
-  const view = ui();
-  const original = view.tui.hideOverlay;
-  const symbols = Object.getOwnPropertySymbols(view.tui);
-  for (let i = 0; i < 100; i++) {
-    const handle = view.reference.showOverlay({ render: () => [], invalidate() {} });
-    completeOverlay(view.reference, handle, () => view.reference.hideOverlay());
-    assert.equal(view.tui.hideOverlay, original);
-    assert.equal(Object.hasOwn(view.tui, "hideOverlay"), false);
-    assert.deepEqual(Object.getOwnPropertySymbols(view.tui), symbols);
-  }
-  assert.equal(view.tui.hasOverlayEntries, false);
+  assert.deepEqual((await next).details, { cancelled: true, answers: [] });
+  assert.equal(view.closes(), 2);
 });
 
 test("already-aborted and unavailable UI fail without reporting user cancellation", async () => {

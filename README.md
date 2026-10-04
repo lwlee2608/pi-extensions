@@ -7,7 +7,7 @@
 | [`@lwlee2608/pi-model-plus`](packages/model-plus) | `/model-plus` | Bookmark favorite models and switch between them. |
 | [`@lwlee2608/pi-session-board`](packages/session-board) | `/sessions` | Observe independent Pi terminal sessions. |
 | [`@lwlee2608/pi-footer`](packages/footer) | Automatic | Context, cost, cache usage, and run timer in a compact footer. |
-| [`@lwlee2608/pi-ask-user`](packages/ask-user) | `ask_user_question` tool | Lean questionnaires with previews, notes, review, and hide/reopen. |
+| [`@lwlee2608/pi-ask-user`](packages/ask-user) | `ask_user_question` tool | Lean inline questionnaires with previews, notes, and review. |
 
 ## Install
 

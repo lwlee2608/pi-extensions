@@ -16,7 +16,6 @@ test("package exposes its source, supplies no host copies, and excludes fixtures
   const [pack] = JSON.parse(execFileSync("npm", ["pack", "--dry-run", "--ignore-scripts", "--json"], { cwd: root, encoding: "utf8" }));
   const paths: string[] = pack.files.map((file: { path: string }) => file.path);
   assert.ok(paths.includes("src/index.ts"));
-  assert.ok(paths.includes("src/overlay.ts"));
   assert.ok(paths.includes("README.md"));
   assert.ok(paths.includes("LICENSE"));
   assert.ok(paths.every(path => !/^(test|plans|node_modules)\//.test(path)));
