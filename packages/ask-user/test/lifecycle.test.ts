@@ -43,7 +43,7 @@ function ui(bindings: Record<string, any> = {}) {
         return () => { if (listeners.delete(handler)) removals++; };
       },
       custom: (factory: Function, options: any) => new Promise(resolve => {
-        component = factory(reference, theme, new KeybindingsManager(TUI_KEYBINDINGS, bindings), (value: unknown) => {
+        component = factory(reference, theme, new KeybindingsManager({ ...TUI_KEYBINDINGS, "app.interrupt": { defaultKeys: "escape" } }, bindings), (value: unknown) => {
           closes++; reference.hideOverlay(); resolve(value);
         });
         queueMicrotask(() => options.onHandle?.(tui.showOverlay(component, options.overlayOptions)));
@@ -129,6 +129,21 @@ test("hide while editing preserves draft/cursor and leaves main editor jump-forw
   assert.equal(view.listeners.size, 0);
   assert.equal(view.removals(), 1);
   assert.equal(view.tui.hasOverlayEntries, false);
+});
+
+test("interrupt while hidden reopens existing work for discard confirmation and otherwise reaches Pi", async () => {
+  const view = ui();
+  const pending = runQuestionnaire(view.ctx, core);
+  await Promise.resolve();
+  view.input("\x1bh"); view.input("\x1b");
+  assert.equal(view.tui.getFocusedComponent(), view.main);
+  view.input("\x1bh"); view.input("\r"); view.input("\x1bh");
+  assert.equal(view.tui.getFocusedComponent(), view.main);
+  view.input("\x1b");
+  assert.equal(view.tui.getFocusedComponent(), view.component());
+  assert.doesNotMatch(view.component().render(100).join("\n"), /Discard/);
+  view.input("\x1b"); view.input("\x1b[B"); view.input("\r");
+  assert.deepEqual(await pending, { cancelled: true, answers: [] });
 });
 
 test("remapped toggles ignore repeat/release and other overlays keep input and cleanup ownership", async () => {

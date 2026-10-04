@@ -243,14 +243,19 @@ export async function runQuestionnaire(ctx: ExtensionContext, params: Params, si
       };
       signal?.addEventListener("abort", abort, { once: true });
       if (signal?.aborted) abort();
+      const questionnaire = new Questionnaire(params, tui, theme, keys, finish);
       unsubscribe = ctx.ui.onTerminalInput(data => {
-        if (settled || !handle || !actionMatches(keys, "pi-ask-user.toggle", data)) return;
-        if (!handle.isHidden() && !handle.isFocused()) return;
-        if (handle.isHidden() && tui.hasOverlay()) return;
-        if (!isKeyRelease(data) && !isKeyRepeat(data)) handle.setHidden(!handle.isHidden());
+        if (settled || !handle) return;
+        const hidden = handle.isHidden();
+        // Pi's interrupt aborts the pending tool, so hidden work reopens for discard confirmation instead.
+        const reopen = hidden && questionnaire.state.hasWork() && keys.matches(data, "app.interrupt");
+        if (!reopen && !actionMatches(keys, "pi-ask-user.toggle", data)) return;
+        if (!hidden && !handle.isFocused()) return;
+        if (hidden && tui.hasOverlay()) return;
+        if (!isKeyRelease(data) && !isKeyRepeat(data)) handle.setHidden(!hidden);
         return { consume: true };
       });
-      return new Questionnaire(params, tui, theme, keys, finish);
+      return questionnaire;
     }, {
       overlay: true,
       overlayOptions: { width: "95%", maxHeight: "100%", margin: 1 },

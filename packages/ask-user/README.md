@@ -8,7 +8,7 @@ A lean terminal-only `ask_user_question` tool. Supports 1â€“8 questions with 2â€
 - Space: toggle a multi-select option.
 - Enter: choose a single option, confirm a multi-select answer, or open the custom-answer editor. Submission happens only from review, with every question answered.
 - In the editor: Enter applies, Shift+Enter adds a newline, Esc leaves without applying. Uncommitted text remains available when reopened.
-- Alt+h: hide/reopen, including while editing. Drafts, selection, cursor, and scroll state stay intact. Ctrl+] remains Pi's jump-forward action in both editors. Close other overlays before opening or reopening this one. Opening while another dialog exists (even hidden) returns an error rather than risking that dialog's cleanup.
+- Alt+h: hide/reopen, including while editing. Drafts, selection, cursor, and scroll state stay intact. While hidden, Esc reopens a dialog with answers or drafts instead of aborting the run. Ctrl+] remains Pi's jump-forward action in both editors. Close other overlays before opening or reopening this one. Opening while another dialog exists (even hidden) returns an error rather than risking that dialog's cleanup.
 - `n`: edit a question note, or the global note from review. Saving an empty note clears it; Esc retains the draft without replacing a saved note.
 - PageUp / PageDown: scroll the focused option's preview. Previews sit beside options on wide terminals and below them on narrow terminals; editing always uses the full pane.
 - Esc outside the editor requests cancellation. Existing answers or drafts require explicit **Discard answers** confirmation; **Keep editing** is the default.
