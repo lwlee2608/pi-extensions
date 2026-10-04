@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth, type TUI } from "@earendil-works/pi-tui";
+import { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth, getCapabilities, setCapabilities, type TUI } from "@earendil-works/pi-tui";
 import { theme } from "./helpers.ts";
 import { Questionnaire } from "../src/questionnaire.ts";
 import { parameters, description, validate } from "../src/schema.ts";
@@ -8,6 +8,7 @@ import { result, type Result } from "../src/result.ts";
 import { QuestionnaireState } from "../src/state.ts";
 import { core, rich } from "./fixtures/demo.ts";
 import { initTheme } from "@earendil-works/pi-coding-agent";
+import { Preview } from "../src/preview.ts";
 import { actionKeys, actionMatches } from "../src/keys.ts";
 import { display, editorDisplay } from "../src/display.ts";
 
@@ -174,6 +175,20 @@ test("responsive previews work in both selection modes, scroll, resize, and inva
     assert.match(h.text(120), new RegExp("x".repeat(70)));
     h.input(esc);
   }
+});
+
+test("Markdown link destinations remain visible with terminal hyperlinks enabled", () => {
+  const capabilities = getCapabilities();
+  setCapabilities({ ...capabilities, hyperlinks: true });
+  try {
+    const preview = new Preview();
+    preview.setText("See [documentation](https://example.com/docs).");
+    const lines = preview.render(80, 10);
+    assert.match(lines.join("\n"), /https:\/\/example.com\/docs/);
+    assert.match(lines.join("\n"), /documentation/);
+    assert.doesNotMatch(lines.join("\n"), /\x1b\]8/);
+    assert.ok(preview.render(10, 20).every(line => visibleWidth(line) <= 10));
+  } finally { setCapabilities(capabilities); }
 });
 
 test("saved notes and global note appear in review/results, drafts and previews do not", () => {

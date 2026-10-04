@@ -1,5 +1,5 @@
 import { getMarkdownTheme } from "@earendil-works/pi-coding-agent";
-import { Markdown, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { Markdown, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import { display, editorDisplay } from "./display.ts";
 
 export class Preview {
@@ -20,7 +20,10 @@ export class Preview {
   render(width: number, height: number): string[] {
     if (height < 1 || width < 1) return [];
     this.markdown ??= new Markdown(display(this.text), 0, 0, getMarkdownTheme());
-    const lines = this.markdown.render(width).map(line => truncateToWidth(editorDisplay(line), width));
+    const lines = this.markdown.render(width).flatMap(line => {
+      const links = line.replace(/\x1b\]8;[^;]*;([^\x07\x1b]*)(?:\x07|\x1b\\)/g, (_match, url: string) => url ? `(${display(url)}) ` : "");
+      return wrapTextWithAnsi(editorDisplay(links), width).map(part => truncateToWidth(part, width));
+    });
     this.page = Math.max(1, height - 1);
     this.length = lines.length;
     this.offset = Math.max(0, Math.min(this.offset, lines.length - this.page));

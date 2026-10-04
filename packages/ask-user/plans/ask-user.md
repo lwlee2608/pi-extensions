@@ -66,7 +66,9 @@ Users can answer single/multi-select questions, type custom answers, revisit tab
 
 **Verify:** `npm run check -w packages/ask-user && npm test -w packages/ask-user`. Tests must prove array bounds, invalid/duplicate labels, declaration size ≤1,800, no injected prompt rules, mixed multi-select/custom answers, complete-only submission, single-question review, immediate cancellation of an untouched batch, confirmation for selected answers or saved/inactive/uncommitted drafts, state preservation on Keep editing/Esc, and no drafts in confirmed cancellation results. Verify cancellation guidance remains within the declaration budget. Verify abort cleanup, exclusion in RPC/JSON/print on session start and before agent start, rejection of direct non-TUI execution, preservation of other tools, and no forced TUI reactivation. Run the isolated demo launcher below with `/ask-user-demo core`, `/ask-user-demo single`, and `/ask-user-demo cancel`; the first fixture must return the selected labels and custom text, the second must still require review, and the third must return only the cancellation envelope. Preview/notes fixture behavior belongs to phase 2.
 
-Phase 2 verification: all workspace checks/tests pass (19 ask-user tests). Rich fixtures ran in isolated regular/fullscreen PTYs at 120 and 60 columns, including preview scrolling and saved-versus-draft question/global notes. Declaration remains 796 characters.
+Phase 2 verification: all workspace checks/tests pass (20 ask-user tests). Rich fixtures ran in isolated regular/fullscreen PTYs at 120 and 60 columns, including preview scrolling and saved-versus-draft question/global notes. Declaration remains 796 characters.
+
+Phase 2 review round 1: fixed Markdown link destinations disappearing on hyperlink-capable terminals by converting generated OSC 8 links to visible URLs before sanitization and wrapping. No findings skipped.
 
 ### Phase 2 — Compare options and explain decisions
 Users can inspect rich previews and attach notes without adding model prompt overhead.
