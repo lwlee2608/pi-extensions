@@ -47,16 +47,18 @@
 - **Demo** — User-run deterministic walkthrough in an isolated profile. No model calls or credentials. A development-only command opens the same questionnaire runner as the real tool and displays its result; automated integration tests exercise tool registration and execution. The fixture is not published.
 
 ## Progress
-Phase 1 of 3 · 0/14 tasks. Planning complete; implementation not started.
+Phase 1 of 3 · 5/14 tasks implemented; phase PR review pending. No installation or global settings changes.
+
+Phase 1 verification: workspace checks and all repository tests pass; 11 ask-user tests cover the core flow and lifecycle. Declaration size is 796 characters. Core/single/cancel fixtures ran in disposable PTYs in regular and fullscreen modes without model calls. Package dry run passes. Final user-run demo remains pending. CI's pull-request branch filter now includes `integrate/**` so phase PRs receive the required checks.
 
 ### Phase 1 — Answer a batch without repeated model instructions
 Users can answer single/multi-select questions, type custom answers, revisit tabs, review, submit, or cancel.
 
-- [ ] Add package metadata, TypeScript configuration, license, root extension registration, and workspace lockfile entry (`packages/ask-user/package.json`, `packages/ask-user/tsconfig.json`, `packages/ask-user/LICENSE`, root `package.json`, `package-lock.json`).
-- [ ] Define the final lean input contract, validation, and compact result formatting (`packages/ask-user/src/schema.ts`, `packages/ask-user/src/result.ts`). Keep the full schema budgeted from the start, including the preview field used in phase 2.
-- [ ] Implement answer/draft state, confirmation before discarding work, and the usable tabbed selection/custom-answer/review flow (`packages/ask-user/src/state.ts`, `packages/ask-user/src/questionnaire.ts`).
-- [ ] Register the tool with event-based terminal-only exclusion, an execution mode guard, serialized execution, abort cleanup, and concise call/result rendering (`packages/ask-user/src/index.ts`).
-- [ ] Add deterministic core/single/cancel fixtures and focused schema, state, rendering, declaration-budget, and lifecycle tests (`packages/ask-user/test/fixtures/demo.ts`, `packages/ask-user/test/*.test.ts`). Document the phase's local fixture command in `packages/ask-user/README.md`.
+- [x] Add package metadata, TypeScript configuration, license, root extension registration, and workspace lockfile entry (`packages/ask-user/package.json`, `packages/ask-user/tsconfig.json`, `packages/ask-user/LICENSE`, root `package.json`, `package-lock.json`).
+- [x] Define the final lean input contract, validation, and compact result formatting (`packages/ask-user/src/schema.ts`, `packages/ask-user/src/result.ts`). Keep the full schema budgeted from the start, including the preview field used in phase 2.
+- [x] Implement answer/draft state, confirmation before discarding work, and the usable tabbed selection/custom-answer/review flow (`packages/ask-user/src/state.ts`, `packages/ask-user/src/questionnaire.ts`).
+- [x] Register the tool with event-based terminal-only exclusion, an execution mode guard, serialized execution, abort cleanup, and concise call/result rendering (`packages/ask-user/src/index.ts`).
+- [x] Add deterministic core/single/cancel fixtures and focused schema, state, rendering, declaration-budget, and lifecycle tests (`packages/ask-user/test/fixtures/demo.ts`, `packages/ask-user/test/*.test.ts`). Document the phase's local fixture command in `packages/ask-user/README.md`.
 
 **Verify:** `npm run check -w packages/ask-user && npm test -w packages/ask-user`. Tests must prove array bounds, invalid/duplicate labels, declaration size ≤1,800, no injected prompt rules, mixed multi-select/custom answers, complete-only submission, single-question review, immediate cancellation of an untouched batch, confirmation for selected answers or saved/inactive/uncommitted drafts, state preservation on Keep editing/Esc, and no drafts in confirmed cancellation results. Verify cancellation guidance remains within the declaration budget. Verify abort cleanup, exclusion in RPC/JSON/print on session start and before agent start, rejection of direct non-TUI execution, preservation of other tools, and no forced TUI reactivation. Run the isolated demo launcher below with `/ask-user-demo core`, `/ask-user-demo single`, and `/ask-user-demo cancel`; the first fixture must return the selected labels and custom text, the second must still require review, and the third must return only the cancellation envelope. Preview/notes fixture behavior belongs to phase 2.
 
