@@ -17,9 +17,10 @@ Install one package from npm:
 pi install npm:@lwlee2608/pi-model-plus
 pi install npm:@lwlee2608/pi-session-board
 pi install npm:@lwlee2608/pi-footer
+pi install npm:@lwlee2608/pi-ask-user
 ```
 
-Ask-user is available locally with `pi install ./packages/ask-user` (npm after publication). Read its [replacement instructions](packages/ask-user#replace-rpiv-user-action-after-verification) first: it must not load alongside rpiv's `ask_user_question`.
+Ask-user must not load alongside rpiv's `ask_user_question`; if you use rpiv, read its [replacement instructions](packages/ask-user#replace-rpiv-user-action-after-verification) first.
 
 Or install all of them from git:
 

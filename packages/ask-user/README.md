@@ -57,18 +57,18 @@ The full user-run walkthrough is in [the repository plan](https://github.com/lwl
 
 ## Context budget and output
 
-The description plus minified parameter schema is **796 characters** versus approximately 4,983 in rpiv 2.12.0: about 84% smaller. Prompt snippets and guidelines are omitted. The test caps the actual registered declaration at 1,800 characters. These are character counts, not exact tokenizer or provider-wire measurements.
+The description plus minified parameter schema is **975 characters** versus approximately 4,983 in rpiv 2.12.0: about 80% smaller. Prompt snippets and guidelines are omitted. The test caps the actual registered declaration at 1,800 characters. These are character counts, not exact tokenizer or provider-wire measurements.
 
 Results contain `cancelled`, `answers`, and optional `globalNote`. Each answer contains a 1-based `questionIndex`, selected option labels, and optional `custom` and `notes`. Previews, repeated question text, and inactive drafts are excluded. Explicit cancellation returns exactly `{"cancelled":true,"answers":[]}`. Failure/abort is an error, not a user cancellation.
 
 ## Replace rpiv (user action after verification)
 
 1. Remove or disable `npm:@juicesharp/rpiv-ask-user-question`. Never load both registrations together.
-2. Install the local package with `pi install ./packages/ask-user`, or `pi install npm:@lwlee2608/pi-ask-user` after publication.
+2. Install with `pi install npm:@lwlee2608/pi-ask-user`, or `pi install ./packages/ask-user` from a checkout.
 3. Start a fresh session. Review any separate user rules that still require rpiv's old question limits or schema; this package retains only the tool name, not exact API compatibility.
 4. To roll back, remove/disable this package, restore rpiv, and start another fresh session.
 
-The manifest advertises `pi-package` and a source extension entry point for Pi discovery. Publishing and switching packages are separate user actions, not part of verification. Follow the repository publishing instructions with tag `ask-user-v0.1.0`.
+The manifest advertises `pi-package` and a source extension entry point for Pi discovery. Publishing and switching packages are separate user actions, not part of verification. Releases follow the repository publishing instructions with an `ask-user-v<version>` tag.
 
 ## Host compatibility
 
