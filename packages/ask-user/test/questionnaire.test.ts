@@ -7,6 +7,7 @@ import { parameters, description, validate } from "../src/schema.ts";
 import { result, type Result } from "../src/result.ts";
 import { QuestionnaireState } from "../src/state.ts";
 import { core } from "./fixtures/demo.ts";
+import { display } from "../src/display.ts";
 
 const down = "\x1b[B", up = "\x1b[A", enter = "\r", esc = "\x1b";
 export function harness(params = core, rows = 30, bindings = new KeybindingsManager(TUI_KEYBINDINGS)) {
@@ -107,6 +108,36 @@ test("Editor supports multiline drafts and focus; render fits narrow widths, hei
   }
   h.input(enter);
   assert.equal(h.questionnaire.state.answers[0].custom, "first\nsecond");
+});
+
+test("untrusted terminal controls are removed for display, not answer values", () => {
+  const attack = "\x1b]52;c;YXR0YWNr\x07\x1b[2J\x1bPmalicious\x1b\\";
+  const h = harness({ questions: [{ question: attack + "Question", header: attack + "Header", options: [{ label: attack + "A", description: attack + "Description" }, { label: "B" }] }] });
+  assert.doesNotMatch(h.text(), /\x1b|malicious/);
+  h.input(enter, enter);
+  assert.equal(h.output()?.answers[0].selected[0], attack + "A");
+  assert.equal(display(attack + "safe\ntext"), "safe\ntext");
+});
+
+test("all long question and description lines can be read without moving selection", () => {
+  const text = Array.from({ length: 50 }, (_, i) => `Line-${i}`).join("\n");
+  const h = harness({ questions: [{ question: text, options: [{ label: "A", description: text }, { label: "B" }] }] }, 10);
+  const seen = new Set<string>();
+  for (let i = 0; i < 120; i++) {
+    for (const match of h.text(40).matchAll(/Line-\d+/g)) seen.add(match[0]);
+    h.input("\x1b[1;5B");
+  }
+  assert.equal(seen.size, 50);
+  assert.equal(h.questionnaire.state.answers[0].cursor, 0);
+  for (let i = 0; i < 120; i++) h.input("\x1b[1;5A");
+  assert.match(h.text(40), /Line-0\n/);
+});
+
+test("undo history never crosses question boundaries", () => {
+  const h = harness();
+  h.input(down, down, enter, "private Q1", esc, "\t", down, down, down, enter, "\x1f");
+  assert.equal(h.questionnaire.state.answers[1].draft, "");
+  assert.equal(h.questionnaire.state.answers[0].draft, "private Q1");
 });
 
 test("uses remapped built-in navigation and preserves Ctrl+] in the Editor", () => {

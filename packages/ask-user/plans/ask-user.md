@@ -49,7 +49,9 @@
 ## Progress
 Phase 1 of 3 · 5/14 tasks implemented; phase PR review pending. No installation or global settings changes.
 
-Phase 1 verification: workspace checks and all repository tests pass; 11 ask-user tests cover the core flow and lifecycle. Declaration size is 796 characters. Core/single/cancel fixtures ran in disposable PTYs in regular and fullscreen modes without model calls. Package dry run passes. Final user-run demo remains pending. CI's pull-request branch filter now includes `integrate/**` so phase PRs receive the required checks.
+Phase 1 verification: workspace checks and all repository tests pass; 14 ask-user tests cover the core flow and lifecycle. Declaration size is 796 characters. Core/single/cancel fixtures ran in disposable PTYs in regular and fullscreen modes without model calls. Package dry run passes. Final user-run demo remains pending. CI's pull-request branch filter now includes `integrate/**` so phase PRs receive the required checks.
+
+Phase 1 review round 1: fixed terminal-control injection at display boundaries, added Ctrl+Up/Down body scrolling for long question/option text, and isolated editor undo history between editing sessions. All findings were in scope; none skipped. Workspace checks/tests and both-mode fixture verification pass after fixes.
 
 ### Phase 1 — Answer a batch without repeated model instructions
 Users can answer single/multi-select questions, type custom answers, revisit tabs, review, submit, or cancel.

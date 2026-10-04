@@ -1,5 +1,6 @@
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, Editor, Key, matchesKey, truncateToWidth, wrapTextWithAnsi, type Component, type Focusable, type KeybindingsManager, type TUI } from "@earendil-works/pi-tui";
+import { display } from "./display.ts";
 import { result, type Result } from "./result.ts";
 import { validate, type Params } from "./schema.ts";
 import { QuestionnaireState } from "./state.ts";
@@ -10,12 +11,13 @@ export class Questionnaire implements Component, Focusable {
   private readonly theme: Theme;
   private readonly keys: KeybindingsManager;
   private readonly done: (value: Result) => void;
-  private readonly editor: Editor;
+  private editor: Editor;
   private editing = false;
   private confirming = false;
   private discard = false;
   private hasFocus = false;
   private scroll = 0;
+  private followFocus = false;
 
   constructor(params: Params, tui: TUI, theme: Theme, keys: KeybindingsManager, done: (value: Result) => void) {
     this.state = new QuestionnaireState(params.questions);
@@ -23,7 +25,12 @@ export class Questionnaire implements Component, Focusable {
     this.theme = theme;
     this.keys = keys;
     this.done = done;
-    this.editor = new Editor(tui, {
+    this.editor = this.createEditor();
+  }
+
+  private createEditor(): Editor {
+    const { tui, theme } = this;
+    const editor = new Editor(tui, {
       borderColor: text => theme.fg("accent", text),
       selectList: {
         selectedPrefix: text => theme.fg("accent", text), selectedText: text => theme.fg("accent", text),
@@ -31,17 +38,19 @@ export class Questionnaire implements Component, Focusable {
         noMatch: text => theme.fg("warning", text),
       },
     });
-    this.editor.onChange = () => {
+    editor.onChange = () => {
       if (this.editing) this.state.answers[this.state.tab].draft = this.editor.getExpandedText();
     };
-    this.editor.onSubmit = text => {
+    editor.onSubmit = text => {
       this.state.saveCustom(this.state.tab, text);
       this.editing = false;
       this.editor.focused = false;
       if (this.state.answered(this.state.tab)) this.state.advance();
       this.scroll = 0;
+      this.followFocus = false;
       this.tui.requestRender();
     };
+    return editor;
   }
 
   get focused(): boolean { return this.hasFocus; }
@@ -49,6 +58,12 @@ export class Questionnaire implements Component, Focusable {
   invalidate(): void { this.editor.invalidate(); }
 
   handleInput(data: string): void {
+    if (!this.editing && !this.confirming && (matchesKey(data, Key.ctrl("up")) || matchesKey(data, Key.ctrl("down")))) {
+      this.scroll = Math.max(0, this.scroll + (matchesKey(data, Key.ctrl("up")) ? -1 : 1));
+      this.followFocus = false;
+      this.tui.requestRender();
+      return;
+    }
     const cancel = this.keys.matches(data, "tui.select.cancel");
     const confirm = this.keys.matches(data, "tui.select.confirm");
     const up = this.keys.matches(data, "tui.select.up");
@@ -70,23 +85,28 @@ export class Questionnaire implements Component, Focusable {
       const delta = matchesKey(data, Key.tab) ? 1 : -1;
       this.state.tab = (this.state.tab + delta + this.state.questions.length + 1) % (this.state.questions.length + 1);
       this.scroll = 0;
+      this.followFocus = false;
     } else if (this.state.tab === this.state.questions.length) {
       if (confirm && this.state.complete()) this.done(result(this.state));
       else if (up || down) this.scroll = Math.max(0, this.scroll + (up ? -1 : 1));
     } else {
       const question = this.state.questions[this.state.tab];
       const answer = this.state.answers[this.state.tab];
-      if (up || down) answer.cursor = Math.max(0, Math.min(question.options.length, answer.cursor + (up ? -1 : 1)));
+      if (up || down) {
+        answer.cursor = Math.max(0, Math.min(question.options.length, answer.cursor + (up ? -1 : 1)));
+        this.followFocus = true;
+      }
       else if (matchesKey(data, Key.space) && question.multiSelect && answer.cursor < question.options.length) {
         this.state.select(this.state.tab, answer.cursor);
       } else if (confirm) {
         if (answer.cursor === question.options.length) {
+          this.editor = this.createEditor();
           this.editor.setText(answer.draft);
           this.editing = true;
           this.editor.focused = this.focused;
         } else {
           if (!question.multiSelect) this.state.select(this.state.tab, answer.cursor);
-          if (this.state.answered(this.state.tab)) { this.state.advance(); this.scroll = 0; }
+          if (this.state.answered(this.state.tab)) { this.state.advance(); this.scroll = 0; this.followFocus = false; }
         }
       }
     }
@@ -98,11 +118,11 @@ export class Questionnaire implements Component, Focusable {
     const height = Math.max(1, this.tui.terminal.rows - 2);
     const { state, theme } = this;
     const header = state.tab === state.questions.length ? "Review" : state.questions[state.tab].header || `Q${state.tab + 1}`;
-    const title = theme.fg("accent", `${state.tab + 1}/${state.questions.length + 1} ${header} · Tab/Shift+Tab switch`);
+    const title = theme.fg("accent", `${state.tab + 1}/${state.questions.length + 1} ${display(header)} · Tab/Shift+Tab switch`);
     const body: string[] = [];
     const add = (text: string) => body.push(...wrapTextWithAnsi(text, width));
     let focusLine = 0;
-    let hint = `${this.keys.getKeys("tui.select.up").join("/")}/${this.keys.getKeys("tui.select.down").join("/")} move · ${this.keys.getKeys("tui.select.confirm").join("/")} confirm · ${this.keys.getKeys("tui.select.cancel").join("/")} cancel`;
+    let hint = `Ctrl+↑/↓ scroll text · ${this.keys.getKeys("tui.select.up").join("/")}/${this.keys.getKeys("tui.select.down").join("/")} move · ${this.keys.getKeys("tui.select.confirm").join("/")} confirm · ${this.keys.getKeys("tui.select.cancel").join("/")} cancel`;
     if (this.confirming) {
       add("Discard all answers and drafts?");
       add(`${this.discard ? "  " : "> "}Keep editing`);
@@ -110,8 +130,9 @@ export class Questionnaire implements Component, Focusable {
       add(`${this.discard ? "> " : "  "}Discard answers`);
       if (!this.discard) focusLine = 1;
     } else if (this.editing) {
-      add(state.questions[state.tab].question);
-      const editorLines = this.editor.render(width);
+      add(display(state.questions[state.tab].question));
+      // Keep only the Editor's trusted cursor marker; pasted text may contain terminal controls.
+      const editorLines = this.editor.render(width).map(line => line.split(CURSOR_MARKER).map(display).join(CURSOR_MARKER));
       const cursor = editorLines.findIndex(line => line.includes(CURSOR_MARKER));
       focusLine = body.length + Math.max(0, cursor);
       body.push(...editorLines);
@@ -121,26 +142,26 @@ export class Questionnaire implements Component, Focusable {
         const answer = state.answers[i];
         const labels = question.options.filter((_, index) => answer.selected.has(index)).map(option => option.label);
         if (answer.customActive) labels.push(answer.custom);
-        add(`${i + 1}. ${question.question}`);
-        add(state.answered(i) ? labels.join("; ") : theme.fg("warning", "Unanswered"));
+        add(`${i + 1}. ${display(question.question)}`);
+        add(state.answered(i) ? display(labels.join("; ")) : theme.fg("warning", "Unanswered"));
       });
       add(state.complete() ? "Ready to submit" : "Answer every question before submitting");
       hint = `↑/↓ scroll · ${hint}`;
     } else {
       const question = state.questions[state.tab];
       const answer = state.answers[state.tab];
-      add(question.question);
+      add(display(question.question));
       question.options.forEach((option, i) => {
         if (i === answer.cursor) focusLine = body.length;
-        add(`${i === answer.cursor ? ">" : " "} [${answer.selected.has(i) ? "x" : " "}] ${option.label}`);
-        if (option.description) add(theme.fg("muted", `  ${option.description}`));
+        add(`${i === answer.cursor ? ">" : " "} [${answer.selected.has(i) ? "x" : " "}] ${display(option.label)}`);
+        if (option.description) add(theme.fg("muted", `  ${display(option.description)}`));
       });
       if (answer.cursor === question.options.length) focusLine = body.length;
       add(`${answer.cursor === question.options.length ? ">" : " "} [${answer.customActive ? "x" : " "}] Type an answer…`);
       if (question.multiSelect) hint = `Space toggle · ${hint}`;
     }
     const room = Math.max(1, height - 2);
-    if (this.confirming || this.editing || state.tab < state.questions.length) {
+    if (this.confirming || this.editing || (this.followFocus && state.tab < state.questions.length)) {
       if (focusLine < this.scroll) this.scroll = focusLine;
       if (focusLine >= this.scroll + room) this.scroll = focusLine - room + 1;
     }

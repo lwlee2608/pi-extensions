@@ -4,6 +4,7 @@ A lean terminal-only `ask_user_question` tool. Phase 1 supports 1–8 questions 
 
 - Tab / Shift+Tab: change question or open review.
 - Up / Down: move through options; scroll the review.
+- Ctrl+Up / Ctrl+Down: scroll question and option text without changing the focused option.
 - Space: toggle a multi-select option.
 - Enter: choose a single option, confirm a multi-select answer, or open the custom-answer editor. Submission happens only from review, with every question answered.
 - In the editor: Enter applies, Shift+Enter adds a newline, Esc leaves without applying. Uncommitted text remains available when reopened.
