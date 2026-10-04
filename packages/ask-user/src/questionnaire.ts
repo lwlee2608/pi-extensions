@@ -1,6 +1,6 @@
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, Editor, Key, matchesKey, truncateToWidth, wrapTextWithAnsi, type Component, type Focusable, type KeybindingsManager, type TUI } from "@earendil-works/pi-tui";
-import { display } from "./display.ts";
+import { display, editorDisplay } from "./display.ts";
 import { result, type Result } from "./result.ts";
 import { validate, type Params } from "./schema.ts";
 import { QuestionnaireState } from "./state.ts";
@@ -118,7 +118,7 @@ export class Questionnaire implements Component, Focusable {
     const height = Math.max(1, this.tui.terminal.rows - 2);
     const { state, theme } = this;
     const header = state.tab === state.questions.length ? "Review" : state.questions[state.tab].header || `Q${state.tab + 1}`;
-    const title = theme.fg("accent", `${state.tab + 1}/${state.questions.length + 1} ${display(header)} · Tab/Shift+Tab switch`);
+    const title = theme.fg("accent", `${state.tab + 1}/${state.questions.length + 1} ${display(header).replace(/[\n\t]/g, " ")} · Tab/Shift+Tab switch`);
     const body: string[] = [];
     const add = (text: string) => body.push(...wrapTextWithAnsi(text, width));
     let focusLine = 0;
@@ -131,8 +131,8 @@ export class Questionnaire implements Component, Focusable {
       if (!this.discard) focusLine = 1;
     } else if (this.editing) {
       add(display(state.questions[state.tab].question));
-      // Keep only the Editor's trusted cursor marker; pasted text may contain terminal controls.
-      const editorLines = this.editor.render(width).map(line => line.split(CURSOR_MARKER).map(display).join(CURSOR_MARKER));
+      // Preserve SGR styling and cursor positioning, but remove executable terminal controls.
+      const editorLines = this.editor.render(width).map(editorDisplay);
       const cursor = editorLines.findIndex(line => line.includes(CURSOR_MARKER));
       focusLine = body.length + Math.max(0, cursor);
       body.push(...editorLines);

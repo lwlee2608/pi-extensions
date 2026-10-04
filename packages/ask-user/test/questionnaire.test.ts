@@ -7,7 +7,7 @@ import { parameters, description, validate } from "../src/schema.ts";
 import { result, type Result } from "../src/result.ts";
 import { QuestionnaireState } from "../src/state.ts";
 import { core } from "./fixtures/demo.ts";
-import { display } from "../src/display.ts";
+import { display, editorDisplay } from "../src/display.ts";
 
 const down = "\x1b[B", up = "\x1b[A", enter = "\r", esc = "\x1b";
 export function harness(params = core, rows = 30, bindings = new KeybindingsManager(TUI_KEYBINDINGS)) {
@@ -117,6 +117,14 @@ test("untrusted terminal controls are removed for display, not answer values", (
   h.input(enter, enter);
   assert.equal(h.output()?.answers[0].selected[0], attack + "A");
   assert.equal(display(attack + "safe\ntext"), "safe\ntext");
+});
+
+test("editor sanitization preserves visible cursor and headers remain single-line", () => {
+  const h = harness({ questions: [{ ...core.questions[0], header: "First\nSecond\tThird" }] });
+  assert.ok(h.questionnaire.render(90).every(line => !/[\n\t]/.test(line)));
+  h.input(down, down, enter, "abc", "\x1b[D");
+  assert.match(h.text(), /\x1b\[7m/);
+  assert.equal(editorDisplay("\x1b]52;c;attack\x07\x1b[2J\x1b[7mx\x1b[0m"), "\x1b[7mx\x1b[0m");
 });
 
 test("all long question and description lines can be read without moving selection", () => {
