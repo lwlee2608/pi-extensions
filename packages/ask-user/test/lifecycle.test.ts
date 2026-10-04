@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { getEventListeners } from "node:events";
-import type { ExtensionAPI, ExtensionContext, ExtensionToolContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { KeybindingsManager, TUI_KEYBINDINGS, TuiMainScreen, Editor, type Terminal } from "@earendil-works/pi-tui";
+import type { ExtensionAPI, ExtensionContext, ExtensionToolContext, Theme, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { initTheme } from "@earendil-works/pi-coding-agent";
+import { KeybindingsManager, TUI_KEYBINDINGS, TuiMainScreen, Container, Editor, type Terminal } from "@earendil-works/pi-tui";
 import { theme } from "./helpers.ts";
 import extension from "../src/index.ts";
 import { Questionnaire, runQuestionnaire } from "../src/questionnaire.ts";
 import { description, parameters } from "../src/schema.ts";
 import { core } from "./fixtures/demo.ts";
+
+const { InteractiveMode } = await import(new URL("modes/interactive/interactive-mode.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
+initTheme("dark", false);
 
 function host() {
   let tool!: ToolDefinition;
@@ -29,21 +33,26 @@ function ui() {
   tui.requestRender = () => {};
   const identity = (text: string) => text;
   const main = new Editor(tui, { borderColor: identity, selectList: { selectedPrefix: identity, selectedText: identity, description: identity, scrollInfo: identity, noMatch: identity } });
+  const editorContainer = new Container();
+  editorContainer.addChild(main);
+  tui.addChild(editorContainer);
   tui.setFocus(main);
+  const host = { editor: main, editorContainer, ui: tui, keybindings: new KeybindingsManager(TUI_KEYBINDINGS), disposeActiveSelector() {} };
   const ctx = {
     mode: "tui",
     ui: {
-      custom: (factory: Function, options: unknown) => new Promise(resolve => {
+      custom: (factory: Function, options: unknown) => {
         assert.equal(options, undefined);
-        let closed = false;
-        const created = factory(tui, theme, new KeybindingsManager(TUI_KEYBINDINGS), (value: unknown) => {
-          closes++; closed = true; component = undefined; tui.setFocus(main); resolve(value);
+        return InteractiveMode.prototype.showExtensionCustom.call(host, (tui: TuiMainScreen, theme: Theme, keys: KeybindingsManager, done: (value: unknown) => void) => {
+          component = factory(tui, theme, keys, (value: unknown) => {
+            closes++; component = undefined; done(value);
+          });
+          return component;
         });
-        queueMicrotask(() => { if (!closed) { component = created; tui.setFocus(created); } });
-      }),
+      },
     },
   } as unknown as ExtensionToolContext;
-  const input = (data: string) => tui.getFocusedComponent()?.handleInput?.(data);
+  const input = (data: string) => tui["handleTerminalInput"](data);
   return { ctx, tui, main, input, component: () => component, closes: () => closes };
 }
 
@@ -120,6 +129,31 @@ test("inline questionnaire takes editor focus, ignores type-ahead, submits a sin
   assert.deepEqual(await pending, { cancelled: false, answers: [{ questionIndex: 1, selected: ["PostgreSQL"] }] });
   assert.equal(view.tui.getFocusedComponent(), view.main);
   assert.equal(view.closes(), 1);
+});
+
+test("existing overlays block mounting without losing ownership or leaving abort listeners", async () => {
+  for (const mode of ["visible", "hidden", "responsive"] as const) {
+    const view = ui(), controller = new AbortController();
+    let received = 0;
+    const other = { focused: false, render: () => ["other dialog"], invalidate() {}, handleInput() { received++; } };
+    const overlay = view.tui.showOverlay(other, mode === "responsive" ? { visible: () => false } : undefined);
+    if (mode === "hidden") overlay.setHidden(true);
+    await assert.rejects(runQuestionnaire(view.ctx, core, controller.signal), /Close the existing dialog/);
+    assert.equal(view.component(), undefined);
+    assert.equal(view.tui.hasOverlayEntries, true);
+    assert.equal(getEventListeners(controller.signal, "abort").length, 0);
+    assert.equal(view.closes(), 0);
+    if (mode === "visible") {
+      view.input("\r");
+      assert.equal(received, 1);
+      assert.equal(overlay.isFocused(), true);
+    }
+    overlay.hide();
+    const next = runQuestionnaire(view.ctx, core);
+    await Promise.resolve(); view.input("\x1b");
+    assert.deepEqual(await next, { cancelled: true, answers: [] });
+    assert.equal(view.tui.getFocusedComponent(), view.main);
+  }
 });
 
 test("shutdown removes the questionnaire and a new call starts cleanly", async () => {

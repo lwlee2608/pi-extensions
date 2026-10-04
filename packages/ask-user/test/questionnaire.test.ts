@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth, getCapabilities, setCapabilities, type TUI } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, KeybindingsManager, TUI_KEYBINDINGS, visibleWidth, getCapabilities, setCapabilities, type TUI } from "@earendil-works/pi-tui";
 import { theme } from "./helpers.ts";
 import { Questionnaire } from "../src/questionnaire.ts";
 import { parameters, description, validate } from "../src/schema.ts";
@@ -86,7 +86,7 @@ test("keys typed ahead of the questionnaire never answer it until input pauses",
     return { questionnaire, input, output: () => output };
   };
   const h = open({ questions: core.questions.slice(0, 1) });
-  h.input(0, "2", enter, " ", "n");
+  h.input(0, "2", "\x1b[50u", "\x1b[27;1;50~", enter, " ", "n");
   h.input(300, "a", down);
   h.input(650, "1", enter);
   assert.equal(h.output(), undefined);
@@ -122,6 +122,21 @@ test("single-select rows have no checkboxes; multi-select rows do; number keys p
   assert.equal(h.output(), undefined);
   h.input("1");
   assert.deepEqual(h.output()?.answers[1], { questionIndex: 2, selected: ["Search", "Audit"], custom: "Custom" });
+});
+
+test("number shortcuts support terminal protocols without consuming modified keys or custom text", () => {
+  for (const encode of [(n: number) => String(n), (n: number) => `\x1b[${48 + n}u`, (n: number) => `\x1b[27;1;${48 + n}~`]) {
+    const h = harness();
+    h.input("\x1b[50;5u", "\x1b[27;3;50~");
+    assert.equal(h.questionnaire.state.answered(0), false);
+    h.input(encode(2), encode(1), encode(3), "\t", encode(2));
+    assert.match(h.text(), /Discard all answers/);
+    h.input(encode(1), encode(1));
+    assert.deepEqual(h.output()?.answers.map(answer => answer.selected), [["PostgreSQL"], ["Search", "Audit"]]);
+  }
+  const custom = harness({ questions: core.questions.slice(1) });
+  custom.input("\x1b[52u", "\x1b[50u", enter, enter);
+  assert.equal(custom.output()?.answers[0].custom, "2");
 });
 
 test("inline layout uses natural height instead of filling the terminal", () => {
@@ -205,6 +220,22 @@ test("custom answers are typed inline on their row with focus; render fits narro
   }
   h.input(enter);
   assert.equal(h.output()?.answers[0].custom, "first second");
+});
+
+test("long custom input keeps text and cursor on the focused row in small viewports", () => {
+  for (const multiSelect of [false, true]) {
+    const h = harness({ questions: limits.questions.map(question => ({ ...question, multiSelect })) }, 24);
+    h.input("9", "界x".repeat(100));
+    for (const width of [40, 80, 120]) {
+      const lines = h.questionnaire.render(width);
+      const focused = lines.find(line => line.startsWith("❯ 9. "));
+      assert.ok(focused);
+      assert.ok(focused.includes(CURSOR_MARKER));
+      assert.match(focused, /界x/);
+      assert.ok(lines.every(line => visibleWidth(line) <= width));
+      assert.ok(lines.length <= 20);
+    }
+  }
 });
 
 test("multi-select Enter toggles; custom text stays editable inline; only the Submit row submits", () => {

@@ -1,5 +1,5 @@
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
-import { CURSOR_MARKER, Editor, Input, Key, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type Focusable, type KeybindingsManager, type TUI } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, Editor, Input, Key, matchesKey, parseKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type Focusable, type KeybindingsManager, type TUI } from "@earendil-works/pi-tui";
 import { display, editorDisplay } from "./display.ts";
 import { result, type Result } from "./result.ts";
 import { validate, type Params } from "./schema.ts";
@@ -131,15 +131,17 @@ export class Questionnaire implements Component, Focusable {
 
   // Pi focuses the questionnaire mid-keystroke, so text typed for the main editor must not answer it.
   // Answering keys wait until input pauses once; Esc and navigation work immediately.
-  private typedAhead(data: string): boolean {
+  private typedAhead(data: string, digit: number): boolean {
     const time = this.now();
     if (time >= this.quietUntil) return false;
     this.quietUntil = time + TYPE_AHEAD_MS;
-    return this.keys.matches(data, "tui.select.confirm") || /^[1-9]$/.test(data) || matchesKey(data, Key.space) || actionMatches(this.keys, "pi-ask-user.note", data);
+    return this.keys.matches(data, "tui.select.confirm") || digit >= 0 || matchesKey(data, Key.space) || actionMatches(this.keys, "pi-ask-user.note", data);
   }
 
   handleInput(data: string): void {
-    if (this.typedAhead(data)) return;
+    const key = parseKey(data);
+    const digit = key && /^[1-9]$/.test(key) ? Number(key) - 1 : -1;
+    if (this.typedAhead(data, digit)) return;
     if (!this.editing && !this.confirming && (matchesKey(data, Key.ctrl("up")) || matchesKey(data, Key.ctrl("down")))) {
       this.scroll = Math.max(0, this.scroll + (matchesKey(data, Key.ctrl("up")) ? -1 : 1));
       this.followFocus = false;
@@ -150,7 +152,6 @@ export class Questionnaire implements Component, Focusable {
     const confirm = this.keys.matches(data, "tui.select.confirm");
     const up = this.keys.matches(data, "tui.select.up");
     const down = this.keys.matches(data, "tui.select.down");
-    const digit = /^[1-9]$/.test(data) ? Number(data) - 1 : -1;
     const arrows = !this.typing;
     const next = matchesKey(data, Key.tab) || (arrows && matchesKey(data, Key.right));
     const previous = matchesKey(data, Key.shift("tab")) || (arrows && matchesKey(data, Key.left));
@@ -224,8 +225,8 @@ export class Questionnaire implements Component, Focusable {
     let focusLine = 0;
     const choice = (index: number, text: string, focused: boolean) => {
       if (focused) focusLine = body.length;
-      const number = `${index + 1}. `;
-      add(focused ? theme.fg("accent", number + text) : number + text, focused ? `${theme.fg("accent", "❯")} ` : "  ", 2 + number.length);
+      const prefix = `${focused ? "❯ " : "  "}${index + 1}. `;
+      add(focused ? theme.fg("accent", text) : text, focused ? theme.fg("accent", prefix) : prefix);
     };
     const hints: string[] = [];
     const hint = (keys: string | undefined, action: string) => { if (keys) hints.push(`${keys} ${action}`); };
@@ -364,6 +365,7 @@ export async function runQuestionnaire(ctx: ExtensionContext, params: Params, si
   let abort: (() => void) | undefined;
   try {
     const outcome = await ctx.ui.custom<Result | Error>((tui, theme, keys, done) => {
+      if ((tui as TUI & { readonly hasOverlayEntries: boolean }).hasOverlayEntries) throw new Error("Close the existing dialog before opening a questionnaire.");
       let settled = false;
       const finish = (value: Result | Error) => {
         if (settled) return;
