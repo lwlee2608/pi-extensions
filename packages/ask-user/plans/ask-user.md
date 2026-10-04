@@ -47,13 +47,13 @@
 - **Demo** — User-run deterministic walkthrough in an isolated profile. No model calls or credentials. A development-only command opens the same questionnaire runner as the real tool and displays its result; automated integration tests exercise tool registration and execution. The fixture is not published.
 
 ## Progress
-Phase 1 of 3 · 5/14 tasks implemented; phase PR review pending. No installation or global settings changes.
+Phase 1 of 3 · 5/14 tasks complete; PR #4 passed three review rounds. No installation or global settings changes.
 
 Phase 1 verification: workspace checks and all repository tests pass; 15 ask-user tests cover the core flow and lifecycle. Declaration size is 796 characters. Core/single/cancel fixtures ran in disposable PTYs in regular and fullscreen modes without model calls. Package dry run passes. Final user-run demo remains pending. CI's pull-request branch filter now includes `integrate/**` so phase PRs receive the required checks.
 
 Phase 1 review round 1: fixed terminal-control injection at display boundaries, added Ctrl+Up/Down body scrolling for long question/option text, and isolated editor undo history between editing sessions. All findings were in scope; none skipped. Workspace checks/tests and both-mode fixture verification pass after fixes.
 
-Phase 1 review round 2: restored the Editor's visible cursor by preserving SGR styling while stripping executable terminal controls, and normalized multiline headers to one display row. Neither finding skipped. Reverified workspace checks/tests and both-mode fixtures; round 3 required for these fixes.
+Phase 1 review round 2: restored the Editor's visible cursor by preserving SGR styling while stripping executable terminal controls, and normalized multiline headers to one display row. Neither finding skipped. Reverified workspace checks/tests and both-mode fixtures; round 3 reviewed these fixes and reported no actionable findings.
 
 ### Phase 1 — Answer a batch without repeated model instructions
 Users can answer single/multi-select questions, type custom answers, revisit tabs, review, submit, or cancel.
