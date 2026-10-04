@@ -47,7 +47,7 @@
 - **Demo** — User-run deterministic walkthrough in an isolated profile. No model calls or credentials. A development-only command opens the same questionnaire runner as the real tool and displays its result; automated integration tests exercise tool registration and execution. The fixture is not published.
 
 ## Progress
-Phase 2 of 3 · 9/14 tasks implemented; Phase 1 merged via PR #4 after three review rounds. Phase 2 review pending. No installation or global settings changes.
+Phase 2 of 3 · 9/14 tasks implemented; Phase 1 merged via PR #4 after three review rounds. Phase 2 PR #5 passed two review rounds. No installation or global settings changes.
 
 Phase 1 verification: workspace checks and all repository tests pass; 15 ask-user tests cover the core flow and lifecycle. Declaration size is 796 characters. Core/single/cancel fixtures ran in disposable PTYs in regular and fullscreen modes without model calls. Package dry run passes. Final user-run demo remains pending. CI's pull-request branch filter now includes `integrate/**` so phase PRs receive the required checks.
 
@@ -68,7 +68,7 @@ Users can answer single/multi-select questions, type custom answers, revisit tab
 
 Phase 2 verification: all workspace checks/tests pass (20 ask-user tests). Rich fixtures ran in isolated regular/fullscreen PTYs at 120 and 60 columns, including preview scrolling and saved-versus-draft question/global notes. Declaration remains 796 characters.
 
-Phase 2 review round 1: fixed Markdown link destinations disappearing on hyperlink-capable terminals by converting generated OSC 8 links to visible URLs before sanitization and wrapping. No findings skipped.
+Phase 2 review round 1: fixed Markdown link destinations disappearing on hyperlink-capable terminals by converting generated OSC 8 links to visible URLs before sanitization and wrapping. No findings skipped. Round 2 reviewed the fix and full phase diff without actionable findings.
 
 ### Phase 2 — Compare options and explain decisions
 Users can inspect rich previews and attach notes without adding model prompt overhead.
