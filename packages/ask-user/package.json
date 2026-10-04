@@ -1,6 +1,6 @@
 {
   "name": "@lwlee2608/pi-ask-user",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A lean terminal questionnaire for Pi with structured answers and explicit review.",
   "type": "module",
   "license": "MIT",
@@ -12,10 +12,22 @@
   },
   "homepage": "https://github.com/lwlee2608/pi-extensions/tree/main/packages/ask-user#readme",
   "bugs": "https://github.com/lwlee2608/pi-extensions/issues",
-  "keywords": ["pi-package", "pi-extension", "questionnaire"],
-  "files": ["src"],
-  "pi": { "extensions": ["./src/index.ts"] },
-  "engines": { "node": ">=22.19.0" },
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "questionnaire"
+  ],
+  "files": [
+    "src"
+  ],
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "scripts": {
     "check": "tsc --noEmit",
     "test": "node --test test/*.test.ts"
@@ -25,5 +37,7 @@
     "@earendil-works/pi-tui": "*",
     "typebox": "*"
   },
-  "publishConfig": { "access": "public" }
+  "publishConfig": {
+    "access": "public"
+  }
 }
