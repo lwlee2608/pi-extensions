@@ -48,7 +48,7 @@
 - **Demo** — User-run deterministic walkthrough in an isolated profile. No model calls or credentials. A development-only command opens the same questionnaire runner as the real tool and displays its result; automated integration tests exercise tool registration and execution. The fixture is not published.
 
 ## Progress
-Phase 3 of 3 · 14/14 tasks implemented; phase review pending. Phases 1–2 merged via PR #4 (three review rounds) and PR #5 (two rounds). No installation or global settings changes.
+Phase 3 of 3 · 14/14 tasks complete; Phase 3 PR #6 passed four review rounds (the extra round explicitly approved by the user). Phases 1–2 merged via PR #4 (three review rounds) and PR #5 (two rounds). No installation or global settings changes.
 
 Phase 1 verification: workspace checks and all repository tests pass; 15 ask-user tests cover the core flow and lifecycle. Declaration size is 796 characters. Core/single/cancel fixtures ran in disposable PTYs in regular and fullscreen modes without model calls. Package dry run passes. Final user-run demo remains pending. CI's pull-request branch filter now includes `integrate/**` so phase PRs receive the required checks.
 
@@ -85,7 +85,7 @@ Phase 3 verification: workspace checks, all tests (28 ask-user cases), and all w
 
 Phase 3 review round 1: fixed ownership interception being bypassed by Pi's stable TUI proxy. The adapter now uses the proxy-supported assignment path, and lifecycle regressions run through Pi's actual `createInteractiveTuiReference` plus its real overlay stack. No findings skipped.
 
-Phase 3 review round 2: rejected mounting over an existing visible overlay to prevent reverse-order host cleanup from stranding the questionnaire. Restored the exact renderer method descriptor rather than accumulating stable-proxy forwarding closures; the adapter obtains the renderer through a temporary symbol method removed immediately. Tests cover 100 completions with unchanged method identity and no retained symbols. No findings skipped. Round 3 found hidden older overlays bypassed the visible-only guard; merge stopped at the review cap. The user explicitly approved fixing and running one extra review round. The guard now uses the real renderers' `hasOverlayEntries` property, including hidden/responsive-invisible entries, with regressions for all three visibility states. Round 4 pending.
+Phase 3 review round 2: rejected mounting over an existing visible overlay to prevent reverse-order host cleanup from stranding the questionnaire. Restored the exact renderer method descriptor rather than accumulating stable-proxy forwarding closures; the adapter obtains the renderer through a temporary symbol method removed immediately. Tests cover 100 completions with unchanged method identity and no retained symbols. No findings skipped. Round 3 found hidden older overlays bypassed the visible-only guard; merge stopped at the review cap. The user explicitly approved fixing and running one extra review round. The guard now uses the real renderers' `hasOverlayEntries` property, including hidden/responsive-invisible entries, with regressions for all three visibility states. Round 4 reviewed the fixes and full phase diff with no actionable findings. All findings fixed and reviewed; none skipped. Final user-run demo is the remaining gate before the final PR.
 
 ### Phase 3 — Read the transcript and return safely
 Users can hide/reopen the dialog without losing work, and can install the independently packaged extension when ready.
