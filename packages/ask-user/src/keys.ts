@@ -1,6 +1,7 @@
 import { matchesKey, type KeyId, type KeybindingsManager } from "@earendil-works/pi-tui";
 
 export const defaults = {
+  "pi-ask-user.toggle": ["alt+h"],
   "pi-ask-user.note": ["n"],
   "pi-ask-user.previewUp": ["pageUp"],
   "pi-ask-user.previewDown": ["pageDown"],
