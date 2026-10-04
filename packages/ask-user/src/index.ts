@@ -37,7 +37,9 @@ export default function (pi: ExtensionAPI): void {
       const details = result.details;
       if (!details) return new Text(display(result.content.filter(item => item.type === "text").map(item => item.text).join("\n")), 0, 0);
       if (details.cancelled) return new Text(theme.fg("warning", "Questionnaire cancelled"), 0, 0);
-      return new Text(details.answers.map(answer => `${answer.questionIndex}. ${display([...answer.selected, answer.custom].filter(Boolean).join("; "))}`).join("\n"), 0, 0);
+      const lines = details.answers.map(answer => `${answer.questionIndex}. ${display([...answer.selected, answer.custom].filter(Boolean).join("; "))}${answer.notes ? `\nNote: ${display(answer.notes)}` : ""}`);
+      if (details.globalNote) lines.push(`Global note: ${display(details.globalNote)}`);
+      return new Text(lines.join("\n"), 0, 0);
     },
   });
 }

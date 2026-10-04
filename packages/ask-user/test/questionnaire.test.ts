@@ -1,13 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth, type TUI } from "@earendil-works/pi-tui";
+import { KeybindingsManager, TUI_KEYBINDINGS, visibleWidth, getCapabilities, setCapabilities, type TUI } from "@earendil-works/pi-tui";
 import { theme } from "./helpers.ts";
 import { Questionnaire } from "../src/questionnaire.ts";
 import { parameters, description, validate } from "../src/schema.ts";
 import { result, type Result } from "../src/result.ts";
 import { QuestionnaireState } from "../src/state.ts";
-import { core } from "./fixtures/demo.ts";
+import { core, rich } from "./fixtures/demo.ts";
+import { initTheme } from "@earendil-works/pi-coding-agent";
+import { Preview } from "../src/preview.ts";
+import { actionKeys, actionMatches } from "../src/keys.ts";
 import { display, editorDisplay } from "../src/display.ts";
+
+initTheme("dark", false);
 
 const down = "\x1b[B", up = "\x1b[A", enter = "\r", esc = "\x1b";
 export function harness(params = core, rows = 30, bindings = new KeybindingsManager(TUI_KEYBINDINGS)) {
@@ -146,6 +151,88 @@ test("undo history never crosses question boundaries", () => {
   h.input(down, down, enter, "private Q1", esc, "\t", down, down, down, enter, "\x1f");
   assert.equal(h.questionnaire.state.answers[1].draft, "");
   assert.equal(h.questionnaire.state.answers[0].draft, "private Q1");
+});
+
+test("responsive previews work in both selection modes, scroll, resize, and invalidate", () => {
+  const h = harness(rich);
+  for (const tab of [0, 1]) {
+    h.questionnaire.state.tab = tab;
+    const wide = h.text(120);
+    assert.match(wide, /│/);
+    assert.match(wide, /Preview 1–/);
+    h.input("\x1b[6~");
+    assert.doesNotMatch(h.text(120), /Preview 1–/);
+    h.input("\x1b[5~");
+    assert.match(h.text(60), /Preview 1–/);
+    assert.doesNotMatch(h.text(60), /│/);
+    for (const width of [1, 4, 20, 60, 120]) {
+      assert.ok(h.questionnaire.render(width).every(line => visibleWidth(line) <= width));
+    }
+    h.questionnaire.invalidate();
+    assert.match(h.text(120), /Preview/);
+    h.input("n", "x".repeat(70));
+    assert.doesNotMatch(h.text(120), /Preview/);
+    assert.match(h.text(120), new RegExp("x".repeat(70)));
+    h.input(esc);
+  }
+});
+
+test("Markdown link destinations remain visible with terminal hyperlinks enabled", () => {
+  const capabilities = getCapabilities();
+  setCapabilities({ ...capabilities, hyperlinks: true });
+  try {
+    const preview = new Preview();
+    preview.setText("See [documentation](https://example.com/docs).");
+    const lines = preview.render(80, 10);
+    assert.match(lines.join("\n"), /https:\/\/example.com\/docs/);
+    assert.match(lines.join("\n"), /documentation/);
+    assert.doesNotMatch(lines.join("\n"), /\x1b\]8/);
+    assert.ok(preview.render(10, 20).every(line => visibleWidth(line) <= 10));
+  } finally { setCapabilities(capabilities); }
+});
+
+test("saved notes and global note appear in review/results, drafts and previews do not", () => {
+  const h = harness(rich);
+  h.input("n", "Prefer simpler operations", enter, enter);
+  h.input(" ", enter, "n", "Ship incrementally", enter);
+  assert.match(h.text(), /Global note: Ship incrementally/);
+  h.input("\t", "n", "\x01", "\x0b", "not saved", esc, "\t", "\t");
+  assert.match(h.text(), /Prefer simpler operations/);
+  assert.doesNotMatch(h.text(), /not saved/);
+  h.input(enter);
+  assert.equal(h.output()?.answers[0].notes, "Prefer simpler operations");
+  assert.equal(h.output()?.globalNote, "Ship incrementally");
+  assert.doesNotMatch(JSON.stringify(h.output()), /not saved|Detail|preview|Which/);
+});
+
+test("notes alone never answer questions and require discard confirmation, including global drafts", () => {
+  for (const global of [false, true]) {
+    const h = harness();
+    if (global) h.input("\t", "\t");
+    h.input("n", "note draft", esc, esc);
+    assert.match(h.text(), /Discard all answers/);
+    assert.equal(h.questionnaire.state.complete(), false);
+    h.input(esc, "n", enter); // save existing draft
+    h.input("n", "\x01", "\x0b", enter); // clear optional note
+    assert.equal(h.questionnaire.state.hasWork(), false);
+    h.input(esc);
+    assert.deepEqual(h.output(), { cancelled: true, answers: [] });
+  }
+});
+
+test("custom-action defaults, string/array overrides, disabled bindings, and editor ownership", () => {
+  const keys = new KeybindingsManager(TUI_KEYBINDINGS, { "pi-ask-user.note": ["ctrl+n", "alt+n"], "pi-ask-user.previewDown": "ctrl+d", "pi-ask-user.previewUp": [] });
+  assert.deepEqual(actionKeys(keys, "pi-ask-user.previewUp"), []);
+  assert.deepEqual(actionKeys(keys, "pi-ask-user.previewDown"), ["ctrl+d"]);
+  assert.equal(actionMatches(keys, "pi-ask-user.note", "\x0e"), true);
+  const h = harness(rich, 30, keys);
+  h.text(); h.input("\x04");
+  assert.doesNotMatch(h.text(), /Preview 1–/);
+  h.input("\x1b[5~");
+  assert.doesNotMatch(h.text(), /Preview 1–/);
+  h.input("n"); assert.doesNotMatch(h.text(), /Question note/);
+  h.input("\x0e", "note"); assert.match(h.text(), /Question note/);
+  assert.equal(h.questionnaire.state.answers[0].noteDraft, "note");
 });
 
 test("uses remapped built-in navigation and preserves Ctrl+] in the Editor", () => {
