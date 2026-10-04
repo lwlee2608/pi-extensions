@@ -10,6 +10,8 @@ import { description, parameters } from "../src/schema.ts";
 import { core } from "./fixtures/demo.ts";
 import { completeOverlay } from "../src/overlay.ts";
 
+const { createInteractiveTuiReference } = await import(new URL("modes/interactive/tui-renderer.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
+
 function host() {
   let tool!: ToolDefinition;
   let active = ["read", "ask_user_question"];
@@ -28,6 +30,7 @@ function ui(bindings: Record<string, any> = {}) {
   let closes = 0, removals = 0;
   const tui = new TuiMainScreen({ rows: 30, columns: 100, hideCursor() {}, write() {} } as unknown as Terminal);
   tui.requestRender = () => {};
+  const reference = createInteractiveTuiReference(() => tui);
   const identity = (text: string) => text;
   const main = new Editor(tui, { borderColor: identity, selectList: { selectedPrefix: identity, selectedText: identity, description: identity, scrollInfo: identity, noMatch: identity } });
   tui.setFocus(main);
@@ -40,8 +43,8 @@ function ui(bindings: Record<string, any> = {}) {
         return () => { if (listeners.delete(handler)) removals++; };
       },
       custom: (factory: Function, options: any) => new Promise(resolve => {
-        component = factory(tui, theme, new KeybindingsManager(TUI_KEYBINDINGS, bindings), (value: unknown) => {
-          closes++; tui.hideOverlay(); resolve(value);
+        component = factory(reference, theme, new KeybindingsManager(TUI_KEYBINDINGS, bindings), (value: unknown) => {
+          closes++; reference.hideOverlay(); resolve(value);
         });
         queueMicrotask(() => options.onHandle?.(tui.showOverlay(component, options.overlayOptions)));
       }),
@@ -51,7 +54,7 @@ function ui(bindings: Record<string, any> = {}) {
     for (const listener of listeners) if (listener(data)?.consume) return;
     tui.getFocusedComponent()?.handleInput?.(data);
   };
-  return { ctx, tui, main, input, component: () => component, closes: () => closes, listeners, removals: () => removals };
+  return { ctx, tui, reference, main, input, component: () => component, closes: () => closes, listeners, removals: () => removals };
 }
 
 test("actual registration is lean, sequential, model-only, excludes non-TUI without reactivating disabled tools", async () => {
@@ -131,7 +134,6 @@ test("hide while editing preserves draft/cursor and leaves main editor jump-forw
 test("remapped toggles ignore repeat/release and other overlays keep input and cleanup ownership", async () => {
   const view = ui({ "pi-ask-user.toggle": "alt+j" });
   const controller = new AbortController();
-  const original = view.tui.hideOverlay;
   const pending = runQuestionnaire(view.ctx, core, controller.signal);
   await Promise.resolve();
   view.input("\x1bh"); assert.equal(view.tui.getFocusedComponent(), view.component());
@@ -144,8 +146,6 @@ test("remapped toggles ignore repeat/release and other overlays keep input and c
   controller.abort();
   await assert.rejects(pending, /aborted/);
   assert.equal(overlay.isFocused(), true);
-  assert.equal(view.tui.hideOverlay, original);
-  assert.equal(Object.hasOwn(view.tui, "hideOverlay"), false);
   overlay.hide();
   assert.equal(view.tui.hasOverlayEntries, false);
   assert.equal(view.tui.getFocusedComponent(), view.main);
@@ -185,11 +185,11 @@ test("shutdown while hidden removes listeners/overlay and a new call starts clea
 
 test("ownership adapter restores the host method even if completion throws", () => {
   const view = ui();
-  const original = view.tui.hideOverlay;
   const overlay = view.tui.showOverlay({ render: () => [], invalidate() {} });
-  assert.throws(() => completeOverlay(view.tui, overlay, () => { view.tui.hideOverlay(); throw new Error("failure"); }), /failure/);
-  assert.equal(view.tui.hideOverlay, original);
-  assert.equal(Object.hasOwn(view.tui, "hideOverlay"), false);
+  assert.throws(() => completeOverlay(view.reference, overlay, () => { view.reference.hideOverlay(); throw new Error("failure"); }), /failure/);
+  assert.equal(view.tui.hasOverlayEntries, false);
+  view.tui.showOverlay({ render: () => [], invalidate() {} });
+  view.reference.hideOverlay();
   assert.equal(view.tui.hasOverlayEntries, false);
 });
 

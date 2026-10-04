@@ -83,6 +83,8 @@ Users can inspect rich previews and attach notes without adding model prompt ove
 
 Phase 3 verification: workspace checks, all tests (26 ask-user cases), and all workspace package dry runs pass. Isolated PTYs in regular/fullscreen modes exercised hide/reopen during editing, Ctrl+] in both editors, maximum-size/resize behavior, and cancellation followed by a clean new fixture. The approved owner-specific completion adapter is covered with Pi's real overlay stack, including hidden abort with another overlay, method restoration, and idempotent teardown. Final user-run demo remains pending.
 
+Phase 3 review round 1: fixed ownership interception being bypassed by Pi's stable TUI proxy. The adapter now uses the proxy-supported assignment path, and lifecycle regressions run through Pi's actual `createInteractiveTuiReference` plus its real overlay stack. No findings skipped.
+
 ### Phase 3 — Read the transcript and return safely
 Users can hide/reopen the dialog without losing work, and can install the independently packaged extension when ready.
 
