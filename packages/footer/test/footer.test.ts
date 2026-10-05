@@ -18,6 +18,21 @@ test("renders the reference layout and project row", () => {
   ]);
 });
 
+test("highlights only the filled context cells and preserves terminal widths", () => {
+  const theme = {
+    fg: (color: string, text: string) => `\u001b[${color === "text" ? "97" : "90"}m${text}\u001b[39m`,
+  };
+  const lines = renderFooter(snapshot, 200, theme);
+  assert.ok(lines[0].includes("\u001b[97m━━━━━━━━\u001b[39m\u001b[90m────────────]"));
+  assert.ok(lines[0].includes("\u001b[90m 40%"));
+  assert.equal(lines[1], "\u001b[90m~/src/project (main) • ready\u001b[39m");
+  for (const width of [0, 1, 16, 20, 30, 40, 80, 200]) {
+    for (const line of renderFooter(snapshot, width, theme)) {
+      assert.ok(visibleWidth(line) <= width);
+    }
+  }
+});
+
 test("unknown context remains unknown after compaction; progress is bounded", () => {
   const unknown = renderFooter({ ...snapshot, context: { tokens: null, percent: null, contextWindow: 700000 } }, 200)[0];
   assert.match(unknown, /\?% \? \/ 700k/);
