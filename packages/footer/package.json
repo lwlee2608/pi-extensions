@@ -1,6 +1,6 @@
 {
   "name": "@lwlee2608/pi-footer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A compact Pi footer with context, cost, cache usage, and a run timer.",
   "type": "module",
   "license": "MIT",
