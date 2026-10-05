@@ -30,6 +30,14 @@ pi install git:github.com/lwlee2608/pi-extensions
 
 Run `/reload` in an existing Pi session after installation. Requires Node.js 22.19 or newer and Pi 1.0.0.
 
+## Experimental
+
+[`packages/code-blocks`](packages/code-blocks) hides Markdown code fences and uses the theme’s accent color for plain-text blocks. It patches a private Pi renderer method and is **opt-in**, not part of the root package’s automatic extension list.
+
+```sh
+pi -e ./packages/code-blocks/src/index.ts
+```
+
 ## Local development
 
 ```sh

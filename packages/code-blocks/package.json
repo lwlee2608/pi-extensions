@@ -1,0 +1,28 @@
+{
+  "name": "@lwlee2608/pi-code-blocks",
+  "version": "0.1.0",
+  "description": "Fence-free Pi code blocks with accent-colored plain text.",
+  "type": "module",
+  "license": "MIT",
+  "author": "lwlee2608",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lwlee2608/pi-extensions.git",
+    "directory": "packages/code-blocks"
+  },
+  "homepage": "https://github.com/lwlee2608/pi-extensions/tree/main/packages/code-blocks#readme",
+  "bugs": "https://github.com/lwlee2608/pi-extensions/issues",
+  "keywords": ["pi-package", "pi-extension", "markdown"],
+  "files": ["src"],
+  "pi": { "extensions": ["./src/index.ts"] },
+  "engines": { "node": ">=22.19.0" },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "node --test test/*.test.ts"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "publishConfig": { "access": "public" }
+}
