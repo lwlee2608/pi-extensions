@@ -66,7 +66,7 @@ test("rejects incompatible renderers without replacing them", () => {
   } finally { prototype.renderToken = original; }
 });
 
-test("cleanup does not overwrite later patches and makes retained wrappers inert", () => {
+test("cleanup does not overwrite later patches, and retained wrappers are inert and replaceable", () => {
   const prototype = Markdown.prototype as unknown as { renderToken: (...args: any[]) => string[] };
   const original = prototype.renderToken;
   const dispose = installPatch(identity);
@@ -77,5 +77,10 @@ test("cleanup does not overwrite later patches and makes retained wrappers inert
     dispose();
     assert.equal(prototype.renderToken, later);
     assert.deepEqual(render("```text\nhello\n```"), ["```text", "  hello", "```"]);
+    prototype.renderToken = patched;
+    const reinstall = installPatch(identity);
+    assert.deepEqual(render("```text\nhello\n```"), ["  hello"]);
+    reinstall();
+    assert.equal(prototype.renderToken, patched);
   } finally { prototype.renderToken = original; }
 });

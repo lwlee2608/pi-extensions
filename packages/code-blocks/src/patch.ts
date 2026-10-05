@@ -16,9 +16,9 @@ function probeTheme(): MarkdownTheme {
 
 export function installPatch(color: (text: string) => string): () => void {
   // Pi exposes this TypeScript-private method at runtime, but gives it no API guarantee.
-  const prototype = Markdown.prototype as unknown as { renderToken?: Renderer & { [owner]?: boolean } };
+  const prototype = Markdown.prototype as unknown as { renderToken?: Renderer & { [owner]?: () => boolean } };
   const original = prototype.renderToken;
-  if (typeof original !== "function" || original[owner]) {
+  if (typeof original !== "function" || original[owner]?.()) {
     throw new Error("Markdown renderer is unavailable or already patched.");
   }
   const probe = new Markdown("```text\nprobe\n```", 0, 0, probeTheme()).render(20).map(line => line.trimEnd());
@@ -27,7 +27,7 @@ export function installPatch(color: (text: string) => string): () => void {
   }
 
   let active = true;
-  const patched: Renderer & { [owner]?: boolean } = function (token, width, next, style) {
+  const patched: Renderer & { [owner]?: () => boolean } = function (token, width, next, style) {
     const lines = original.call(this, token, width, next, style);
     if (!active || token.type !== "code" || typeof token.text !== "string") return lines;
     const content = token.text.split("\n");
@@ -42,7 +42,7 @@ export function installPatch(color: (text: string) => string): () => void {
       : lines.slice(1, closing);
     return [...body, ...lines.slice(closing + 1)];
   };
-  patched[owner] = true;
+  patched[owner] = () => active;
   prototype.renderToken = patched;
   return () => {
     active = false;
