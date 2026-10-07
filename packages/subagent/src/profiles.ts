@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { getSupportedThinkingLevels, type Api, type Model } from "@earendil-works/pi-ai";
 import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import type { Effort, Start } from "./schema.ts";
+import { normalizeExtensions } from "./extensions.ts";
 
 export interface Config { extensions: Record<string, string>; trustedProjectRoots: string[]; maxActive: number; maxWorkers: number }
 export interface Profile { name: string; path: string; prompt: string; trustedProjectRoot?: string; tools: string[]; model?: string; effort?: Effort; extensions?: string[] }
@@ -19,20 +20,21 @@ function list(value: unknown, field: string): string[] {
   if (!Array.isArray(values) || !values.every(v => typeof v === "string" && v.trim())) throw new Error(`Invalid ${field} list`);
   return values;
 }
-export async function loadConfig(agentDir: string): Promise<Config> {
+export async function loadConfig(agentDir: string, inherited?: () => Promise<string[]>): Promise<Config> {
   const path = join(agentDir, "pi-subagent/config.json");
   let raw: Record<string, unknown>;
   try { raw = JSON.parse(await readFile(path, "utf8")); }
   catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") raw = {}; else throw new Error(`Cannot read ${path}: ${error}`); }
   if (!raw || typeof raw !== "object" || Array.isArray(raw) || Object.keys(raw).some(k => !["extensions", "trustedProjectRoots", "maxActive", "maxWorkers"].includes(k))) throw new Error(`Invalid config: ${path}`);
-  const entries = raw.extensions ?? {};
-  if (!entries || typeof entries !== "object" || Array.isArray(entries)) throw new Error("extensions must map approved names to absolute file paths");
+  const entries = raw.extensions === undefined
+    ? Object.fromEntries((await inherited?.() ?? []).map((path, i) => [`parent-${i}`, path]))
+    : raw.extensions;
+  if (!entries || typeof entries !== "object" || Array.isArray(entries)) throw new Error("extensions must map approved names to absolute file paths or builtin IDs");
   const extensions: Record<string, string> = {};
   for (const [name, value] of Object.entries(entries)) {
-    if (!/^[a-zA-Z0-9_-]+$/.test(name) || typeof value !== "string" || !isAbsolute(value)) throw new Error(`Invalid extension: ${name}`);
-    const path = await realpath(value);
-    if (!(await stat(path)).isFile()) throw new Error(`Extension must be a file: ${path}`);
-    extensions[name] = path;
+    if (!/^[a-zA-Z0-9_-]+$/.test(name) || typeof value !== "string") throw new Error(`Invalid extension: ${name}`);
+    const [path] = await normalizeExtensions([value]);
+    if (path) extensions[name] = path;
   }
   const trustedProjectRoots = await Promise.all(list(raw.trustedProjectRoots ?? [], "trustedProjectRoots").map(async path => {
     if (!isAbsolute(path)) throw new Error("Trusted project roots must be absolute");

@@ -1,20 +1,24 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { readFile, stat, mkdir, writeFile } from "node:fs/promises";
+import { readFile, stat, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { RpcClient, getPackageDir } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
 import { fixture, changedUntil } from "./helpers.ts";
 
-test("loadable parent tool completes the full real offline RPC start/wait/stop path", { timeout: 30_000 }, async () => {
+for (const source of ["CLI", "settings"] as const) test(`parent inherits ${source} provider without child config and completes offline RPC start/wait/stop`, { timeout: 30_000 }, async () => {
   const f = await fixture();
   const client = new RpcClient({ cliPath: join(getPackageDir(), "dist/cli.js"), cwd: f.launch.cwd,
     env: { PI_CODING_AGENT_DIR: f.launch.agentDir, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1" },
-    args: ["--no-extensions", "--no-approve", "--no-session", "--provider", "subagent-offline", "--model", "fixture", "--thinking", "off",
-      "--extension", f.launch.extensions[0], "--extension", fileURLToPath(new URL("../src/index.ts", import.meta.url)), "--tools", "subagent"] });
+    args: [...(source === "CLI" ? ["--no-extensions", "--extension", f.launch.extensions[0]] : []),
+      "--no-approve", "--no-session", "--provider", "subagent-offline", "--model", "fixture", "--thinking", "off",
+      "--extension", fileURLToPath(new URL("../src/index.ts", import.meta.url)), "--tools", "subagent"] });
   try {
-    await mkdir(join(f.launch.agentDir, "pi-subagent"), { recursive: true });
-    await writeFile(join(f.launch.agentDir, "pi-subagent/config.json"), JSON.stringify({ extensions: { fixture: f.launch.extensions[0] } }));
+    await rm(join(f.launch.agentDir, "pi-subagent/config.json"));
+    if (source === "settings") await writeFile(join(f.launch.agentDir, "settings.json"), JSON.stringify({
+      packages: [f.launch.extensions[0]], retry: { enabled: false }, compaction: { enabled: false },
+      extensions: ["-builtin:llama.cpp", "-builtin:tool-search", "-builtin:mcp"],
+    }));
     await client.start();
     const events = await client.promptAndWait("PARENT_SMOKE", undefined, 20_000);
     const results = events.filter(e => e.type === "tool_execution_end");
@@ -27,6 +31,8 @@ test("loadable parent tool completes the full real offline RPC start/wait/stop p
     const stop = JSON.parse(results[2].result.content[0].text);
     assert.equal(stop.processAlive, false);
     assert.throws(() => process.kill(stop.pid, 0), /ESRCH/);
+    const saved = JSON.parse(await readFile(join(f.launch.agentDir, "pi-subagent", (await client.getState()).sessionId, stop.workerId, "worker.json"), "utf8"));
+    assert.deepEqual(saved.launch.extensions, [...f.launch.extensions, ...(source === "settings" ? ["builtin:codemode"] : [])]);
   } finally { await client.stop(); await f.cleanup(); }
 });
 

@@ -7,6 +7,7 @@ import { readFile, rename, writeFile, mkdir, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Manager } from "../src/manager.ts";
 import { fixture, changedUntil } from "./helpers.ts";
+import { loadConfig } from "../src/profiles.ts";
 
 async function parentProcess(root: string) {
   const child = fork(fileURLToPath(new URL("./fixtures/parent.ts", import.meta.url)), [root], { stdio: ["ignore", "ignore", "pipe", "ipc"], env: { ...process.env, PI_OFFLINE: "1" } });
@@ -41,6 +42,22 @@ test("a disposable parent process exits then recovers the original conversation"
     assert.match((await parent.call("wait", { runId: next.runId })).runs[0].result.text, /PROCESS_MARKER/);
     await parent.call("shutdown"); assert.equal(await parent.exited, 0);
   } finally { if (parent?.child.exitCode === null) { await parent.call("shutdown"); await parent.exited; } await f.cleanup(); }
+});
+
+test("recovery rechecks inherited extensions and refuses a removed parent provider", { timeout: 20_000 }, async () => {
+  const f = await fixture(); let restored: Manager | undefined;
+  try {
+    const run = f.manager.start(f.launch, "INHERITED_RECOVERY", "retained");
+    await f.manager.wait([run.runId]); await f.manager.shutdown();
+    await rm(join(f.launch.agentDir, "pi-subagent/config.json"));
+    let inherited = [...f.launch.extensions];
+    restored = new Manager({ root: join(f.launch.agentDir, "pi-subagent"), parentId: "fixture-parent",
+      config: () => loadConfig(f.launch.agentDir, async () => inherited) });
+    assert.equal((await restored.recover(run.workerId)).state, "idle");
+    await restored.stop(run.workerId);
+    inherited = [];
+    await assert.rejects(restored.recover(run.workerId), /no longer approved/);
+  } finally { await restored?.shutdown(); await f.cleanup(); }
 });
 
 function reopen(root: string, parentId = "fixture-parent") { return new Manager({ root, parentId }); }

@@ -3,6 +3,8 @@ import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readF
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { Launch } from "./profiles.ts";
 import type { Run, Snapshot } from "./manager.ts";
+import { isBuiltinExtension } from "./extensions.ts";
+import { getPackageDir } from "@earendil-works/pi-coding-agent";
 
 export interface Prerequisites { files: Record<string, string>; cwd: { dev: number; ino: number } }
 export interface SavedWorker {
@@ -14,7 +16,8 @@ const runId = /^r-[a-f0-9-]{36}$/;
 function digest(path: string): string { return createHash("sha256").update(readFileSync(path)).digest("hex"); }
 export function prerequisites(launch: Launch): Prerequisites {
   const files: Record<string, string> = {};
-  for (const path of [launch.profile.path, ...launch.extensions]) {
+  for (const path of [launch.profile.path, ...launch.extensions.map(path => isBuiltinExtension(path)
+    ? join(getPackageDir(), "dist/extensions", path === "builtin:llama.cpp" ? "llama" : path.slice("builtin:".length), "index.js") : path)]) {
     if (!isAbsolute(path) || !statSync(path).isFile()) throw new Error(`Missing recovery prerequisite: ${path}`);
     files[path] = digest(path);
   }
