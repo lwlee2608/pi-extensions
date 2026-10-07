@@ -51,7 +51,9 @@ export default function (pi: ExtensionAPI): void {
         case "recover": result = await active.recover(args.workerId); break;
         case "reply": result = await active.reply(args.questionId, "message" in args ? args.message : undefined, "cancelled" in args); break;
       }
-      return { content: [{ type: "text", text: JSON.stringify(result) }], details: result, usage: active.takeUsage() };
+      const usage = active.takeUsage();
+      const warning = active.takeUsageWarning();
+      return { content: [{ type: "text", text: JSON.stringify(result) }, ...(warning ? [{ type: "text" as const, text: warning }] : [])], details: result, usage };
     },
   });
 }

@@ -43,6 +43,7 @@ export class Manager {
   private questions = new Map<string, Question>();
   private store: Store;
   private shutdownPromise?: Promise<void>;
+  private usageWarning?: string;
   private spawn: typeof launchChild;
   constructor(options: { root: string; parentId: string; maxWorkers?: number; maxActive?: number; spawn?: typeof launchChild }) {
     if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,150}$/.test(options.parentId)) throw new Error("Invalid parent session ID");
@@ -53,6 +54,7 @@ export class Manager {
     this.events.setMaxListeners(0);
     this.store = new Store(options.root, options.parentId);
     try {
+      for (const id of this.store.readReported()) this.reported.add(id);
       for (const saved of this.store.readAll()) {
         const run = saved.runs.find(r => r.runId === saved.view.runId)!;
         for (const history of saved.runs) this.runs.set(history.runId, history);
@@ -308,9 +310,8 @@ export class Manager {
     worker.view.activity = result.outcome;
     worker.slot = false;
     this.cancelQuestions(worker);
-    this.save(worker);
-    this.schedule();
-    this.changed();
+    try { this.save(worker); }
+    finally { this.schedule(); this.changed(); }
   }
   private exited(worker: Worker, child: Child, error: Error): void {
     if (worker.child !== child) return;
@@ -434,13 +435,20 @@ export class Manager {
     });
   }
   takeUsage(): Usage | undefined {
-    const usage = zeroUsage(); let found = false;
+    const usage = zeroUsage(), pending: string[] = [];
     for (const [id, run] of this.runs) if (run.result && !this.reported.has(id)) {
-      this.reported.add(id); addUsage(usage, run.result.usage); found = true;
+      pending.push(id); addUsage(usage, run.result.usage);
     }
-    if (found) for (const worker of this.workers.values()) this.save(worker);
-    return found ? usage : undefined;
+    if (!pending.length) return;
+    try { this.usageWarning = this.store.checkpointUsage([...this.reported, ...pending]); }
+    catch (error) {
+      this.usageWarning = `Usage remains pending after checkpoint failure: ${errorText(error)}`;
+      return;
+    }
+    for (const id of pending) this.reported.add(id);
+    return usage;
   }
+  takeUsageWarning(): string | undefined { const warning = this.usageWarning; this.usageWarning = undefined; return warning; }
   shutdown(): Promise<void> { return this.shutdownPromise ??= this.closeAll(); }
   private async closeAll(): Promise<void> {
     this.closing = true;

@@ -130,6 +130,30 @@ export class Store {
       throw error;
     }
   }
+  readReported(): string[] {
+    const path = join(this.directory, "reported.json");
+    if (!existsSync(path)) return [];
+    if (statSync(path).size > 200_000) throw new Error("Usage checkpoint exceeds bound");
+    const value: unknown = JSON.parse(readFileSync(path, "utf8"));
+    if (!strings(value) || value.length > 2048 || value.some(id => !runId.test(id))) throw new Error("Corrupt usage checkpoint");
+    return value;
+  }
+  checkpointUsage(ids: string[]): string | undefined {
+    if (this.closed || JSON.parse(readFileSync(this.lockPath, "utf8")).token !== this.token) throw new Error("Lost usage checkpoint ownership");
+    const path = join(this.directory, "reported.json"), temp = `${path}.${randomUUID()}.tmp`;
+    let committed = false;
+    try {
+      const fd = openSync(temp, "wx", 0o600);
+      try { writeFileSync(fd, JSON.stringify(ids)); fsyncSync(fd); } finally { closeSync(fd); }
+      renameSync(temp, path);
+      committed = true;
+      const dir = openSync(this.directory, "r"); try { fsyncSync(dir); } finally { closeSync(dir); }
+    } catch (error) {
+      rmSync(temp, { force: true });
+      if (committed) return `Usage checkpoint installed but directory sync failed: ${error}`;
+      throw error;
+    }
+  }
   close(): void {
     if (this.closed) return;
     if (JSON.parse(readFileSync(this.lockPath, "utf8")).token !== this.token) throw new Error("Lost parent storage ownership; lock retained");

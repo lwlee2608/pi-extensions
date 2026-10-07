@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { fork } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import { readFile, rename, writeFile, mkdir } from "node:fs/promises";
+import { readFile, rename, writeFile, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { Manager } from "../src/manager.ts";
 import { fixture, changedUntil } from "./helpers.ts";
@@ -158,6 +158,37 @@ test("recovery refuses revoked project-profile trust", { timeout: 20_000 }, asyn
     await f.manager.wait([run.runId]); await f.manager.stop(run.workerId);
     await writeFile(config, JSON.stringify({ extensions: { fixture: f.launch.extensions[0] } }));
     await assert.rejects(f.manager.recover(run.workerId), /trust was revoked/);
+  } finally { await f.cleanup(); }
+});
+
+test("failed usage checkpoint preserves pending usage and does not rewrite worker metadata", { timeout: 20_000 }, async () => {
+  const f = await fixture();
+  try {
+    const run = f.manager.start(f.launch, "billable result", "retained"); await f.manager.wait([run.runId]);
+    const directory = join(f.launch.agentDir, "pi-subagent/fixture-parent");
+    const workerPath = join(directory, run.workerId, "worker.json");
+    const before = await readFile(workerPath, "utf8");
+    await mkdir(join(directory, "reported.json"));
+    assert.equal(f.manager.takeUsage(), undefined);
+    assert.match(f.manager.takeUsageWarning()!, /remains pending/);
+    await rm(join(directory, "reported.json"), { recursive: true });
+    assert.equal(f.manager.takeUsage()?.totalTokens, 11);
+    assert.equal(f.manager.takeUsage(), undefined);
+    assert.equal(await readFile(workerPath, "utf8"), before);
+  } finally { await f.cleanup(); }
+});
+
+test("terminal persistence failure still reconciles queued siblings", { timeout: 20_000 }, async () => {
+  const f = await fixture({ maxActive: 1 });
+  try {
+    const active = f.manager.start(f.launch, "WRITE_AND_HOLD", "retained");
+    await changedUntil(f.manager, () => f.manager.status(active.workerId)[0].activity === "tool: fixture_hold");
+    const queued = f.manager.start(f.launch, "queued must progress");
+    const path = join(f.launch.agentDir, "pi-subagent/fixture-parent", active.workerId, "worker.json");
+    await rename(path, `${path}.saved`); await mkdir(path);
+    const done = await f.manager.wait([queued.runId], "all", 10_000);
+    assert.equal(done.reason, "completed"); assert.equal(done.runs[0].result?.outcome, "completed");
+    await rm(path, { recursive: true }); await rename(`${path}.saved`, path);
   } finally { await f.cleanup(); }
 });
 
