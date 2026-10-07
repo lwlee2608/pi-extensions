@@ -11,7 +11,10 @@ test("real RPC validates provider, tool loadout and confirmed process exit", { t
   const f = await fixture();
   let child: Child | undefined;
   try {
-    child = await launchChild(f.launch, join(f.root, "child"), randomUUID());
+    const oldKey = process.env.PI_SUBAGENT_FIXTURE_KEY;
+    process.env.PI_SUBAGENT_FIXTURE_KEY = "offline-not-a-credential";
+    try { child = await launchChild(f.launch, join(f.root, "child"), randomUUID()); }
+    finally { if (oldKey === undefined) delete process.env.PI_SUBAGENT_FIXTURE_KEY; else process.env.PI_SUBAGENT_FIXTURE_KEY = oldKey; }
     const events: ChildEvent[] = [];
     let settled!: () => void;
     const completion = new Promise<void>(resolve => { settled = resolve; });

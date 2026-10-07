@@ -35,7 +35,7 @@ export default function (pi: ExtensionAPI): void {
     },
   });
   pi.registerProvider("subagent-offline", {
-    api: "subagent-offline", apiKey: "offline-not-a-credential",
+    api: "subagent-offline", apiKey: process.env.PI_SUBAGENT_FIXTURE_KEY ? "$PI_SUBAGENT_FIXTURE_KEY" : "offline-not-a-credential",
     models: [{ id: "fixture", name: "Subagent offline fixture", api: "subagent-offline", baseUrl: "http://invalid.invalid", reasoning: false,
       input: ["text"], contextWindow: 128000, maxTokens: 1024, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } }],
     streamSimple(model, context, options) {
