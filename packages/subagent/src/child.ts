@@ -22,7 +22,7 @@ export default function (pi: ExtensionAPI): void {
     pending.clear();
   });
   pi.registerTool({
-    name: "ask_parent", label: "Ask parent", description: "Ask the parent for a blocking decision. Wait for an explicit answer. Cancellation is not permission to guess or continue.",
+    name: "ask_parent", label: "Ask parent", executionMode: "sequential", description: "Ask the parent for a blocking decision. Wait for an explicit answer. Cancellation is not permission to guess or continue.",
     parameters: Type.Object({ question: Type.String({ minLength: 1, maxLength: 4000, pattern: "\\S" }) }),
     async execute(_id, args, signal) {
       signal?.throwIfAborted();

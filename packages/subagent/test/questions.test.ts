@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { fixture, changedUntil } from "./helpers.ts";
 import { validateAction } from "../src/schema.ts";
 
@@ -44,6 +46,27 @@ test("stop and explicit cancellation cancel pending questions and reject stale r
     assert.throws(() => validateAction({ action: "reply", questionId: "q-one", message: "yes", cancelled: true }), /Invalid/);
     assert.throws(() => validateAction({ action: "reply", questionId: "q-one" }), /Invalid/);
   } finally { await f.cleanup(); }
+});
+
+test("question gates a later write in the same response, including cancellation", { timeout: 25_000 }, async () => {
+  for (const cancelled of [true, false]) {
+    const f = await fixture();
+    try {
+      const run = f.manager.start(f.launch, "ASK_PARENT THEN_WRITE", "retained");
+      const attention = await f.manager.wait([run.runId]);
+      const output = join(f.launch.cwd, "after-question.txt");
+      await assert.rejects(readFile(output), /ENOENT/);
+      await f.manager.reply(attention.pendingQuestionIds[0], cancelled ? undefined : "Proceed", cancelled);
+      const done = await f.manager.wait([run.runId]);
+      if (cancelled) {
+        assert.equal(done.runs[0].result?.outcome, "interrupted");
+        await assert.rejects(readFile(output), /ENOENT/);
+      } else {
+        assert.equal(done.runs[0].result?.outcome, "completed");
+        assert.equal(await readFile(output, "utf8"), "only after reply");
+      }
+    } finally { await f.cleanup(); }
+  }
 });
 
 test("unexpected permission confirmation is refused, never auto-approved", { timeout: 20_000 }, async () => {

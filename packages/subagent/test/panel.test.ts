@@ -27,6 +27,8 @@ test("multi-worker panel is bounded, prioritizes questions and shows overflow", 
   const lines = panelLines(workers, 100, 1000);
   assert.equal(lines.length, 9); assert.match(lines[0], /worker 7.*blocked/); assert.match(lines[1], /reply q-one: Choose file/);
   assert.match(lines.at(-1)!, /\+4 more/);
+  const withIdle = [...workers.slice(0, 4).map(w => ({ ...w, state: "idle" as const })), { ...worker, label: "active reviewer" }];
+  assert.match(panelLines(withIdle, 100)[0], /active reviewer/);
   for (const width of [1, 5, 40]) for (const line of panelLines(workers, width)) assert.ok(visibleWidth(line) <= width);
 });
 

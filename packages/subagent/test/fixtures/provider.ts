@@ -77,6 +77,12 @@ export default function (pi: ExtensionAPI): void {
             message.content.push(call);
             stream.push({ type: "toolcall_start", contentIndex: 0, partial: message });
             stream.push({ type: "toolcall_end", contentIndex: 0, toolCall: call, partial: message });
+            if (text.includes("THEN_WRITE")) {
+              const write: ToolCall = { type: "toolCall", id: `after-question-${Date.now()}`, name: "write", arguments: { path: "after-question.txt", content: "only after reply" } };
+              message.content.push(write);
+              stream.push({ type: "toolcall_start", contentIndex: 1, partial: message });
+              stream.push({ type: "toolcall_end", contentIndex: 1, toolCall: write, partial: message });
+            }
             message.stopReason = "toolUse";
           } else if (context.messages.at(-1)?.role === "user" && text.includes("WRITE_AND_HOLD")) {
             const calls: ToolCall[] = [

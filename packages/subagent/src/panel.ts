@@ -9,7 +9,8 @@ export function display(text: string): string {
 export function panelLines(workers: Snapshot[], width: number, now = Date.now()): string[] {
   if (width < 1 || !workers.length) return [];
   const live = workers.filter(w => w.state !== "closed");
-  const ordered = [...live.filter(w => w.state === "blocked"), ...live.filter(w => w.state !== "blocked")];
+  const order = { blocked: 0, working: 1, queued: 2, idle: 3, closed: 4 };
+  const ordered = live.sort((a, b) => order[a.state] - order[b.state]);
   if (!ordered.length) ordered.push(workers.at(-1)!);
   const rows = ordered.slice(0, 4).flatMap(worker => {
     const elapsed = Math.max(0, Math.floor(((worker.result?.endedAt ?? now) - worker.startedAt) / 1000));
