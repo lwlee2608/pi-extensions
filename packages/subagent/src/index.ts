@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Manager } from "./manager.ts";
@@ -24,7 +25,9 @@ export default function (pi: ExtensionAPI): void {
     if (ctx.mode === "tui") detachPanel = attachPanel(manager, ctx.ui);
     return manager;
   })().catch(error => { initialization = undefined; throw error; });
-  pi.on("session_start", async (_event, ctx) => { await getManager(ctx); });
+  pi.on("session_start", async (_event, ctx) => {
+    if (existsSync(join(getAgentDir(), "pi-subagent", ctx.sessionManager.getSessionId()))) await getManager(ctx);
+  });
   pi.on("session_shutdown", async () => {
     closed = true;
     closeInspector?.();

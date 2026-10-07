@@ -459,7 +459,8 @@ export class Manager {
   shutdown(): Promise<void> { return this.shutdownPromise ??= this.closeAll(); }
   private async closeAll(): Promise<void> {
     this.closing = true;
-    const results = await Promise.allSettled([...this.workers.keys()].map(id => this.stop(id)));
+    const owned = [...this.workers.values()].filter(w => !w.uncertain);
+    const results = await Promise.allSettled(owned.map(w => this.stop(w.view.workerId)));
     const failures = results.filter(r => r.status === "rejected");
     if (failures.length) throw new AggregateError(failures.map(r => r.reason), "Subagent cleanup failed; ownership lock retained");
     this.store.close();

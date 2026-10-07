@@ -14,7 +14,7 @@ const runId = /^r-[a-f0-9-]{36}$/;
 function digest(path: string): string { return createHash("sha256").update(readFileSync(path)).digest("hex"); }
 export function prerequisites(launch: Launch): Prerequisites {
   const files: Record<string, string> = {};
-  for (const path of [launch.profile.path, ...launch.extensions, ...launch.skills]) {
+  for (const path of [launch.profile.path, ...launch.extensions]) {
     if (!isAbsolute(path) || !statSync(path).isFile()) throw new Error(`Missing recovery prerequisite: ${path}`);
     files[path] = digest(path);
   }
@@ -25,7 +25,9 @@ export function prerequisites(launch: Launch): Prerequisites {
 export function verifyPrerequisites(saved: SavedWorker, approvedExtensions: string[], trustedProjectRoots: string[]): void {
   if (saved.launch.profile.trustedProjectRoot && !trustedProjectRoots.includes(saved.launch.profile.trustedProjectRoot)) throw new Error("Recovery project-profile trust was revoked");
   const current = prerequisites(saved.launch);
-  if (JSON.stringify(current) !== JSON.stringify(saved.prerequisites)) throw new Error("Recovery prerequisites changed (cwd/profile/provider/skill); restore the saved resources, do not substitute");
+  if (JSON.stringify(current) !== JSON.stringify(saved.prerequisites)) throw new Error("Recovery prerequisites changed (cwd/profile/extension); restore the saved resources, do not substitute");
+  const missingSkill = saved.launch.skills.find(path => !existsSync(path));
+  if (missingSkill) throw new Error(`Recovery skill is missing: ${missingSkill}`);
   if (saved.launch.extensions.some(path => !approvedExtensions.includes(path))) throw new Error("Recovery provider/tool extension is no longer approved");
   if (!saved.view.sessionFile || !statSync(saved.view.sessionFile).isFile()) throw new Error("Recovery session file is missing");
   const fd = openSync(saved.view.sessionFile, "r");

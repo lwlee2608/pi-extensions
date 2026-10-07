@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { execFileSync, spawn } from "node:child_process";
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,6 +25,7 @@ test("extracted artifact runs parent, bundled profile and child bridge outside c
       args: ["--no-session", "--no-extensions", "--no-approve", "--provider", "subagent-offline", "--model", "fixture", "--thinking", "off", "--extension", provider, "--extension", artifact, "--tools", "subagent"] });
     await client.start();
     const commands = await client.getCommands(); assert.equal(commands.filter(c => c.name === "subagents").length, 1);
+    assert.deepEqual(await readdir(join(agentDir, "pi-subagent")), ["config.json"], "sessions that never delegate take no storage lock");
     const events = await client.promptAndWait("PARENT_SMOKE", undefined, 20_000);
     const results = events.filter(e => e.type === "tool_execution_end");
     assert.equal(results.length, 3); assert.ok(results.every(e => !e.isError));

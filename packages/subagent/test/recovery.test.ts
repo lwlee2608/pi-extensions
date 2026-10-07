@@ -4,7 +4,7 @@ import { fork } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { readFile, rename, writeFile, mkdir, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { Manager } from "../src/manager.ts";
 import { fixture, changedUntil } from "./helpers.ts";
 
@@ -137,6 +137,21 @@ test("exclusive parent ownership, foreign/one-shot/live refusal and changed prer
   } finally { await foreign?.shutdown(); await restored?.shutdown(); await f.cleanup(); }
 });
 
+test("recovery accepts edited skills and refuses missing ones", { timeout: 20_000 }, async () => {
+  const f = await fixture();
+  try {
+    const skill = join(f.launch.agentDir, "skills/edited/SKILL.md");
+    await mkdir(dirname(skill), { recursive: true });
+    await writeFile(skill, "---\nname: edited\ndescription: before\n---\nBefore.\n");
+    const run = f.manager.start({ ...f.launch, skills: [skill] }, "saved", "retained");
+    await f.manager.wait([run.runId]); await f.manager.stop(run.workerId);
+    await rename(skill, `${skill}.hidden`);
+    await assert.rejects(f.manager.recover(run.workerId), /skill is missing/);
+    await writeFile(skill, "---\nname: edited\ndescription: after\n---\nAfter.\n");
+    assert.equal((await f.manager.recover(run.workerId)).state, "idle");
+  } finally { await f.cleanup(); }
+});
+
 test("failed first admission leaves existing saved workers loadable", { timeout: 20_000 }, async () => {
   const f = await fixture(); let restored: Manager | undefined;
   try {
@@ -204,10 +219,12 @@ test("corrupt metadata and uncertain ownership fail closed without changing fore
     await writeFile(path, JSON.stringify(uncertain));
     restored = reopen(root);
     await assert.rejects(restored.recover(run.workerId), /certain ownership/);
+    await restored.shutdown();
     assert.equal(await readFile(path, "utf8"), JSON.stringify(uncertain));
-    await assert.rejects(restored.shutdown(), /ownership lock retained/);
+    restored = reopen(root);
+    await assert.rejects(restored.recover(run.workerId), /certain ownership/);
   } finally {
     // This case deliberately leaves an uncertain record. Remove only its disposable directory.
-    await f.cleanup();
+    await restored?.shutdown(); await f.cleanup();
   }
 });
