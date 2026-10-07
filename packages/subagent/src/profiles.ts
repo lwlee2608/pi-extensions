@@ -6,7 +6,7 @@ import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
 import type { Effort, Start } from "./schema.ts";
 
 export interface Config { extensions: Record<string, string>; trustedProjectRoots: string[]; maxActive: number; maxWorkers: number }
-export interface Profile { name: string; path: string; prompt: string; tools: string[]; model?: string; effort?: Effort; extensions?: string[] }
+export interface Profile { name: string; path: string; prompt: string; trustedProjectRoot?: string; tools: string[]; model?: string; effort?: Effort; extensions?: string[] }
 export interface Launch {
   cwd: string; agentDir: string; profile: Profile; extensions: string[]; skills: string[];
   provider: string; model: string; effort: Effort;
@@ -72,6 +72,7 @@ export async function resolveLaunch(input: Start, parent: { cwd: string; agentDi
         if ((await stat(join(root, ".pi/agents"))).isDirectory()) {
           if (!config.trustedProjectRoots.includes(root)) throw new Error(`Project profiles require explicit trust in pi-subagent/config.json: ${root}`);
           profile = await findProfile(join(root, ".pi/agents"), input.agent);
+          if (profile) profile.trustedProjectRoot = root;
           break;
         }
       } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }

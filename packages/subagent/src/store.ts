@@ -22,7 +22,8 @@ export function prerequisites(launch: Launch): Prerequisites {
   if (!cwd.isDirectory()) throw new Error(`Missing worker cwd: ${launch.cwd}`);
   return { files, cwd: { dev: cwd.dev, ino: cwd.ino } };
 }
-export function verifyPrerequisites(saved: SavedWorker, approvedExtensions: string[]): void {
+export function verifyPrerequisites(saved: SavedWorker, approvedExtensions: string[], trustedProjectRoots: string[]): void {
+  if (saved.launch.profile.trustedProjectRoot && !trustedProjectRoots.includes(saved.launch.profile.trustedProjectRoot)) throw new Error("Recovery project-profile trust was revoked");
   const current = prerequisites(saved.launch);
   if (JSON.stringify(current) !== JSON.stringify(saved.prerequisites)) throw new Error("Recovery prerequisites changed (cwd/profile/provider/skill); restore the saved resources, do not substitute");
   if (saved.launch.extensions.some(path => !approvedExtensions.includes(path))) throw new Error("Recovery provider/tool extension is no longer approved");
@@ -50,6 +51,7 @@ function validate(value: unknown, parentId: string, id: string, directory: strin
   if (!object(launch.profile) || ![launch.cwd, launch.agentDir, launch.provider, launch.model, launch.profile.name, launch.profile.path, launch.profile.prompt].every(v => typeof v === "string")
     || !["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(launch.effort) || !strings(launch.extensions) || !strings(launch.skills) || !strings(launch.profile.tools)
     || !object(launch.providerContract) || typeof launch.providerContract.api !== "string" || typeof launch.providerContract.baseUrl !== "string" || typeof launch.providerContract.registered !== "boolean"
+    || (launch.profile.trustedProjectRoot !== undefined && (typeof launch.profile.trustedProjectRoot !== "string" || !isAbsolute(launch.profile.trustedProjectRoot)))
     || launch.cwd !== view.cwd || `${launch.provider}/${launch.model}` !== view.model || launch.effort !== view.effort) return fail();
   if (!Array.isArray(value.runs) || !value.runs.length || value.runs.length > 2048 || value.runs.some(r => !object(r) || r.workerId !== id || !runId.test(r.runId) || typeof r.label !== "string" || !Number.isFinite(r.startedAt) || (r.result !== undefined && !validResult(r.result)))
     || !value.runs.some(r => r.runId === view.runId) || new Set(value.runs.map(r => r.runId)).size !== value.runs.length || !strings(value.reported)) return fail();
@@ -96,14 +98,26 @@ export class Store {
     if (this.closed || JSON.parse(readFileSync(this.lockPath, "utf8")).token !== this.token) throw new Error("Lost parent storage ownership");
     const directory = join(this.directory, record.view.workerId);
     validate(record, this.parentId, record.view.workerId, directory);
-    mkdirSync(directory, { recursive: true, mode: 0o700 });
-    const path = join(directory, "worker.json"), temp = `${path}.${randomUUID()}.tmp`;
     const data = JSON.stringify(record);
     if (Buffer.byteLength(data) > 20 * 1024 * 1024) throw new Error("Worker metadata exceeds storage bound");
-    const fd = openSync(temp, "wx", 0o600);
-    try { writeFileSync(fd, data); fsyncSync(fd); } finally { closeSync(fd); }
-    renameSync(temp, path);
-    const dir = openSync(directory, "r"); try { fsyncSync(dir); } finally { closeSync(dir); }
+    const initial = !existsSync(directory);
+    const target = initial ? join(this.directory, `.admit-${randomUUID()}`) : directory;
+    const path = join(target, "worker.json"), temp = `${path}.${randomUUID()}.tmp`;
+    let committed = false;
+    try {
+      mkdirSync(target, { recursive: true, mode: 0o700 });
+      const fd = openSync(temp, "wx", 0o600);
+      try { writeFileSync(fd, data); fsyncSync(fd); } finally { closeSync(fd); }
+      renameSync(temp, path);
+      const dir = openSync(target, "r"); try { fsyncSync(dir); } finally { closeSync(dir); }
+      if (initial) renameSync(target, directory);
+      committed = true;
+      const parent = openSync(this.directory, "r"); try { fsyncSync(parent); } finally { closeSync(parent); }
+    } catch (error) {
+      if (initial && !committed) rmSync(target, { recursive: true, force: true });
+      else rmSync(temp, { force: true });
+      throw error;
+    }
   }
   close(): void {
     if (this.closed) return;

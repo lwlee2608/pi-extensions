@@ -351,16 +351,18 @@ export class Manager {
   }
   async recover(id: string): Promise<Snapshot> {
     const worker = this.worker(id);
-    if (this.closing || worker.uncertain || worker.reservation || worker.view.state !== "closed" || worker.view.lifetime !== "retained") throw new Error("Recovery requires a closed retained worker with certain ownership in the original parent");
-    if ([...this.workers.values()].filter(w => w.reservation).length >= this.maxWorkers) throw new Error("Worker process cap reached");
-    worker.reservation = true;
     return this.exclusive(worker, async () => {
+      if (this.closing || worker.uncertain || worker.reservation || worker.view.state !== "closed" || worker.view.lifetime !== "retained") throw new Error("Recovery requires a closed retained worker with certain ownership in the original parent");
+      if ([...this.workers.values()].filter(w => w.reservation).length >= this.maxWorkers) throw new Error("Worker process cap reached");
+      worker.reservation = true;
+      worker.stopping = false;
       try {
         const config = await loadConfig(worker.launch.agentDir);
         const saved = { version: 1 as const, parentId: this.store.parentId, view: worker.view, launch: worker.launch,
           runs: [worker.run], generation: worker.generation, prerequisites: worker.prerequisites, reported: [], ownership: "closed" as const };
-        verifyPrerequisites(saved, Object.values(config.extensions));
-        worker.generation = randomUUID(); worker.stopping = false; worker.ready = false; worker.settled = false; worker.accepted = false;
+        verifyPrerequisites(saved, Object.values(config.extensions), config.trustedProjectRoots);
+        if (worker.stopping || this.closing) throw new Error("Recovery cancelled during prerequisite validation");
+        worker.generation = randomUUID(); worker.ready = false; worker.settled = false; worker.accepted = false;
         worker.view.recoverable = false; worker.view.error = undefined;
         this.save(worker);
         const own = (child: Child) => {
@@ -368,6 +370,7 @@ export class Manager {
           child.onEvent(event => this.event(worker, event)); child.onExit(error => this.exited(worker, error));
         };
         worker.child = await this.spawn(worker.launch, worker.directory, worker.view.sessionId, own, worker.view.sessionFile);
+        if (worker.stopping || this.closing) throw new Error("Recovery cancelled during child startup");
         worker.ready = true;
         worker.view.state = "idle"; worker.view.activity = "recovered; awaiting an explicit new task";
         this.save(worker); this.changed();

@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { fork } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import { readFile, rename, writeFile } from "node:fs/promises";
+import { readFile, rename, writeFile, mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { Manager } from "../src/manager.ts";
 import { fixture, changedUntil } from "./helpers.ts";
@@ -64,9 +64,14 @@ test("shutdown reopens retained context idle with new PID, immutable results and
     assert.equal((await restored.wait([working.runId])).runs[0].result?.outcome, "interrupted");
     assert.equal(restored.status(blocked.workerId)[0].questions?.[0].state, "cancelled");
     await assert.rejects(restored.reply(questionId, "stale"), /stale|already answered/);
+    const extraSkill = join(f.launch.agentDir, "skills/added/SKILL.md");
+    await mkdir(join(f.launch.agentDir, "skills/added"), { recursive: true });
+    await writeFile(extraSkill, "---\nname: added-after-stop\ndescription: UNAPPROVED_SKILL_MARKER\n---\nDo not load in recovered children.\n");
     const path = restored.status(idle.workerId)[0].sessionFile!;
     const transcript = await readFile(path, "utf8");
+    const stop = restored.stop(idle.workerId);
     const competing = await Promise.allSettled([restored.recover(idle.workerId), restored.recover(idle.workerId)]);
+    await stop;
     assert.equal(competing.filter(r => r.status === "fulfilled").length, 1);
     const recovered = (competing.find(r => r.status === "fulfilled") as PromiseFulfilledResult<ReturnType<Manager["status"]>[number]>).value;
     assert.equal(recovered.state, "idle"); assert.equal(recovered.sessionId, before[0].sessionId); assert.notEqual(recovered.pid, before[0].pid);
@@ -74,6 +79,7 @@ test("shutdown reopens retained context idle with new PID, immutable results and
     const next = await restored.message(idle.workerId, "recall previous task");
     assert.notEqual(next.runId, idle.runId);
     assert.match((await restored.wait([next.runId])).runs[0].result!.text, /RECOVERY_MARKER/);
+    assert.doesNotMatch(await readFile(path, "utf8"), /UNAPPROVED_SKILL_MARKER/);
     const recoveredBlocked = await restored.recover(blocked.workerId);
     assert.equal(recoveredBlocked.state, "idle");
     await assert.rejects(restored.reply(questionId, "still stale"), /stale|already answered/);
@@ -113,6 +119,30 @@ test("exclusive parent ownership, foreign/one-shot/live refusal and changed prer
     restored = reopen(root);
     assert.equal((await restored.wait([retained.runId])).runs[0].result?.outcome, "completed");
   } finally { await foreign?.shutdown(); await restored?.shutdown(); await f.cleanup(); }
+});
+
+test("failed first admission leaves existing saved workers loadable", { timeout: 20_000 }, async () => {
+  const f = await fixture(); let restored: Manager | undefined;
+  try {
+    const saved = f.manager.start(f.launch, "keep saved worker", "retained"); await f.manager.wait([saved.runId]);
+    assert.throws(() => f.manager.start({ ...f.launch, profile: { ...f.launch.profile, prompt: "x".repeat(21 * 1024 * 1024) } }, "must not admit"), /metadata exceeds/);
+    await f.manager.shutdown();
+    restored = reopen(join(f.launch.agentDir, "pi-subagent"));
+    assert.equal(restored.status().length, 1);
+    assert.equal((await restored.wait([saved.runId])).runs[0].result?.outcome, "completed");
+  } finally { await restored?.shutdown(); await f.cleanup(); }
+});
+
+test("recovery refuses revoked project-profile trust", { timeout: 20_000 }, async () => {
+  const f = await fixture();
+  try {
+    const config = join(f.launch.agentDir, "pi-subagent/config.json");
+    await writeFile(config, JSON.stringify({ extensions: { fixture: f.launch.extensions[0] }, trustedProjectRoots: [f.launch.cwd] }));
+    const run = f.manager.start({ ...f.launch, profile: { ...f.launch.profile, trustedProjectRoot: f.launch.cwd } }, "trusted profile", "retained");
+    await f.manager.wait([run.runId]); await f.manager.stop(run.workerId);
+    await writeFile(config, JSON.stringify({ extensions: { fixture: f.launch.extensions[0] } }));
+    await assert.rejects(f.manager.recover(run.workerId), /trust was revoked/);
+  } finally { await f.cleanup(); }
 });
 
 test("corrupt metadata and uncertain ownership fail closed without changing foreign records", { timeout: 20_000 }, async () => {

@@ -64,7 +64,7 @@ Worker states include queued, working, blocked, idle, and closed; terminal run o
 - This extension cannot bootstrap its own persistent orchestration before it exists. If built through `build-feature`, use Solo with the currently installed one-shot reviewer for all four phases. Do not change the global subagent tool mid-build. This bootstrap choice is `agent` guidance, not a recorded build-mode answer.
 
 ## Progress
-Phase 3 of 4 · 15/20 tasks — Phases 1 and 2 merged as PRs #13/#14 after three review rounds each (final clean). Phase 3 implemented and locally verified; review pending.
+Phase 3 of 4 · 15/20 tasks — Phases 1 and 2 merged as PRs #13/#14 after three review rounds each (final clean). PR #15 open; round 1 findings fixed, round 2 pending.
 
 All source/test paths below are relative to `packages/subagent/` unless marked repository-root or external.
 
@@ -144,6 +144,7 @@ These are post-build instructions, not authorization to alter the user's global 
 
 ## Agent-selected details added while completing the phases
 
+- Phase 3 round 1 serialized recovery admission with stop, made first metadata admission transactional, revalidated project-profile trust, and disabled unsaved automatic skill discovery. All findings fixed, including the small judgment call.
 - Phase 3 uses a conservative exclusive parent-storage lock. Normal shutdown releases it after confirmed cleanup; crashes/failed cleanup retain it and require independent ownership resolution rather than stale-PID guessing. Metadata is atomic/fsynced and bounded to 20 MiB per worker.
 - Phase 2 round 2 made `ask_parent` model-only to prevent nested parallel tools bypassing its blocking boundary; a real nested-call regression verifies denial. No findings skipped.
 - Phase 2 round 1 fixed question tools not gating later tools in the same response, and idle workers hiding active panel rows. Real offline regression verifies a later write waits for reply and never runs after cancellation. No findings skipped.
