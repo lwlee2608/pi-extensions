@@ -64,7 +64,7 @@ Worker states include queued, working, blocked, idle, and closed; terminal run o
 - This extension cannot bootstrap its own persistent orchestration before it exists. If built through `build-feature`, use Solo with the currently installed one-shot reviewer for all four phases. Do not change the global subagent tool mid-build. This bootstrap choice is `agent` guidance, not a recorded build-mode answer.
 
 ## Progress
-Phase 2 of 4 · 10/20 tasks — Phase 1 merged as PR #13 after three review rounds (final clean); PR #14 open, round 1's two findings fixed; round 2 pending.
+Phase 2 of 4 · 10/20 tasks — Phase 1 merged as PR #13 after three review rounds (final clean); PR #14 open, rounds 1 and 2 fixed; final round 3 pending.
 
 All source/test paths below are relative to `packages/subagent/` unless marked repository-root or external.
 
@@ -144,6 +144,7 @@ These are post-build instructions, not authorization to alter the user's global 
 
 ## Agent-selected details added while completing the phases
 
+- Phase 2 round 2 made `ask_parent` model-only to prevent nested parallel tools bypassing its blocking boundary; a real nested-call regression verifies denial. No findings skipped.
 - Phase 2 round 1 fixed question tools not gating later tools in the same response, and idle workers hiding active panel rows. Real offline regression verifies a later write waits for reply and never runs after cancellation. No findings skipped.
 - Phase 1 review round 2 fixed uncertain steering after RPC timeout (close before accepting more tasks) and failed automatic recovery being reported as completion. Both have real offline-child regressions. No findings skipped.
 - Phase 1 review round 1 fixed late steering crossing run boundaries, lost startup errors/UI requests, missing provider-override validation (registration plus API/endpoint), and usage discarded during stop. Regression checks use real offline Pi children. No findings skipped.

@@ -69,6 +69,18 @@ test("question gates a later write in the same response, including cancellation"
   }
 });
 
+test("nested tools cannot invoke the blocking question tool", { timeout: 15_000 }, async () => {
+  const f = await fixture();
+  try {
+    const run = f.manager.start({ ...f.launch, profile: { ...f.launch.profile, tools: [...f.launch.profile.tools, "fixture_nested"] } }, "NESTED_QUESTION");
+    const result = await f.manager.wait([run.runId]);
+    assert.equal(result.reason, "completed"); assert.equal(result.runs[0].result?.outcome, "completed");
+    assert.deepEqual(result.pendingQuestionIds, []);
+    const session = f.manager.status(run.workerId)[0].sessionFile!;
+    assert.match(await readFile(session, "utf8"), /NESTED_DENIED/);
+  } finally { await f.cleanup(); }
+});
+
 test("unexpected permission confirmation is refused, never auto-approved", { timeout: 20_000 }, async () => {
   const f = await fixture();
   try {

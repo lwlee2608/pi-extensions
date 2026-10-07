@@ -26,6 +26,14 @@ export default function (pi: ExtensionAPI): void {
       return { content: [{ type: "text", text: allowed ? "AUTO_APPROVED" : "refused" }], details: undefined };
     },
   });
+  pi.registerTool({
+    name: "fixture_nested", label: "Nested fixture", description: "Verify child question is not callable by tools", parameters: Type.Object({}),
+    async execute(_id, _args, _signal, _update, ctx) {
+      const result = await ctx.executeTool("ask_parent", { question: "Nested question must be denied" });
+      if (!result.isError) throw new Error("Nested question unexpectedly succeeded");
+      return { content: [{ type: "text", text: "NESTED_DENIED" }], details: undefined };
+    },
+  });
   pi.registerProvider("subagent-offline", {
     api: "subagent-offline", apiKey: "offline-not-a-credential",
     models: [{ id: "fixture", name: "Subagent offline fixture", api: "subagent-offline", baseUrl: "http://invalid.invalid", reasoning: false,
@@ -71,9 +79,9 @@ export default function (pi: ExtensionAPI): void {
               stream.push({ type: "toolcall_end", contentIndex: 0, toolCall: call, partial: message });
               message.stopReason = "toolUse";
             } else { message.content.push({ type: "text", text: "parent smoke complete" }); message.stopReason = "stop"; }
-          } else if (context.messages.at(-1)?.role === "user" && (text.includes("ASK_PARENT") || text.includes("UNEXPECTED_PERMISSION"))) {
-            const permission = text.includes("UNEXPECTED_PERMISSION");
-            const call: ToolCall = { type: "toolCall", id: `question-${Date.now()}`, name: permission ? "fixture_permission" : "ask_parent", arguments: permission ? {} : { question: "Which disposable filename should I use?" } };
+          } else if (context.messages.at(-1)?.role === "user" && (text.includes("ASK_PARENT") || text.includes("UNEXPECTED_PERMISSION") || text.includes("NESTED_QUESTION"))) {
+            const permission = text.includes("UNEXPECTED_PERMISSION"), nested = text.includes("NESTED_QUESTION");
+            const call: ToolCall = { type: "toolCall", id: `question-${Date.now()}`, name: nested ? "fixture_nested" : permission ? "fixture_permission" : "ask_parent", arguments: permission || nested ? {} : { question: "Which disposable filename should I use?" } };
             message.content.push(call);
             stream.push({ type: "toolcall_start", contentIndex: 0, partial: message });
             stream.push({ type: "toolcall_end", contentIndex: 0, toolCall: call, partial: message });
