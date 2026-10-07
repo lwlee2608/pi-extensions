@@ -21,6 +21,15 @@ test("panel fits narrow/Unicode widths and strips child terminal controls", () =
   assert.equal(display("\x1b]0;bad title\x07hello\u202e"), "hello ");
 });
 
+test("multi-worker panel is bounded, prioritizes questions and shows overflow", () => {
+  const workers: Snapshot[] = Array.from({ length: 8 }, (_, i) => ({ ...worker, workerId: `w-${i}`, label: `worker ${i}` }));
+  workers[7] = { ...workers[7], state: "blocked", questions: [{ questionId: "q-one", workerId: "w-7", runId: "r-one", generation: "g", requestId: "request", question: "Choose file", state: "pending" }] };
+  const lines = panelLines(workers, 100, 1000);
+  assert.equal(lines.length, 9); assert.match(lines[0], /worker 7.*blocked/); assert.match(lines[1], /reply q-one: Choose file/);
+  assert.match(lines.at(-1)!, /\+4 more/);
+  for (const width of [1, 5, 40]) for (const line of panelLines(workers, width)) assert.ok(visibleWidth(line) <= width);
+});
+
 test("invalid action and launch configuration fail before dispatch", async () => {
   assert.throws(() => validateAction({ action: "wait", runIds: [] }), /Invalid/);
   assert.throws(() => validateAction({ action: "start", agent: "../escape", task: "x" }), /Invalid/);

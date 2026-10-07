@@ -19,6 +19,13 @@ export default function (pi: ExtensionAPI): void {
       return { content: [{ type: "text", text: "hold complete" }], details: undefined };
     },
   });
+  pi.registerTool({
+    name: "fixture_permission", label: "Permission fixture", description: "Unexpected RPC permission", parameters: Type.Object({}),
+    async execute(_id, _args, signal, _update, ctx) {
+      const allowed = await ctx.ui.confirm("Unexpected permission", "Approve?", { signal });
+      return { content: [{ type: "text", text: allowed ? "AUTO_APPROVED" : "refused" }], details: undefined };
+    },
+  });
   pi.registerProvider("subagent-offline", {
     api: "subagent-offline", apiKey: "offline-not-a-credential",
     models: [{ id: "fixture", name: "Subagent offline fixture", api: "subagent-offline", baseUrl: "http://invalid.invalid", reasoning: false,
@@ -64,6 +71,13 @@ export default function (pi: ExtensionAPI): void {
               stream.push({ type: "toolcall_end", contentIndex: 0, toolCall: call, partial: message });
               message.stopReason = "toolUse";
             } else { message.content.push({ type: "text", text: "parent smoke complete" }); message.stopReason = "stop"; }
+          } else if (context.messages.at(-1)?.role === "user" && (text.includes("ASK_PARENT") || text.includes("UNEXPECTED_PERMISSION"))) {
+            const permission = text.includes("UNEXPECTED_PERMISSION");
+            const call: ToolCall = { type: "toolCall", id: `question-${Date.now()}`, name: permission ? "fixture_permission" : "ask_parent", arguments: permission ? {} : { question: "Which disposable filename should I use?" } };
+            message.content.push(call);
+            stream.push({ type: "toolcall_start", contentIndex: 0, partial: message });
+            stream.push({ type: "toolcall_end", contentIndex: 0, toolCall: call, partial: message });
+            message.stopReason = "toolUse";
           } else if (context.messages.at(-1)?.role === "user" && text.includes("WRITE_AND_HOLD")) {
             const calls: ToolCall[] = [
               { type: "toolCall" as const, id: `write-${Date.now()}`, name: "write", arguments: { path: "fixture-edit.txt", content: "keep this edit" } },
@@ -72,7 +86,9 @@ export default function (pi: ExtensionAPI): void {
             calls.forEach((call, contentIndex) => { message.content.push(call); stream.push({ type: "toolcall_start", contentIndex, partial: message }); stream.push({ type: "toolcall_end", contentIndex, toolCall: call, partial: message }); });
             message.stopReason = "toolUse";
           } else {
-            const reply = `Offline context: ${users.join(" | ")}`;
+            const last = context.messages.at(-1);
+            const answer = last?.role === "toolResult" && last.toolName === "ask_parent" ? last.content.filter(c => c.type === "text").map(c => c.text).join(" ") : "";
+            const reply = `Offline context: ${users.join(" | ")}${answer ? ` | Parent answer: ${answer}` : ""}`;
             message.content.push({ type: "text", text: reply });
             stream.push({ type: "text_start", contentIndex: 0, partial: message });
             stream.push({ type: "text_delta", contentIndex: 0, delta: reply, partial: message });

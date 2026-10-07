@@ -8,13 +8,18 @@ export function display(text: string): string {
 }
 export function panelLines(workers: Snapshot[], width: number, now = Date.now()): string[] {
   if (width < 1 || !workers.length) return [];
-  const worker = workers.find(w => w.state === "working") ?? workers.at(-1)!;
-  const elapsed = Math.max(0, Math.floor(((worker.result?.endedAt ?? now) - worker.startedAt) / 1000));
-  const usage = worker.result?.usage.totalTokens ? ` · ${worker.result.usage.totalTokens} tokens` : "";
-  return [
-    truncateToWidth(display(`Subagent · ${worker.label} · ${worker.state}${worker.result ? `/${worker.result.outcome}` : ""} · ${elapsed}s${usage}`), width),
-    truncateToWidth(display(worker.error ?? (worker.state === "working" ? `${worker.activity} · ${worker.output}` : worker.result?.text ?? worker.activity)), width),
-  ];
+  const live = workers.filter(w => w.state !== "closed");
+  const ordered = [...live.filter(w => w.state === "blocked"), ...live.filter(w => w.state !== "blocked")];
+  if (!ordered.length) ordered.push(workers.at(-1)!);
+  const rows = ordered.slice(0, 4).flatMap(worker => {
+    const elapsed = Math.max(0, Math.floor(((worker.result?.endedAt ?? now) - worker.startedAt) / 1000));
+    const usage = worker.result?.usage.totalTokens ? ` · ${worker.result.usage.totalTokens} tokens` : "";
+    const question = worker.questions?.find(q => q.state === "pending");
+    const detail = question ? `reply ${question.questionId}: ${question.question}` : worker.error ?? `${worker.activity} · ${worker.output}`;
+    return [`Subagent · ${worker.label} · ${worker.state}${worker.result ? `/${worker.result.outcome}` : ""} · ${elapsed}s${usage}`, detail];
+  });
+  if (ordered.length > 4) rows.push(`+${ordered.length - 4} more workers · subagent status for details`);
+  return rows.map(row => truncateToWidth(display(row), width));
 }
 export function attachPanel(manager: Manager, ui: ExtensionUIContext): () => void {
   let render: (() => void) | undefined;
@@ -28,7 +33,7 @@ export function attachPanel(manager: Manager, ui: ExtensionUIContext): () => voi
     if (!disposed && !scheduled) scheduled = setTimeout(() => { scheduled = undefined; render?.(); }, 80);
   };
   const unsubscribe = manager.onChange(update);
-  const clock = setInterval(() => { if (manager.status().some(w => w.state === "working")) update(); }, 1000);
+  const clock = setInterval(() => { if (manager.status().some(w => ["working", "blocked", "queued"].includes(w.state))) update(); }, 1000);
   clock.unref();
   return () => { disposed = true; unsubscribe(); clearInterval(clock); clearTimeout(scheduled); ui.setWidget("pi-subagent", undefined); };
 }

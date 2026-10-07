@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { getPackageDir, type JsonAgentSessionEvent, type RpcCommand, type RpcResponse, type RpcExtensionUIRequest } from "@earendil-works/pi-coding-agent";
 import type { Launch } from "./profiles.ts";
 
-export type ChildEvent = JsonAgentSessionEvent | RpcExtensionUIRequest | { type: "extension_error"; error: string };
+export type ChildEvent = JsonAgentSessionEvent | RpcExtensionUIRequest | { type: "extension_error"; error: string } | { type: "subagent_question"; requestId: string; question: string };
 type Response<T extends RpcCommand["type"]> = Extract<RpcResponse, { success: true; command: T }>;
 export interface Child {
   readonly pid?: number;
@@ -15,6 +15,7 @@ export interface Child {
   onEvent(listener: (event: ChildEvent) => void): () => void;
   onExit(listener: (error: Error) => void): () => void;
   request<T extends RpcCommand["type"]>(command: Extract<RpcCommand, { type: T }>, timeoutMs?: number): Promise<Response<T>>;
+  reply(requestId: string, message: string): Promise<void>;
   close(): Promise<void>;
 }
 const limit = 4 * 1024 * 1024;
@@ -30,11 +31,13 @@ export class RpcProcess implements Child {
   private ready: Promise<void>;
   private startupError?: Error;
   private registeredProviders: string[] = [];
+  private token: string;
   private resolveReady!: () => void;
   private rejectReady!: (error: Error) => void;
   exited = false;
   get pid(): number | undefined { return this.child.pid; }
   constructor(cli: string, args: string[], cwd: string, env: NodeJS.ProcessEnv, token: string) {
+    this.token = token;
     this.exitPromise = new Promise(resolve => { this.resolveExit = resolve; });
     this.ready = new Promise((resolve, reject) => { this.resolveReady = resolve; this.rejectReady = reject; });
     void this.ready.catch(() => {});
@@ -45,8 +48,16 @@ export class RpcProcess implements Child {
     this.child.stderr!.on("data", (chunk: string) => { this.stderr = (this.stderr + chunk).slice(-16_384); });
     this.child.stdin!.on("error", error => this.fail(error));
     this.child.on("message", value => {
-      const message = value as { type?: string; token?: string; error?: string; registeredProviders?: string[] };
-      if (message?.type !== "subagent_ready" || message.token !== token) return;
+      const message = value as { type?: string; token?: string; error?: string; registeredProviders?: string[]; requestId?: string; question?: string };
+      if (message?.token !== token) return;
+      if (message.type === "subagent_question") {
+        if (typeof message.requestId === "string" && typeof message.question === "string" && message.question.trim() && message.question.length <= 4000) {
+          this.events.emit("event", { type: "subagent_question", requestId: message.requestId, question: message.question });
+        }
+        return;
+      }
+      if (message.type === "subagent_reply_ack" && message.requestId) { this.events.emit(`reply:${message.requestId}`); return; }
+      if (message.type !== "subagent_ready") return;
       if (message.error) this.rejectReady(new Error(message.error));
       else { this.registeredProviders = message.registeredProviders ?? []; this.resolveReady(); }
     });
@@ -118,6 +129,17 @@ export class RpcProcess implements Child {
       });
     });
   }
+  reply(requestId: string, message: string): Promise<void> {
+    if (!this.child.connected || this.exited) return Promise.reject(new Error("Child question channel is closed"));
+    return new Promise((resolve, reject) => {
+      const clean = () => { clearTimeout(timer); this.events.off(`reply:${requestId}`, ack); this.events.off("exit", exit); };
+      const ack = () => { clean(); resolve(); };
+      const exit = (error: Error) => { clean(); reject(error); };
+      const timer = setTimeout(() => { clean(); reject(new Error("Child question reply acknowledgement timed out")); }, 5000);
+      this.events.once(`reply:${requestId}`, ack); this.events.once("exit", exit);
+      this.child.send({ type: "subagent_reply", token: this.token, requestId, message }, error => { if (error) exit(error); });
+    });
+  }
   close(): Promise<void> {
     if (this.exited) return Promise.resolve();
     return this.closePromise ??= this.closeOwned();
@@ -148,14 +170,15 @@ export async function launchChild(launch: Launch, directory: string, sessionId: 
   const token = randomUUID();
   const args = ["--mode", "rpc", "--no-extensions", "--no-prompt-templates", "--no-themes", "--no-approve",
     "--provider", launch.provider, "--model", launch.model, "--thinking", launch.effort,
-    "--session-dir", directory, "--session-id", sessionId, "--tools", launch.profile.tools.join(","),
+    "--session-dir", directory, "--session-id", sessionId, "--tools", [...new Set([...launch.profile.tools, "ask_parent"])].join(","),
     "--append-system-prompt", promptPath,
     ...launch.extensions.flatMap(path => ["--extension", path]),
+    "--extension", fileURLToPath(new URL("./child.ts", import.meta.url)),
     "--extension", fileURLToPath(new URL("./bootstrap.ts", import.meta.url)),
     ...launch.skills.flatMap(path => ["--skill", path])];
   const child = new RpcProcess(join(getPackageDir(), "dist/cli.js"), args, launch.cwd, {
     ...process.env, PI_CODING_AGENT_DIR: launch.agentDir, PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0",
-    PI_SUBAGENT_TOKEN: token, PI_SUBAGENT_TOOLS: JSON.stringify(launch.profile.tools),
+    PI_SUBAGENT_TOKEN: token, PI_SUBAGENT_TOOLS: JSON.stringify([...new Set([...launch.profile.tools, "ask_parent"])]),
     PI_SESSION_ID: undefined, PI_SESSION_FILE: undefined, PI_PROVIDER: undefined, PI_MODEL: undefined, PI_REASONING_LEVEL: undefined,
   }, token);
   onSpawn?.(child);

@@ -15,7 +15,7 @@ export default function (pi: ExtensionAPI): void {
     if (closed) throw new Error("Subagent runtime is closed");
     const config = await loadConfig(getAgentDir());
     if (closed) throw new Error("Subagent runtime closed during initialization");
-    manager = new Manager({ root: join(getAgentDir(), "pi-subagent"), parentId: ctx.sessionManager.getSessionId(), maxWorkers: config.maxWorkers });
+    manager = new Manager({ root: join(getAgentDir(), "pi-subagent"), parentId: ctx.sessionManager.getSessionId(), maxWorkers: config.maxWorkers, maxActive: config.maxActive });
     if (ctx.mode === "tui") detachPanel = attachPanel(manager, ctx.ui);
     return manager;
   })().catch(error => { initialization = undefined; throw error; });
@@ -47,6 +47,7 @@ export default function (pi: ExtensionAPI): void {
         case "wait": result = await active.wait(args.runIds, args.mode, args.timeoutMs, signal); break;
         case "status": result = active.status(args.workerId); break;
         case "stop": result = await active.stop(args.workerId); break;
+        case "reply": result = await active.reply(args.questionId, "message" in args ? args.message : undefined, "cancelled" in args); break;
       }
       return { content: [{ type: "text", text: JSON.stringify(result) }], details: result, usage: active.takeUsage() };
     },
