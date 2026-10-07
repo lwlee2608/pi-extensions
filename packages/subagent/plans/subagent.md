@@ -7,6 +7,7 @@
 
 ## Decisions
 - **Interview depth** — Key decisions only.
+- **Build mode** — Solo (user selected). Fresh reviewer subagents use `gpt-6-astra-fast`, matching the parent model, through a dedicated profile; effort comes from the agent definition because the installed spawn tool has no effort override. Keep the installed subagent tool unchanged during bootstrap.
 - **Scope** — A focused general-purpose extension in this repository. Profiles, start/message/wait/stop controls, parallel children, and progress UI; no built-in feature workflow engine.
 - **Worker lifetime** — Live workers with saved recovery. Use `lifetime: "retained"` for phase workers: keep one RPC child across rounds until explicitly stopped. Default `lifetime: "once"` suits simple tasks and fresh reviewers: persist the terminal result, then automatically close the child process on success or failure. Retirement never changes a successful result to interrupted. Only retained workers support later tasks and recovery. Stop all owned children safely on shutdown/reload; no detached unattended workers. One-shot retirement is the approved review fix.
 - **Progress UI** — Compact persistent panel near the editor plus `/subagents` inspector with live output and message/stop controls. Do not replace the footer.
@@ -63,7 +64,7 @@ Worker states include queued, working, blocked, idle, and closed; terminal run o
 - This extension cannot bootstrap its own persistent orchestration before it exists. If built through `build-feature`, use Solo with the currently installed one-shot reviewer for all four phases. Do not change the global subagent tool mid-build. This bootstrap choice is `agent` guidance, not a recorded build-mode answer.
 
 ## Progress
-Phase 1 of 4 · 0/20 tasks — plan finalized; implementation not started.
+Phase 1 of 4 · 5/20 tasks — PR #13 open; rounds 1 and 2 fixed, final round 3 pending.
 
 All source/test paths below are relative to `packages/subagent/` unless marked repository-root or external.
 
@@ -71,11 +72,11 @@ All source/test paths below are relative to `packages/subagent/` unless marked r
 Run a simple fresh review or send a second task to a retained worker, with basic live status and safe retirement.
 
 **Blocked by:** none
-- [ ] Add the loadable package, bundled profiles, validated child config, and monorepo registration (`package.json`, `tsconfig.json`, `LICENSE`, `agents/worker.md`, `agents/reviewer.md`, `src/profiles.ts`; repository-root `package.json`, `package-lock.json`).
-- [ ] Launch and control persistent RPC children with explicit resources, accepted-input tracking, output streaming, and owned cleanup (`src/rpc.ts`, `test/fixtures/provider.ts`, `test/rpc.test.ts`).
-- [ ] Implement start/message/wait/status/stop, stable worker/run identity, one-shot retirement, and separate run outcomes (`src/manager.ts`, `src/schema.ts`, `test/lifecycle.test.ts`).
-- [ ] Register the tool and lifecycle hooks and show basic above-editor activity, including workers still running after a cancelled wait (`src/index.ts`, `src/panel.ts`, `test/panel.test.ts`).
-- [ ] Document and verify simple reviews and retained conversation continuity using the real local Pi fixture (`README.md`, `test/lifecycle.test.ts`).
+- [x] Add the loadable package, bundled profiles, validated child config, and monorepo registration (`package.json`, `tsconfig.json`, `LICENSE`, `agents/worker.md`, `agents/reviewer.md`, `src/profiles.ts`; repository-root `package.json`, `package-lock.json`).
+- [x] Launch and control persistent RPC children with explicit resources, accepted-input tracking, output streaming, and owned cleanup (`src/rpc.ts`, `test/fixtures/provider.ts`, `test/rpc.test.ts`).
+- [x] Implement start/message/wait/status/stop, stable worker/run identity, one-shot retirement, and separate run outcomes (`src/manager.ts`, `src/schema.ts`, `test/lifecycle.test.ts`).
+- [x] Register the tool and lifecycle hooks and show basic above-editor activity, including workers still running after a cancelled wait (`src/index.ts`, `src/panel.ts`, `test/panel.test.ts`).
+- [x] Document and verify simple reviews and retained conversation continuity using the real local Pi fixture (`README.md`, `test/lifecycle.test.ts`).
 
 **Verify:** From the repository root, run `npm run check --workspace=@lwlee2608/pi-subagent` and `node --test packages/subagent/test/rpc.test.ts packages/subagent/test/lifecycle.test.ts packages/subagent/test/panel.test.ts`. A real RPC child with the offline provider must retain a task marker across two tasks in the same PID/session, return different run IDs, and leave the first result unchanged. Assert busy task rejection, steering staying within one run, fast settlement before dispatch returns, and provider failure not appearing as success. More than sixteen sequential one-shot reviews must complete and retire without exhausting the process cap or losing their results. Cancel a wait and prove the task continues; stop it and prove the owned process exits without deleting a fixture edit. Panel tests cover streamed activity and terminal width bounds. Phase 1 may reject concurrent task admission explicitly; queue scheduling arrives in Phase 2, not a silent partial implementation.
 
@@ -142,5 +143,10 @@ These are post-build instructions, not authorization to alter the user's global 
 6. Roll back by stopping all children and confirming exit, removing/disabling the new package, restoring the previous resource selection, and reloading the old extension. Revert the skill integration separately if applied. Preserve saved sessions for inspection, but do not try to run the new action API against the old example. Never remove a phase worktree as part of extension rollback.
 
 ## Agent-selected details added while completing the phases
+
+- Phase 1 review round 2 fixed uncertain steering after RPC timeout (close before accepting more tasks) and failed automatic recovery being reported as completion. Both have real offline-child regressions. No findings skipped.
+- Phase 1 review round 1 fixed late steering crossing run boundaries, lost startup errors/UI requests, missing provider-override validation (registration plus API/endpoint), and usage discarded during stop. Regression checks use real offline Pi children. No findings skipped.
+- Phase 1 bounds in-memory history to 2048 admitted runs per parent and returns a clear limit error; existing disk results remain intact. This is separate from the sixteen live-process cap.
+- Phase 1 verification uses a real offline parent/tool/child path plus real direct RPC lifecycle tests. The root checks and tests pass. npm reports one high-severity dependency advisory; dependency upgrades are outside this phase and were not applied.
 
 The user can overturn these defaults before implementation: sixteen live/reserved workers, a 30-minute wait window, package-local user configuration, event-driven waits interruptible by any owned pending question, and action field names in the contract. File/module names and offline fixture layout are implementation guides, not a new workflow engine. The approved four-phase split remains sequential. No release, global installation, or unattended detached service is included.
