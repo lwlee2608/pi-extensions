@@ -10,6 +10,7 @@ export interface Profile { name: string; path: string; prompt: string; tools: st
 export interface Launch {
   cwd: string; agentDir: string; profile: Profile; extensions: string[]; skills: string[];
   provider: string; model: string; effort: Effort;
+  providerContract: { api: string; baseUrl: string; registered: boolean };
 }
 const builtins = ["read", "bash", "edit", "write", "grep", "find", "ls"];
 const efforts = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
@@ -60,7 +61,7 @@ async function findProfile(dir: string, name: string): Promise<Profile | undefin
   }
   return found;
 }
-export async function resolveLaunch(input: Start, parent: { cwd: string; agentDir: string; model?: Model<Api>; effort: Effort; models: Model<Api>[]; skills?: string[] }, config: Config): Promise<Launch> {
+export async function resolveLaunch(input: Start, parent: { cwd: string; agentDir: string; model?: Model<Api>; effort: Effort; models: Model<Api>[]; skills?: string[]; registeredProviders?: readonly string[] }, config: Config): Promise<Launch> {
   const cwd = await realpath(resolve(parent.cwd, input.cwd ?? "."));
   if (!(await stat(cwd)).isDirectory()) throw new Error(`Not a working directory: ${cwd}`);
   let profile: Profile | undefined;
@@ -96,5 +97,6 @@ export async function resolveLaunch(input: Start, parent: { cwd: string; agentDi
     if (!Object.hasOwn(config.extensions, name)) throw new Error(`Profile requests unapproved child extension: ${name}`);
     return config.extensions[name];
   });
-  return { cwd, agentDir: parent.agentDir, profile, extensions, skills: parent.skills ?? [], provider: model.provider, model: model.id, effort };
+  return { cwd, agentDir: parent.agentDir, profile, extensions, skills: parent.skills ?? [], provider: model.provider, model: model.id, effort,
+    providerContract: { api: model.api, baseUrl: model.baseUrl, registered: parent.registeredProviders?.includes(model.provider) ?? false } };
 }

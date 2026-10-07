@@ -14,7 +14,8 @@ export default function (pi: ExtensionAPI): void {
       return;
     }
     pi.setActiveTools(tools);
-    process.send?.({ type: "subagent_ready", token, tools: pi.getActiveTools(), sessionId: ctx.sessionManager.getSessionId() });
+    process.send?.({ type: "subagent_ready", token, tools: pi.getActiveTools(), sessionId: ctx.sessionManager.getSessionId(),
+      registeredProviders: ctx.modelRegistry.getRegisteredProviderIds() });
   });
   pi.on("before_agent_start", () => { pi.setActiveTools(tools); });
   pi.on("tool_call", event => {

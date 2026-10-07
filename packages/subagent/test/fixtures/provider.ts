@@ -5,7 +5,10 @@ import { setTimeout as delay } from "node:timers/promises";
 
 export default function (pi: ExtensionAPI): void {
   pi.registerCommand("fixture-command", { description: "Must not run for literal tasks", handler: async () => { throw new Error("Slash command dispatched unexpectedly"); } });
-  pi.on("input", event => event.text.includes("HANDLE_INPUT") ? { action: "handled" } : undefined);
+  pi.on("input", async event => {
+    if (event.text.includes("LATE_STEER")) await delay(2200);
+    return event.text.includes("HANDLE_INPUT") ? { action: "handled" } : undefined;
+  });
   pi.registerTool({
     name: "fixture_hold", label: "Fixture hold", description: "Offline controlled tool", parameters: Type.Object({ milliseconds: Type.Number() }),
     async execute(_id, args, signal, update) {
@@ -22,10 +25,24 @@ export default function (pi: ExtensionAPI): void {
       const stream = createAssistantMessageEventStream();
       const message: AssistantMessage = { role: "assistant", content: [], api: model.api, provider: model.provider, model: model.id,
         timestamp: Date.now(), stopReason: "pending", usage: { input: 10, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 11, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } };
-      queueMicrotask(() => {
+      queueMicrotask(async () => {
         const users = context.messages.filter(m => m.role === "user").map(m => typeof m.content === "string" ? m.content : m.content.filter(c => c.type === "text").map(c => c.text).join(" "));
         const text = users.at(-1) ?? "";
-        if (options?.signal?.aborted || text.includes("FAIL_PROVIDER")) {
+        if (text.includes("SLOW_BILLABLE")) {
+          stream.push({ type: "start", partial: message });
+          message.content.push({ type: "text", text: "BILLABLE_RESPONSE" });
+          stream.push({ type: "text_start", contentIndex: 0, partial: message });
+          stream.push({ type: "text_delta", contentIndex: 0, delta: "BILLABLE_RESPONSE", partial: message });
+          try { await delay(1500, undefined, { signal: options?.signal }); } catch { /* Emit authoritative aborted usage below. */ }
+          message.stopReason = options?.signal?.aborted ? "aborted" : "stop";
+          if (message.stopReason === "aborted") {
+            message.errorMessage = "Offline cancellation";
+            stream.push({ type: "error", reason: "aborted", error: message });
+          } else {
+            stream.push({ type: "text_end", contentIndex: 0, content: "BILLABLE_RESPONSE", partial: message });
+            stream.push({ type: "done", reason: "stop", message });
+          }
+        } else if (options?.signal?.aborted || text.includes("FAIL_PROVIDER")) {
           message.stopReason = options?.signal?.aborted ? "aborted" : "error";
           message.errorMessage = "Offline provider failure";
           stream.push({ type: "error", reason: message.stopReason, error: message });

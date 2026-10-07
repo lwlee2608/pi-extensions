@@ -28,6 +28,8 @@ export class RpcProcess implements Child {
   private exitPromise: Promise<void>;
   private resolveExit!: () => void;
   private ready: Promise<void>;
+  private startupError?: Error;
+  private registeredProviders: string[] = [];
   private resolveReady!: () => void;
   private rejectReady!: (error: Error) => void;
   exited = false;
@@ -43,9 +45,10 @@ export class RpcProcess implements Child {
     this.child.stderr!.on("data", (chunk: string) => { this.stderr = (this.stderr + chunk).slice(-16_384); });
     this.child.stdin!.on("error", error => this.fail(error));
     this.child.on("message", value => {
-      const message = value as { type?: string; token?: string; error?: string };
+      const message = value as { type?: string; token?: string; error?: string; registeredProviders?: string[] };
       if (message?.type !== "subagent_ready" || message.token !== token) return;
-      if (message.error) this.rejectReady(new Error(message.error)); else this.resolveReady();
+      if (message.error) this.rejectReady(new Error(message.error));
+      else { this.registeredProviders = message.registeredProviders ?? []; this.resolveReady(); }
     });
     this.child.once("error", error => { this.fail(error); });
     this.child.once("close", (code, signal) => {
@@ -64,6 +67,10 @@ export class RpcProcess implements Child {
     } finally { clearTimeout(timer); }
   }
   onEvent(listener: (event: ChildEvent) => void): () => void { this.events.on("event", listener); return () => this.events.off("event", listener); }
+  checkStartup(launch: Launch): void {
+    if (this.startupError) throw this.startupError;
+    if (launch.providerContract.registered && !this.registeredProviders.includes(launch.provider)) throw new Error(`Required child provider override did not register: ${launch.provider}`);
+  }
   onExit(listener: (error: Error) => void): () => void { this.events.on("exit", listener); return () => this.events.off("exit", listener); }
   private fail(error: Error): void {
     this.rejectReady(error);
@@ -87,7 +94,11 @@ export class RpcProcess implements Child {
             this.pending.delete(record.id!); clearTimeout(pending.timer);
             if (record.success) pending.resolve(record); else pending.reject(new Error(record.error));
           }
-        } else { this.events.emit("event", record); }
+        } else {
+          if (record.type === "extension_error") this.startupError ??= new Error(`Child extension failed: ${record.error}`);
+          if (record.type === "extension_ui_request" && ["confirm", "select", "input", "editor"].includes(record.method)) this.startupError ??= new Error(`Unexpected child UI ${record.method}: refused`);
+          this.events.emit("event", record);
+        }
       } catch (error) { this.fail(error as Error); void this.close().catch(() => {}); return; }
     }
     if (this.buffer.length > limit) { this.fail(new Error("RPC record exceeds 4 MiB")); void this.close().catch(() => {}); }
@@ -151,9 +162,11 @@ export async function launchChild(launch: Launch, directory: string, sessionId: 
   try {
     await child.initialize();
     const state = (await child.request({ type: "get_state" })).data;
-    if (state.model?.provider !== launch.provider || state.model.id !== launch.model || state.thinkingLevel !== launch.effort || state.sessionId !== sessionId) throw new Error("Child model/effort/session differs from resolved launch contract");
+    if (state.model?.provider !== launch.provider || state.model.id !== launch.model || state.thinkingLevel !== launch.effort || state.sessionId !== sessionId
+      || state.model.api !== launch.providerContract.api || state.model.baseUrl !== launch.providerContract.baseUrl) throw new Error("Child provider/model/effort/session differs from resolved launch contract");
     const available = (await child.request({ type: "get_available_models" })).data.models;
     if (!available.some(model => model.provider === launch.provider && model.id === launch.model)) throw new Error(`Child provider unavailable: ${launch.provider}/${launch.model}; configure its extension allowlist/authentication`);
+    child.checkStartup(launch);
     return child;
   } catch (error) {
     try { await child.close(); } catch (cleanup) { throw new AggregateError([error, cleanup], "Child launch and cleanup failed"); }

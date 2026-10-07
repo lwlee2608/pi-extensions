@@ -11,6 +11,7 @@ export async function fixture() {
   await mkdir(agentDir); await mkdir(cwd);
   await writeFile(join(agentDir, "settings.json"), JSON.stringify({ retry: { enabled: false }, compaction: { enabled: false }, enableAnalytics: false }));
   const launch: Launch = { cwd, agentDir, provider: "subagent-offline", model: "fixture", effort: "off", skills: [],
+    providerContract: { api: "subagent-offline", baseUrl: "http://invalid.invalid", registered: true },
     extensions: [fileURLToPath(new URL("./fixtures/provider.ts", import.meta.url))],
     profile: { name: "fixture", path: "fixture", prompt: "You are an offline verification worker.", tools: ["read", "write", "bash", "fixture_hold"] } };
   const manager = new Manager({ root: join(agentDir, "pi-subagent"), parentId: "fixture-parent" });

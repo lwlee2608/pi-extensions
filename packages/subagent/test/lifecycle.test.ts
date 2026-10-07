@@ -80,6 +80,25 @@ test("wait cancellation leaves real work alive, steer stays on the run, stop pre
   } finally { await f.cleanup(); }
 });
 
+test("late steering is cleared before another task and stop preserves final provider usage", { timeout: 30_000 }, async () => {
+  const f = await fixture();
+  try {
+    const run = f.manager.start(f.launch, "WRITE_AND_HOLD", "retained");
+    await changedUntil(f.manager, () => f.manager.status()[0].activity === "tool: fixture_hold");
+    await assert.rejects(f.manager.message(run.workerId, "LATE_STEER", "steer"), /settled during steering/);
+    await f.manager.wait([run.runId]);
+    const next = await f.manager.message(run.workerId, "recall history");
+    const done = await f.manager.wait([next.runId]);
+    assert.doesNotMatch(done.runs[0].result!.text, /LATE_STEER/);
+    const slow = await f.manager.message(run.workerId, "SLOW_BILLABLE");
+    await changedUntil(f.manager, () => f.manager.status()[0].output.includes("BILLABLE_RESPONSE"));
+    await f.manager.stop(run.workerId);
+    const stopped = (await f.manager.wait([slow.runId])).runs[0].result!;
+    assert.equal(stopped.outcome, "interrupted");
+    assert.equal(stopped.usage.totalTokens, 11);
+  } finally { await f.cleanup(); }
+});
+
 test("more than sixteen one-shot reviews retire and preserve failed/handled results", { timeout: 150_000 }, async () => {
   const f = await fixture();
   try {

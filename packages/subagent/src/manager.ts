@@ -78,11 +78,17 @@ export class Manager {
     this.changed();
     void this.exclusive(worker, async () => {
       try {
-        worker.child = await this.spawn(launch, worker.directory, sessionId, child => { worker.child = child; });
-        worker.view.pid = worker.child.pid;
-        worker.view.processAlive = true;
-        worker.child.onEvent(event => this.event(worker, event));
-        worker.child.onExit(error => this.exited(worker, error));
+        let subscribed = false;
+        const own = (child: Child) => {
+          worker.child = child;
+          worker.view.pid = child.pid;
+          worker.view.processAlive = true;
+          child.onEvent(event => this.event(worker, event));
+          child.onExit(error => this.exited(worker, error));
+          subscribed = true;
+        };
+        worker.child = await this.spawn(launch, worker.directory, sessionId, own);
+        if (!subscribed) own(worker.child);
         const state = (await worker.child.request({ type: "get_state" })).data;
         worker.view.sessionFile = state.sessionFile;
         if (worker.stopping) return;
@@ -108,6 +114,10 @@ export class Manager {
         if (worker.view.state !== "working" || worker.settled || worker.stopping) throw new Error("Worker settled before steering could be delivered");
         const result = await worker.child!.request({ type: "steer", message: literalInput(message) });
         if (result.data.disposition !== "queued") throw new Error(`Steer was ${result.data.disposition}, not accepted`);
+        if (worker.settled || worker.stopping) {
+          await worker.child!.request({ type: "clear_queue" });
+          throw new Error("Worker settled during steering; late guidance was cleared, not delivered to another task");
+        }
         return structuredClone(worker.view);
       });
     }
@@ -125,7 +135,12 @@ export class Manager {
     return structuredClone(worker.view);
   }
   private event(worker: Worker, event: ChildEvent): void {
-    if (worker.run.result || worker.stopping) return;
+    if (worker.run.result) return;
+    if (worker.stopping) {
+      if (event.type === "message_end" && (event.message.role === "assistant" || event.message.role === "toolResult")) addUsage(worker.usage, event.message.usage);
+      if (event.type === "compaction_end") addUsage(worker.usage, event.result?.usage);
+      return;
+    }
     switch (event.type) {
       case "message_update":
         if (event.assistantMessageEvent.type === "text_delta") worker.view.output = (worker.view.output + event.assistantMessageEvent.delta).slice(-8192);
@@ -162,6 +177,9 @@ export class Manager {
   }
   private async settle(worker: Worker): Promise<void> {
     if (worker.run.result || worker.stopping) return;
+    // Pi accepts steer even after its run has ended. Drain before exposing idle.
+    const cleared = await worker.child!.request({ type: "clear_queue" });
+    if (cleared.data.steering.length || cleared.data.followUp.length) worker.view.error = "Child settled with unconsumed guidance; cleared it instead of forwarding to another run";
     const last = worker.last;
     const error = worker.view.error ?? last?.errorMessage;
     const outcome: Outcome = last?.stopReason === "aborted" ? "interrupted" : error || !last || !["stop", "length"].includes(last.stopReason) ? "failed" : "completed";

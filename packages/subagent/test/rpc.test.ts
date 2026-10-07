@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { writeFile } from "node:fs/promises";
 import { launchChild, literalInput, type Child, type ChildEvent } from "../src/rpc.ts";
 import { Manager } from "../src/manager.ts";
 import { fixture } from "./helpers.ts";
@@ -24,6 +25,13 @@ test("real RPC validates provider, tool loadout and confirmed process exit", { t
     assert.throws(() => process.kill(child!.pid!, 0), /ESRCH/);
     await assert.rejects(launchChild({ ...f.launch, profile: { ...f.launch.profile, tools: ["nonexistent_tool"] } }, join(f.root, "bad-tool"), randomUUID()), /tool setup failed/);
     await assert.rejects(launchChild({ ...f.launch, model: "missing" }, join(f.root, "bad-model"), randomUUID()), /exited|differs|provider unavailable/);
+    await assert.rejects(launchChild({ ...f.launch, providerContract: { ...f.launch.providerContract, baseUrl: "http://different.invalid" } }, join(f.root, "bad-endpoint"), randomUUID()), /differs/);
+    const broken = join(f.root, "broken.ts");
+    await writeFile(broken, 'export default function(pi) { pi.on("session_start", () => { throw new Error("STARTUP_FAILURE"); }); }');
+    await assert.rejects(launchChild({ ...f.launch, extensions: [...f.launch.extensions, broken] }, join(f.root, "bad-startup"), randomUUID()), /STARTUP_FAILURE/);
+    const prompt = join(f.root, "prompt.ts");
+    await writeFile(prompt, 'export default function(pi) { pi.on("session_start", (_event, ctx) => { void ctx.ui.confirm("Unexpected permission", "Allow?"); }); }');
+    await assert.rejects(launchChild({ ...f.launch, extensions: [...f.launch.extensions, prompt] }, join(f.root, "bad-prompt"), randomUUID()), /Unexpected child UI/);
   } finally { await child?.close(); await f.cleanup(); }
 });
 
@@ -36,6 +44,7 @@ test("early settlement before prompt response does not get lost", { timeout: 500
     onEvent(fn: typeof listener) { listener = fn; return () => {}; }, onExit() { return () => {}; },
     async request(command: { type: string }) {
       if (command.type === "get_state") return { data: { sessionId: "fake" } };
+      if (command.type === "clear_queue") return { data: { steering: [], followUp: [] } };
       listener({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: "fast" }], provider: "offline", model: "fixture", api: "offline", timestamp: 0, stopReason: "stop", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } } } });
       listener({ type: "agent_settled" });
       return { data: { disposition: "started" } };
