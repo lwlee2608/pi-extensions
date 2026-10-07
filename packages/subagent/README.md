@@ -2,7 +2,7 @@
 
 Persistent Pi RPC workers, fresh one-shot reviewers, and a compact panel above the editor. The footer is not replaced.
 
-**Phase 2:** `start`, `message`, `wait`, `status`, `stop`, and `reply`. Run independent workers concurrently, queue excess tasks, and answer child questions. Recovery and `/subagents` belong to later phases. Saved transcripts are inspectable, but workers cannot yet be recovered after shutdown.
+**Phase 3:** `start`, `message`, `wait`, `status`, `stop`, `reply`, and `recover`. Run independent workers concurrently, answer child questions, and explicitly reopen saved retained conversations. The full `/subagents` inspector arrives in Phase 4.
 
 ## Isolated development
 
@@ -89,8 +89,23 @@ If the decision belongs to the user, ask them before replying. To refuse the dec
 
 For review/fix rounds, start a fresh one-shot reviewer in the worker's directory, wait for the report, then send it as a new `task` message to the **original idle retained worker**. Its PID/session stay unchanged and the fix task gets a new run ID. Stop every retained worker and confirm `processAlive: false` before removing worktrees.
 
+## Explicit saved recovery
+
+Resume the **original parent Pi session**, inspect `status`, then explicitly recover a closed retained worker:
+
+```json
+{"action":"recover","workerId":"w-SAVED-WORKER-ID"}
+{"action":"message","workerId":"w-SAVED-WORKER-ID","message":"Continue with this decision: use scratch.txt. Recall your previous work first."}
+```
+
+Recovery preserves worker/session identity, cwd, profile, provider/model/effort, and prior terminal results. It starts a new child PID **idle**, with no model request. Only a subsequent task creates a new run. Interrupted tasks, steering, and replies are never automatically replayed. Pending questions become cancelled history and their old IDs reject replies.
+
+Stop/reload/shutdown/replacement closes owned children and interrupts only unfinished runs. Closed retained workers with saved sessions show `recoverable: true`; recovery still verifies prerequisites. It rejects one-shot, live, foreign-parent, missing-session/cwd, changed profile/extension/skill, removed allowlist, and provider-contract mismatches. Restore the saved prerequisites rather than substituting resources silently.
+
+A private `owner.json` file exclusively reserves a parent's storage for its current runtime. A second parent instance cannot open it. Normal shutdown removes it only after confirmed child cleanup and metadata writes. A crash or failed cleanup leaves the lock: recovery then refuses uncertain ownership. Do not remove a lock until you have independently confirmed that its parent and every child have exited. The extension does not guess from PID reuse, adopt another parent's workers, or kill an unowned process. Corrupt metadata is reported without loading partial state.
+
 ## Storage and bounds
 
 Private session directories and per-run result files live under `<agent-dir>/pi-subagent/<parent-session-id>/<worker-id>/`. Results reference the full persisted Pi transcript. Result files are mode `0600`; containing directories are mode `0700`. Keep transcripts private.
 
-Live text is bounded to 8 KiB, returned result text to 4 KiB, stderr to 16 KiB, and individual RPC records to 4 MiB. Oversized/malformed protocol output closes the child rather than allocating without bounds. A parent admits at most 2048 tasks before requiring a new parent session; existing disk output remains intact. Durable recovery metadata and its ownership rules arrive in Phase 3.
+Live text is bounded to 8 KiB, returned result text to 4 KiB, stderr to 16 KiB, and individual RPC records to 4 MiB. Oversized/malformed protocol output closes the child rather than allocating without bounds. A parent admits at most 2048 tasks before requiring a new parent session; existing disk output remains intact. Worker metadata freezes the launch contract and hashed non-secret profile/extension/skill prerequisites. Atomic, fsynced metadata updates are limited to 20 MiB per worker; persistence failures close live work and remain visible rather than silently downgrading recovery.

@@ -19,13 +19,14 @@ const actionSchema = Type.Union([
     timeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 2_147_483_647 })) }),
   object({ action: Type.Literal("status"), workerId: Type.Optional(id) }),
   object({ action: Type.Literal("stop"), workerId: id }),
+  object({ action: Type.Literal("recover"), workerId: id }),
   object({ action: Type.Literal("reply"), questionId: id, message: text }),
   object({ action: Type.Literal("reply"), questionId: id, cancelled: Type.Literal(true) }),
 ]);
 // Provider function schemas require an object at the root. Validate the stricter
 // action-specific union locally before touching a worker.
 export const parameters = Type.Object({
-  action: Type.Union([Type.Literal("start"), Type.Literal("message"), Type.Literal("wait"), Type.Literal("status"), Type.Literal("stop"), Type.Literal("reply")]),
+  action: Type.Union([Type.Literal("start"), Type.Literal("message"), Type.Literal("wait"), Type.Literal("status"), Type.Literal("stop"), Type.Literal("reply"), Type.Literal("recover")]),
   agent: Type.Optional(text), task: Type.Optional(text), label, cwd: Type.Optional(text), model: Type.Optional(text),
   effort: Type.Optional(effortSchema), lifetime: Type.Optional(Type.Union([Type.Literal("once"), Type.Literal("retained")])),
   agentScope: Type.Optional(Type.Union([Type.Literal("user"), Type.Literal("project"), Type.Literal("both")])),
@@ -37,8 +38,8 @@ export const parameters = Type.Object({
 export type Action = Static<typeof actionSchema>;
 export type Start = Extract<Action, { action: "start" }>;
 export function validateAction(value: unknown): asserts value is Action {
-  if (!Check(actionSchema, value)) throw new Error("Invalid subagent action or arguments. Supported actions: start/message/wait/status/stop/reply. Recovery is not yet available.");
+  if (!Check(actionSchema, value)) throw new Error("Invalid subagent action or arguments. Supported actions: start/message/wait/status/stop/reply/recover.");
   const action = value as Action;
   if (action.action === "message" && action.mode === "steer" && action.label !== undefined) throw new Error("Steering cannot relabel a run.");
 }
-export const description = "Start isolated Pi workers and fresh reviewers. start returns admission, not completion: wait on its runId. Default lifetime once retires automatically; retained workers accept new task messages only while idle. A working worker accepts steer, not another task. Cancelling wait leaves workers running. stop closes a worker without deleting edits. Profiles are instruction-based capabilities, not an OS sandbox. Tasks run within configured active/live limits; excess admitted work queues. Any owned pending question interrupts wait with attention, even for other selected runs. Answer with reply or explicitly cancel; cancellation interrupts the child. Recovery is not yet available.";
+export const description = "Start isolated Pi workers and fresh reviewers. start returns admission, not completion: wait on its runId. Default lifetime once retires automatically; retained workers accept new task messages only while idle. A working worker accepts steer, not another task. Cancelling wait leaves workers running. stop closes a worker without deleting edits. Profiles are instruction-based capabilities, not an OS sandbox. Tasks run within configured active/live limits; excess admitted work queues. Any owned pending question interrupts wait with attention, even for other selected runs. Answer with reply or explicitly cancel; cancellation interrupts the child. recover explicitly reopens a closed retained conversation in the original parent, idle without replay; follow it with a new task. Missing/changed prerequisites or uncertain ownership refuse recovery.";

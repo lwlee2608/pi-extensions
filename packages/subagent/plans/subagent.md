@@ -64,7 +64,7 @@ Worker states include queued, working, blocked, idle, and closed; terminal run o
 - This extension cannot bootstrap its own persistent orchestration before it exists. If built through `build-feature`, use Solo with the currently installed one-shot reviewer for all four phases. Do not change the global subagent tool mid-build. This bootstrap choice is `agent` guidance, not a recorded build-mode answer.
 
 ## Progress
-Phase 2 of 4 · 10/20 tasks — Phase 1 merged as PR #13 after three review rounds (final clean); PR #14 open, rounds 1 and 2 fixed; final round 3 pending.
+Phase 3 of 4 · 15/20 tasks — Phases 1 and 2 merged as PRs #13/#14 after three review rounds each (final clean). PR #15 open; three review rounds complete. Round 3's Medium findings fixed and verified without a fourth review; ready for CI/merge.
 
 All source/test paths below are relative to `packages/subagent/` unless marked repository-root or external.
 
@@ -96,11 +96,11 @@ Run workers concurrently in supplied worktrees, observe queued tasks, and resolv
 Resume the original parent session and explicitly reopen retained conversations, preserving prior results and cancelled-question history.
 
 **Blocked by:** 2
-- [ ] Persist private worker/run records and frozen launch contracts outside worktrees (`src/store.ts`, `src/manager.ts`, `test/recovery.test.ts`).
-- [ ] Add recover admission, exclusive process ownership, generation checks, and idle reopening of retained sessions (`src/rpc.ts`, `src/manager.ts`, `src/schema.ts`, `test/recovery.test.ts`).
-- [ ] Reconcile parent reload/shutdown/replacement, process exit, pending questions, and incomplete runs without automatic task replay (`src/index.ts`, `src/store.ts`, `src/manager.ts`, `test/recovery.test.ts`).
-- [ ] Expose closed/recoverable workers and cancelled questions through status/panel output, with concrete error diagnostics (`src/panel.ts`, `src/index.ts`, `README.md`).
-- [ ] Verify persisted context and recovery refusal paths with real disposable parent/child processes (`test/recovery.test.ts`, `test/fixtures/provider.ts`).
+- [x] Persist private worker/run records and frozen launch contracts outside worktrees (`src/store.ts`, `src/manager.ts`, `test/recovery.test.ts`).
+- [x] Add recover admission, exclusive process ownership, generation checks, and idle reopening of retained sessions (`src/rpc.ts`, `src/manager.ts`, `src/schema.ts`, `test/recovery.test.ts`).
+- [x] Reconcile parent reload/shutdown/replacement, process exit, pending questions, and incomplete runs without automatic task replay (`src/index.ts`, `src/store.ts`, `src/manager.ts`, `test/recovery.test.ts`).
+- [x] Expose closed/recoverable workers and cancelled questions through status/panel output, with concrete error diagnostics (`src/panel.ts`, `src/index.ts`, `README.md`).
+- [x] Verify persisted context and recovery refusal paths with real disposable parent/child processes (`test/recovery.test.ts`, `test/fixtures/provider.ts`).
 
 **Verify:** Run `npm run check --workspace=@lwlee2608/pi-subagent` and `node --test packages/subagent/test/recovery.test.ts`. Stop/reload a disposable parent with idle, working, and blocked retained children; confirm owned child exit and interrupted outcomes only for unfinished runs. Reopen the exact parent session: no child task starts until explicit recovery followed by a new message. Recovery must preserve worker/session identity and stored context while using a new PID and new task run ID. Old questions stay cancelled and reject replies; recovery triggers no provider request by itself. Attempt competing recoveries and verify at most one owner; reject one-shot/foreign workers, missing cwd/session/provider, corrupt metadata, and uncertain old-process ownership. Confirm no fixture writes occur after reported successful stop, previous completed results remain readable, and stored metadata never changes another parent's records.
 
@@ -144,6 +144,10 @@ These are post-build instructions, not authorization to alter the user's global 
 
 ## Agent-selected details added while completing the phases
 
+- Phase 3 round 3 replaced per-worker usage rewrites with one atomic parent checkpoint, retained pending usage/action results after checkpoint failure, and always reconciled scheduling after terminal persistence failure. All three Medium findings fixed (including judgment calls); these final fixes are unreviewed under the three-round cap.
+- Phase 3 round 2 generation-guarded old exit finalizers, rolled back unspawned admissions after post-rename sync failure, and bounded session-header reads. All findings fixed, including both small judgment calls.
+- Phase 3 round 1 serialized recovery admission with stop, made first metadata admission transactional, revalidated project-profile trust, and disabled unsaved automatic skill discovery. All findings fixed, including the small judgment call.
+- Phase 3 uses a conservative exclusive parent-storage lock. Normal shutdown releases it after confirmed cleanup; crashes/failed cleanup retain it and require independent ownership resolution rather than stale-PID guessing. Metadata is atomic/fsynced and bounded to 20 MiB per worker.
 - Phase 2 round 2 made `ask_parent` model-only to prevent nested parallel tools bypassing its blocking boundary; a real nested-call regression verifies denial. No findings skipped.
 - Phase 2 round 1 fixed question tools not gating later tools in the same response, and idle workers hiding active panel rows. Real offline regression verifies a later write waits for reply and never runs after cancellation. No findings skipped.
 - Phase 1 review round 2 fixed uncertain steering after RPC timeout (close before accepting more tasks) and failed automatic recovery being reported as completion. Both have real offline-child regressions. No findings skipped.

@@ -11,12 +11,13 @@ export function panelLines(workers: Snapshot[], width: number, now = Date.now())
   const live = workers.filter(w => w.state !== "closed");
   const order = { blocked: 0, working: 1, queued: 2, idle: 3, closed: 4 };
   const ordered = live.sort((a, b) => order[a.state] - order[b.state]);
+  if (!ordered.length) ordered.push(...workers.filter(w => w.recoverable));
   if (!ordered.length) ordered.push(workers.at(-1)!);
   const rows = ordered.slice(0, 4).flatMap(worker => {
     const elapsed = Math.max(0, Math.floor(((worker.result?.endedAt ?? now) - worker.startedAt) / 1000));
     const usage = worker.result?.usage.totalTokens ? ` · ${worker.result.usage.totalTokens} tokens` : "";
     const question = worker.questions?.find(q => q.state === "pending");
-    const detail = question ? `reply ${question.questionId}: ${question.question}` : worker.error ?? `${worker.activity} · ${worker.output}`;
+    const detail = question ? `reply ${question.questionId}: ${question.question}` : worker.error ?? (worker.recoverable ? `recover ${worker.workerId} · saved conversation; pending questions cancelled` : `${worker.activity} · ${worker.output}`);
     return [`Subagent · ${worker.label} · ${worker.state}${worker.result ? `/${worker.result.outcome}` : ""} · ${elapsed}s${usage}`, detail];
   });
   if (ordered.length > 4) rows.push(`+${ordered.length - 4} more workers · subagent status for details`);
