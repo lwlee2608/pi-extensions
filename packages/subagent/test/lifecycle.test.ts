@@ -34,7 +34,6 @@ test("retained tasks share PID/session/context, runs stay immutable and input st
   const f = await fixture();
   try {
     const first = f.manager.start(f.launch, "MARKER-219\u2028literal", "retained");
-    assert.throws(() => f.manager.start(f.launch, "concurrent"), /one active/);
     await assert.rejects(f.manager.message(first.workerId, "too soon"), /idle retained/);
     const completed = await f.manager.wait([first.runId]);
     assert.equal(completed.runs[0].result?.outcome, "completed");

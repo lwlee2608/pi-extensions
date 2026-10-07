@@ -9,17 +9,19 @@ import { launchChild, literalInput, type Child, type ChildEvent } from "./rpc.ts
 export type Outcome = "completed" | "failed" | "interrupted";
 export interface Result { outcome: Outcome; text: string; error?: string; endedAt: number; usage: Usage }
 export interface Run { runId: string; workerId: string; label: string; startedAt: number; result?: Result }
+export interface Question { questionId: string; workerId: string; runId: string; generation: string; requestId: string; question: string; state: "pending" | "answered" | "cancelled" }
 export interface Snapshot {
-  workerId: string; runId: string; state: "working" | "idle" | "closed"; lifetime: "once" | "retained";
+  workerId: string; runId: string; state: "queued" | "working" | "blocked" | "idle" | "closed"; lifetime: "once" | "retained";
   label: string; cwd: string; model: string; effort: string; pid?: number; processAlive?: boolean; sessionId: string; sessionFile?: string;
-  activity: string; output: string; startedAt: number; result?: Result; error?: string;
+  activity: string; output: string; startedAt: number; result?: Result; error?: string; questions?: Question[];
 }
 interface Worker {
   view: Snapshot; launch: Launch; directory: string; child?: Child; run: Run; lock: Promise<unknown>;
   accepted: boolean; settled: boolean; last?: Pick<AssistantMessage, "stopReason" | "errorMessage">;
   usage: Usage; stopping: boolean; reservation: boolean; recoveryError?: string;
+  task: string; slot: boolean; generation: string; activeTools: Map<string, string>; ready: boolean;
 }
-export interface WaitResult { reason: "completed" | "timeout"; runs: Run[]; workers: Snapshot[]; pendingQuestionIds: string[] }
+export interface WaitResult { reason: "completed" | "timeout" | "attention"; runs: Run[]; workers: Snapshot[]; pendingQuestionIds: string[] }
 export function zeroUsage(): Usage { return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }; }
 function addUsage(target: Usage, source?: Usage): void {
   if (!source) return;
@@ -35,11 +37,14 @@ export class Manager {
   private closing = false;
   private root: string;
   private maxWorkers: number;
+  private maxActive: number;
+  private questions = new Map<string, Question>();
   private spawn: typeof launchChild;
-  constructor(options: { root: string; parentId: string; maxWorkers?: number; spawn?: typeof launchChild }) {
+  constructor(options: { root: string; parentId: string; maxWorkers?: number; maxActive?: number; spawn?: typeof launchChild }) {
     if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,150}$/.test(options.parentId)) throw new Error("Invalid parent session ID");
     this.root = join(options.root, options.parentId);
     this.maxWorkers = options.maxWorkers ?? 16;
+    this.maxActive = options.maxActive ?? 4;
     this.spawn = options.spawn ?? launchChild;
     this.events.setMaxListeners(0);
   }
@@ -57,7 +62,6 @@ export class Manager {
   }
   private checkTaskSlot(): void {
     if (this.closing) throw new Error("Parent is shutting down");
-    if ([...this.workers.values()].some(w => w.view.state === "working")) throw new Error("Phase 1 allows one active task. Wait or stop it first; parallel scheduling arrives in Phase 2.");
     if (this.runs.size >= 2048) throw new Error("Session history limit reached (2048 tasks); use a new parent session. Saved results remain on disk.");
   }
   private newRun(workerId: string, label: string): Run {
@@ -70,14 +74,30 @@ export class Manager {
     if ([...this.workers.values()].filter(w => w.reservation).length >= this.maxWorkers) throw new Error(`Worker process cap reached (${this.maxWorkers}); stop an idle retained worker`);
     const workerId = `w-${randomUUID()}`, sessionId = randomUUID();
     const run = this.newRun(workerId, label);
-    const view: Snapshot = { workerId, runId: run.runId, sessionId, lifetime, label, state: "working", cwd: launch.cwd,
-      model: `${launch.provider}/${launch.model}`, effort: launch.effort, activity: "starting", output: "", startedAt: run.startedAt };
+    const view: Snapshot = { workerId, runId: run.runId, sessionId, lifetime, label, state: "queued", cwd: launch.cwd,
+      model: `${launch.provider}/${launch.model}`, effort: launch.effort, activity: "queued", output: "", startedAt: run.startedAt, questions: [] };
     const worker: Worker = { view, launch, run, directory: join(this.root, workerId), lock: Promise.resolve(),
-      accepted: false, settled: false, usage: zeroUsage(), stopping: false, reservation: true };
+      accepted: false, settled: false, usage: zeroUsage(), stopping: false, reservation: true, task, slot: false, generation: randomUUID(), activeTools: new Map(), ready: false };
     this.workers.set(workerId, worker);
+    this.schedule();
     this.changed();
-    void this.exclusive(worker, async () => {
-      try {
+    return structuredClone(view);
+  }
+  private schedule(): void {
+    if (this.closing) return;
+    for (const worker of this.workers.values()) {
+      if ([...this.workers.values()].filter(w => w.slot).length >= this.maxActive) break;
+      if (worker.view.state !== "queued" || worker.stopping) continue;
+      worker.slot = true;
+      worker.view.state = "working";
+      worker.view.activity = worker.child ? "dispatching" : "starting";
+      void this.exclusive(worker, () => this.executeTask(worker)).catch(error => this.recordError(worker, error));
+    }
+  }
+  private async executeTask(worker: Worker): Promise<void> {
+    try {
+      if (worker.stopping) return;
+      if (!worker.child) {
         let subscribed = false;
         const own = (child: Child) => {
           worker.child = child;
@@ -87,21 +107,20 @@ export class Manager {
           child.onExit(error => this.exited(worker, error));
           subscribed = true;
         };
-        worker.child = await this.spawn(launch, worker.directory, sessionId, own);
+        worker.child = await this.spawn(worker.launch, worker.directory, worker.view.sessionId, own);
         if (!subscribed) own(worker.child);
         const state = (await worker.child.request({ type: "get_state" })).data;
         worker.view.sessionFile = state.sessionFile;
-        if (worker.stopping) return;
-        await this.dispatch(worker, task);
-      } catch (error) { await this.finish(worker, "failed", errorText(error)); await this.closeWorker(worker); }
-    }).catch(error => this.recordError(worker, error));
-    return structuredClone(view);
+        worker.ready = true;
+      }
+      if (!worker.stopping) await this.dispatch(worker, worker.task);
+    } catch (error) { await this.finish(worker, "failed", errorText(error)); await this.closeWorker(worker); }
   }
   private async dispatch(worker: Worker, task: string): Promise<void> {
     const response = await worker.child!.request({ type: "prompt", message: literalInput(task) });
     if (response.data.disposition !== "started") throw new Error(`Prompt was ${response.data.disposition}, not accepted as a task`);
     worker.accepted = true;
-    worker.view.activity = worker.settled ? "settling" : "working";
+    if (worker.view.state !== "blocked" && !worker.activeTools.size) worker.view.activity = worker.settled ? "settling" : "working";
     if (worker.settled) await this.settle(worker);
     this.changed();
   }
@@ -131,14 +150,13 @@ export class Manager {
     if (worker.view.lifetime !== "retained" || worker.view.state !== "idle" || worker.stopping) throw new Error("New tasks require an idle retained worker; busy tasks are never queued");
     this.checkTaskSlot();
     worker.run = this.newRun(id, label ?? worker.view.label);
-    Object.assign(worker.view, { runId: worker.run.runId, label: worker.run.label, state: "working", startedAt: worker.run.startedAt,
+    Object.assign(worker.view, { runId: worker.run.runId, label: worker.run.label, state: "queued", startedAt: worker.run.startedAt,
       result: undefined, error: undefined, output: "", activity: "dispatching" });
     worker.accepted = false; worker.settled = false; worker.last = undefined; worker.recoveryError = undefined; worker.usage = zeroUsage();
+    worker.task = message;
+    worker.view.activity = "queued";
+    this.schedule();
     this.changed();
-    void this.exclusive(worker, async () => {
-      try { if (!worker.stopping) await this.dispatch(worker, message); }
-      catch (error) { await this.finish(worker, "failed", errorText(error)); await this.closeWorker(worker); }
-    }).catch(error => this.recordError(worker, error));
     return structuredClone(worker.view);
   }
   private event(worker: Worker, event: ChildEvent): void {
@@ -149,6 +167,17 @@ export class Manager {
       return;
     }
     switch (event.type) {
+      case "subagent_question": {
+        if (!worker.ready || worker.view.questions!.length >= 128 || worker.view.questions!.some(q => q.requestId === event.requestId)) {
+          void this.stop(worker.view.workerId).catch(error => this.recordError(worker, error));
+          break;
+        }
+        const question: Question = { questionId: `q-${randomUUID()}`, workerId: worker.view.workerId, runId: worker.run.runId,
+          generation: worker.generation, requestId: event.requestId, question: event.question, state: "pending" };
+        this.questions.set(question.questionId, question); worker.view.questions!.push(question);
+        worker.view.state = "blocked"; worker.view.activity = "awaiting parent reply";
+        break;
+      }
       case "message_update":
         if (event.assistantMessageEvent.type === "text_delta") worker.view.output = (worker.view.output + event.assistantMessageEvent.delta).slice(-8192);
         break;
@@ -167,8 +196,14 @@ export class Manager {
       case "auto_retry_end":
         if (!event.success) worker.recoveryError = event.finalError ?? "Child retries failed";
         break;
-      case "tool_execution_start": worker.view.activity = `tool: ${event.toolName}`; break;
-      case "tool_execution_end": worker.view.activity = event.isError ? `tool failed: ${event.toolName}` : "working"; break;
+      case "tool_execution_start":
+        worker.activeTools.set(event.toolCallId, event.toolName);
+        if (worker.view.state !== "blocked") worker.view.activity = `tool: ${[...worker.activeTools.values()].join(", ")}`;
+        break;
+      case "tool_execution_end":
+        worker.activeTools.delete(event.toolCallId);
+        if (worker.view.state !== "blocked") worker.view.activity = worker.activeTools.size ? `tool: ${[...worker.activeTools.values()].join(", ")}` : event.isError ? `tool failed: ${event.toolName}` : "working";
+        break;
       case "extension_ui_request":
         if (["confirm", "select", "input", "editor"].includes(event.method)) {
           worker.stopping = true;
@@ -224,9 +259,13 @@ export class Manager {
     worker.view.result = result;
     worker.view.state = worker.view.lifetime === "retained" && !worker.stopping && !worker.child?.exited ? "idle" : "closed";
     worker.view.activity = result.outcome;
+    worker.slot = false;
+    this.cancelQuestions(worker);
+    this.schedule();
     this.changed();
   }
   private exited(worker: Worker, error: Error): void {
+    this.cancelQuestions(worker);
     worker.reservation = false;
     worker.view.processAlive = false;
     worker.view.state = "closed";
@@ -240,6 +279,7 @@ export class Manager {
   private recordError(worker: Worker, error: unknown): void { worker.view.error = errorText(error); this.changed(); }
   private async closeWorker(worker: Worker): Promise<void> {
     worker.stopping = true;
+    this.cancelQuestions(worker);
     if (worker.child) await worker.child.close();
     worker.view.processAlive = false;
     worker.reservation = false;
@@ -249,10 +289,36 @@ export class Manager {
   async stop(id: string): Promise<Snapshot> {
     const worker = this.worker(id);
     worker.stopping = true;
+    this.cancelQuestions(worker);
     return this.exclusive(worker, async () => {
       await this.closeWorker(worker);
       await this.finish(worker, "interrupted", "Stopped by parent");
       return structuredClone(worker.view);
+    });
+  }
+  private cancelQuestions(worker: Worker): void {
+    for (const question of worker.view.questions ?? []) if (question.state === "pending") question.state = "cancelled";
+    this.changed();
+  }
+  async reply(id: string, message?: string, cancelled = false): Promise<{ questionId: string; delivered: boolean; cancelled: boolean }> {
+    const question = this.questions.get(id);
+    if (!question || question.state !== "pending") throw new Error("Unknown, stale or already answered question");
+    const worker = this.worker(question.workerId);
+    if (question.generation !== worker.generation || question.runId !== worker.run.runId || worker.stopping || !worker.child || worker.child.exited) throw new Error("Question no longer belongs to a live child generation");
+    if (cancelled) { await this.stop(worker.view.workerId); return { questionId: id, delivered: false, cancelled: true }; }
+    if (typeof message !== "string" || !message.trim()) throw new Error("A reply requires a nonblank message");
+    return this.exclusive(worker, async () => {
+      if (question.state !== "pending" || worker.stopping) throw new Error("Stale or duplicate reply");
+      try { await worker.child!.reply(question.requestId, message); }
+      catch (error) {
+        worker.stopping = true;
+        try { await this.closeWorker(worker); } finally { await this.finish(worker, "interrupted", `Reply delivery uncertain: ${errorText(error)}`); }
+        throw error;
+      }
+      question.state = "answered";
+      if (!worker.view.questions!.some(q => q.state === "pending")) { worker.view.state = "working"; worker.view.activity = "working"; }
+      this.changed();
+      return { questionId: id, delivered: true, cancelled: false };
     });
   }
   status(id?: string): Snapshot[] { return (id ? [this.worker(id)] : [...this.workers.values()]).map(w => structuredClone(w.view)); }
@@ -264,9 +330,13 @@ export class Manager {
       const done = (reason: WaitResult["reason"]) => {
         cleanup();
         const runs = runIds.map(id => structuredClone(this.runs.get(id)!));
-        resolve({ reason, runs, workers: [...new Set(runs.map(r => r.workerId))].flatMap(id => this.status(id)), pendingQuestionIds: [] });
+        resolve({ reason, runs, workers: [...new Set(runs.map(r => r.workerId))].flatMap(id => this.status(id)), pendingQuestionIds: [...this.questions.values()].filter(q => q.state === "pending").map(q => q.questionId) });
       };
-      const check = () => { const terminal = runIds.map(id => !!this.runs.get(id)!.result); if (mode === "all" ? terminal.every(Boolean) : terminal.some(Boolean)) done("completed"); };
+      const check = () => {
+        if ([...this.questions.values()].some(q => q.state === "pending")) { done("attention"); return; }
+        const terminal = runIds.map(id => !!this.runs.get(id)!.result);
+        if (mode === "all" ? terminal.every(Boolean) : terminal.some(Boolean)) done("completed");
+      };
       const cancel = () => { cleanup(); reject(signal?.reason ?? new Error("Wait cancelled")); };
       const timer = setTimeout(() => done("timeout"), timeoutMs);
       this.events.on("change", check);

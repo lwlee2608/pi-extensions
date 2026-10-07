@@ -64,7 +64,7 @@ Worker states include queued, working, blocked, idle, and closed; terminal run o
 - This extension cannot bootstrap its own persistent orchestration before it exists. If built through `build-feature`, use Solo with the currently installed one-shot reviewer for all four phases. Do not change the global subagent tool mid-build. This bootstrap choice is `agent` guidance, not a recorded build-mode answer.
 
 ## Progress
-Phase 1 of 4 · 5/20 tasks — PR #13 open; rounds 1 and 2 fixed, final round 3 pending.
+Phase 2 of 4 · 10/20 tasks — Phase 1 merged as PR #13 after three review rounds (final clean); PR #14 open, rounds 1 and 2 fixed; final round 3 pending.
 
 All source/test paths below are relative to `packages/subagent/` unless marked repository-root or external.
 
@@ -84,11 +84,11 @@ Run a simple fresh review or send a second task to a retained worker, with basic
 Run workers concurrently in supplied worktrees, observe queued tasks, and resolve child decisions without polling or blocking sibling controls.
 
 **Blocked by:** 1
-- [ ] Schedule independent tasks with active-task/live-worker limits and truthful queued/blocked states (`src/manager.ts`, `src/schema.ts`, `test/parallel.test.ts`).
-- [ ] Add the child-only question tool and scoped request/reply/cancellation bridge (`src/child.ts`, `src/rpc.ts`, `test/questions.test.ts`).
-- [ ] Complete any/all waits, attention exits, and reply/stop handling while task capacity is full (`src/manager.ts`, `src/index.ts`, `test/parallel.test.ts`, `test/questions.test.ts`).
-- [ ] Show bounded multi-worker rows, overflow counts, question summaries, and explicit reply guidance (`src/panel.ts`, `test/panel.test.ts`).
-- [ ] Document parallel isolation, question handling, and review-to-original-worker feedback, and exercise them with disposable worktrees (`README.md`, `test/parallel.test.ts`).
+- [x] Schedule independent tasks with active-task/live-worker limits and truthful queued/blocked states (`src/manager.ts`, `src/schema.ts`, `test/parallel.test.ts`).
+- [x] Add the child-only question tool and scoped request/reply/cancellation bridge (`src/child.ts`, `src/rpc.ts`, `test/questions.test.ts`).
+- [x] Complete any/all waits, attention exits, and reply/stop handling while task capacity is full (`src/manager.ts`, `src/index.ts`, `test/parallel.test.ts`, `test/questions.test.ts`).
+- [x] Show bounded multi-worker rows, overflow counts, question summaries, and explicit reply guidance (`src/panel.ts`, `test/panel.test.ts`).
+- [x] Document parallel isolation, question handling, and review-to-original-worker feedback, and exercise them with disposable worktrees (`README.md`, `test/parallel.test.ts`).
 
 **Verify:** Run `npm run check --workspace=@lwlee2608/pi-subagent` and `node --test packages/subagent/test/parallel.test.ts packages/subagent/test/questions.test.ts packages/subagent/test/panel.test.ts`. Real fixture children in two temporary Git worktrees must write only their assigned fixture paths and stream independently. At task capacity, another run queues; a child question interrupts a wait on that queued sibling, and reply/stop works without needing a free slot. Verify any/all completion, failed-run results, simultaneous waiters, and waiter cancellation. Stop a blocked child and assert question cancellation, waiter release, and stale/duplicate reply rejection. An unexpected permission confirmation must not be auto-approved. Run a fresh one-shot reviewer, relay its report to the retained worker, and verify the worker's original session/PID is unchanged while its run ID changes.
 
@@ -144,6 +144,8 @@ These are post-build instructions, not authorization to alter the user's global 
 
 ## Agent-selected details added while completing the phases
 
+- Phase 2 round 2 made `ask_parent` model-only to prevent nested parallel tools bypassing its blocking boundary; a real nested-call regression verifies denial. No findings skipped.
+- Phase 2 round 1 fixed question tools not gating later tools in the same response, and idle workers hiding active panel rows. Real offline regression verifies a later write waits for reply and never runs after cancellation. No findings skipped.
 - Phase 1 review round 2 fixed uncertain steering after RPC timeout (close before accepting more tasks) and failed automatic recovery being reported as completion. Both have real offline-child regressions. No findings skipped.
 - Phase 1 review round 1 fixed late steering crossing run boundaries, lost startup errors/UI requests, missing provider-override validation (registration plus API/endpoint), and usage discarded during stop. Regression checks use real offline Pi children. No findings skipped.
 - Phase 1 bounds in-memory history to 2048 admitted runs per parent and returns a clear limit error; existing disk results remain intact. This is separate from the sixteen live-process cap.
