@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { Launch } from "./profiles.ts";
 import type { Run, Snapshot } from "./manager.ts";
@@ -28,7 +28,16 @@ export function verifyPrerequisites(saved: SavedWorker, approvedExtensions: stri
   if (JSON.stringify(current) !== JSON.stringify(saved.prerequisites)) throw new Error("Recovery prerequisites changed (cwd/profile/provider/skill); restore the saved resources, do not substitute");
   if (saved.launch.extensions.some(path => !approvedExtensions.includes(path))) throw new Error("Recovery provider/tool extension is no longer approved");
   if (!saved.view.sessionFile || !statSync(saved.view.sessionFile).isFile()) throw new Error("Recovery session file is missing");
-  const first = JSON.parse(readFileSync(saved.view.sessionFile, "utf8").split("\n", 1)[0]);
+  const fd = openSync(saved.view.sessionFile, "r");
+  let header: string;
+  try {
+    const prefix = Buffer.alloc(16_384);
+    const bytes = readSync(fd, prefix, 0, prefix.length, 0);
+    const newline = prefix.subarray(0, bytes).indexOf(10);
+    if (newline < 0) throw new Error("Missing or oversized recovery session header");
+    header = prefix.subarray(0, newline).toString("utf8");
+  } finally { closeSync(fd); }
+  const first = JSON.parse(header);
   if (first.type !== "session" || first.id !== saved.view.sessionId || first.cwd !== saved.view.cwd) throw new Error("Recovery session identity changed");
 }
 function object(value: unknown): value is Record<string, any> { return !!value && typeof value === "object" && !Array.isArray(value); }
@@ -114,7 +123,9 @@ export class Store {
       committed = true;
       const parent = openSync(this.directory, "r"); try { fsyncSync(parent); } finally { closeSync(parent); }
     } catch (error) {
-      if (initial && !committed) rmSync(target, { recursive: true, force: true });
+      // Initial admission cannot have spawned a child yet, so its installed
+      // directory is safe to roll back even if the parent fsync failed.
+      if (initial) rmSync(committed ? directory : target, { recursive: true, force: true });
       else rmSync(temp, { force: true });
       throw error;
     }

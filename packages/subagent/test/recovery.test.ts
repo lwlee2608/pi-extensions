@@ -90,6 +90,22 @@ test("shutdown reopens retained context idle with new PID, immutable results and
   } finally { await restored?.shutdown(); await f.cleanup(); }
 });
 
+test("live stop/recover overlap cannot let the old exit close a new generation", { timeout: 20_000 }, async () => {
+  const f = await fixture();
+  try {
+    const run = f.manager.start(f.launch, "live old generation", "retained"); await f.manager.wait([run.runId]);
+    const before = f.manager.status(run.workerId)[0];
+    const stopped = f.manager.stop(run.workerId);
+    const recovered = f.manager.recover(run.workerId);
+    await stopped;
+    const next = await recovered;
+    assert.notEqual(next.pid, before.pid);
+    const task = await f.manager.message(run.workerId, "new generation task");
+    assert.equal((await f.manager.wait([task.runId])).runs[0].result?.outcome, "completed");
+    assert.equal(f.manager.status(run.workerId)[0].state, "idle");
+  } finally { await f.cleanup(); }
+});
+
 test("exclusive parent ownership, foreign/one-shot/live refusal and changed prerequisites", { timeout: 30_000 }, async () => {
   const f = await fixture(); let restored: Manager | undefined, foreign: Manager | undefined;
   try {

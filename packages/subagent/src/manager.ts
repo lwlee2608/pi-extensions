@@ -146,7 +146,7 @@ export class Manager {
           worker.view.pid = child.pid;
           worker.view.processAlive = true;
           child.onEvent(event => this.event(worker, event));
-          child.onExit(error => this.exited(worker, error));
+          child.onExit(error => this.exited(worker, child, error));
           subscribed = true;
         };
         worker.child = await this.spawn(worker.launch, worker.directory, worker.view.sessionId, own);
@@ -312,12 +312,14 @@ export class Manager {
     this.schedule();
     this.changed();
   }
-  private exited(worker: Worker, error: Error): void {
+  private exited(worker: Worker, child: Child, error: Error): void {
+    if (worker.child !== child) return;
     this.cancelQuestions(worker);
     worker.reservation = false;
     worker.view.processAlive = false;
     worker.view.state = "closed";
     void this.exclusive(worker, async () => {
+      if (worker.child !== child) return;
       if (!worker.run.result) await this.finish(worker, worker.stopping ? "interrupted" : "failed", errorText(error));
       worker.view.state = "closed";
       worker.view.recoverable = worker.view.lifetime === "retained" && !!worker.view.sessionFile;
@@ -367,7 +369,7 @@ export class Manager {
         this.save(worker);
         const own = (child: Child) => {
           worker.child = child; worker.view.pid = child.pid; worker.view.processAlive = true;
-          child.onEvent(event => this.event(worker, event)); child.onExit(error => this.exited(worker, error));
+          child.onEvent(event => this.event(worker, event)); child.onExit(error => this.exited(worker, child, error));
         };
         worker.child = await this.spawn(worker.launch, worker.directory, worker.view.sessionId, own, worker.view.sessionFile);
         if (worker.stopping || this.closing) throw new Error("Recovery cancelled during child startup");
