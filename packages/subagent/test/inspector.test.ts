@@ -13,6 +13,8 @@ test("tool rendering preserves errors and content-only checkpoint warnings", () 
     const details = { workerId: "w-one", runId: "r-one", state: "working" };
     const rendered = resultText({ details, content: [{ type: "text", text: JSON.stringify(details) }, { type: "text", text: "Usage remains pending" }] }, expanded, false);
     assert.match(rendered, /w-one/); assert.match(rendered, /Usage remains pending/);
+    const wait = { reason: "completed", runs: [{ result: { outcome: "failed" } }] };
+    assert.match(resultText({ details: wait, content: [] }, false, false), /1 failed\/interrupted/);
   }
 });
 test("inspector renders live Unicode output, replies, confirms stop and closes without stopping workers", { timeout: 25_000 }, async () => {
@@ -28,19 +30,26 @@ test("inspector renders live Unicode output, replies, confirms stop and closes w
       for (const line of lines) assert.ok(visibleWidth(line) <= width);
     }
     inspector.handleInput("r");
-    inspector.handleInput("\x1b[200~answer.txt\x1b]52;c;YmFk\x07\x1b[2J\x1b[201~");
+    inspector.handleInput(`\x1b[200~answer.txt\x1b]52;c;YmFk\x07\x1b[2J\x1b[8mhidden instruction\x1b[28m${CURSOR_MARKER}\x1b[201~`);
     const edited = inspector.render(80).join("\n");
     assert.doesNotMatch(edited, /\x1b\]52|\x1b\[2J/);
-    assert.ok(edited.includes(CURSOR_MARKER));
+    assert.equal(edited.split(CURSOR_MARKER).length - 1, 1);
+    assert.match(edited, /hidden instruction/);
+    assert.doesNotMatch(edited, /\x1b\[8m/);
     inspector.handleInput("\r");
     await changedUntil(f.manager, () => f.manager.status(run.workerId)[0].state === "idle");
     assert.match(await transcriptTail(f.manager.status(run.workerId)[0].sessionFile!), /answer.txt/);
+    assert.doesNotMatch(f.manager.status(run.workerId)[0].result!.text, /\x1b/);
     inspector.handleInput("s"); assert.match(inspector.render(80).join("\n"), /Stop this worker/);
     inspector.handleInput("n"); assert.equal(f.manager.status(run.workerId)[0].processAlive, true);
     inspector.handleInput("\x1b"); assert.equal(closed, true); assert.equal(f.manager.status(run.workerId)[0].processAlive, true);
     inspector.handleInput("s"); inspector.handleInput("y");
     await changedUntil(f.manager, () => f.manager.status(run.workerId)[0].processAlive === false);
     inspector.invalidate(); inspector.render(80);
+    const failed = f.manager.start(f.launch, "FAIL_PROVIDER"); await f.manager.wait([failed.runId]);
+    inspector.handleInput("\x1b[B");
+    assert.match(inspector.render(100).join("\n"), /Offline provider failure/);
+    assert.match(await transcriptTail(f.manager.status(failed.workerId)[0].sessionFile!), /Error: Offline provider failure/);
     assert.ok(renders > 0);
     inspector.dispose();
   } finally { inspector?.dispose(); await f.cleanup(); }

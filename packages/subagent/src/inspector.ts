@@ -19,7 +19,7 @@ export async function transcriptTail(path: string): Promise<string> {
         const entry = JSON.parse(line), message = entry.message;
         if (entry.type !== "message" || !message || message.role === "system") continue;
         const content = typeof message.content === "string" ? message.content : Array.isArray(message.content) ? message.content.map((block: { type: string; text?: string; thinking?: string; name?: string; arguments?: unknown }) => block.type === "text" ? block.text : block.type === "thinking" ? "[thinking]" : block.type === "toolCall" ? `[${block.name}] ${JSON.stringify(block.arguments)}` : "[image]").join("\n") : "";
-        lines.push(`${message.role}${message.toolName ? ` (${message.toolName})` : ""}: ${content}`);
+        lines.push(`${message.role}${message.toolName ? ` (${message.toolName})` : ""}: ${content}${message.errorMessage ? `\nError: ${message.errorMessage}` : ""}`);
       } catch { /* A live session can end in an incomplete record. */ }
     }
     return lines.join("\n").slice(-64 * 1024);
@@ -102,7 +102,13 @@ export class Inspector {
       return;
     }
     if (this.busy) return;
-    if (this.editing) { this.editing.input.handleInput(data); this.requestRender(); return; }
+    if (this.editing) {
+      const input = this.editing.input;
+      input.handleInput(data);
+      const value = input.getValue(), safe = display(value);
+      if (safe !== value) input.setValue(safe);
+      this.requestRender(); return;
+    }
     if (this.confirming) {
       if (matchesKey(data, "y")) { const id = this.confirming; this.confirming = undefined; void this.perform(() => this.manager.stop(id)); }
       else if (matchesKey(data, "n")) { this.confirming = undefined; this.requestRender(); }
@@ -148,6 +154,8 @@ export class Inspector {
       `${worker.model}:${worker.effort} · PID ${worker.pid ?? "not spawned"}`, worker.cwd,
       `Session: ${worker.sessionFile ?? "not yet persisted"}`,
       pending ? `Question ${pending.questionId}: ${pending.question}` : `${worker.workerId} · ${worker.runId}`);
+    const error = worker.error ?? worker.result?.error;
+    if (error) head.push(`Error: ${error}`);
     const text = `${this.transcript}\n\nLive: ${worker.output}${worker.toolOutput ? `\nTool output: ${worker.toolOutput}` : ""}`;
     const lines = text.split("\n").flatMap(line => wrapTextWithAnsi(display(line), Math.max(1, width)));
     this.capacity = Math.max(1, height - head.length - 3);
