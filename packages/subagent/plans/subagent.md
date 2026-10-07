@@ -7,6 +7,7 @@
 
 ## Decisions
 - **Interview depth** — Key decisions only.
+- **Build mode** — Solo (user selected). Fresh reviewer subagents use `gpt-6-astra-fast`, matching the parent model, through a dedicated profile; effort comes from the agent definition because the installed spawn tool has no effort override. Keep the installed subagent tool unchanged during bootstrap.
 - **Scope** — A focused general-purpose extension in this repository. Profiles, start/message/wait/stop controls, parallel children, and progress UI; no built-in feature workflow engine.
 - **Worker lifetime** — Live workers with saved recovery. Use `lifetime: "retained"` for phase workers: keep one RPC child across rounds until explicitly stopped. Default `lifetime: "once"` suits simple tasks and fresh reviewers: persist the terminal result, then automatically close the child process on success or failure. Retirement never changes a successful result to interrupted. Only retained workers support later tasks and recovery. Stop all owned children safely on shutdown/reload; no detached unattended workers. One-shot retirement is the approved review fix.
 - **Progress UI** — Compact persistent panel near the editor plus `/subagents` inspector with live output and message/stop controls. Do not replace the footer.
@@ -63,7 +64,7 @@ Worker states include queued, working, blocked, idle, and closed; terminal run o
 - This extension cannot bootstrap its own persistent orchestration before it exists. If built through `build-feature`, use Solo with the currently installed one-shot reviewer for all four phases. Do not change the global subagent tool mid-build. This bootstrap choice is `agent` guidance, not a recorded build-mode answer.
 
 ## Progress
-Phase 1 of 4 · 0/20 tasks — plan finalized; implementation not started.
+Complete · 20/20 tasks — Phase PRs #13/#14/#15/#16 merged into `integrate/subagent`. Phase 3's final Medium fixes merged unreviewed under the three-round cap, with checks and CI green afterward; other phases ended with clean reviews. Live demo exposed provider readiness failure, fixed via Phase 1 follow-up PR #17 after two clean review rounds. Retried live demo passed isolation, fresh review/fix, questions, explicit recovery, and user UI confirmation. All demo-owned processes exited; disposable resources removed. Final integration PR and separate skill PR remain for the user to merge; no publication/global installation.
 
 All source/test paths below are relative to `packages/subagent/` unless marked repository-root or external.
 
@@ -71,11 +72,11 @@ All source/test paths below are relative to `packages/subagent/` unless marked r
 Run a simple fresh review or send a second task to a retained worker, with basic live status and safe retirement.
 
 **Blocked by:** none
-- [ ] Add the loadable package, bundled profiles, validated child config, and monorepo registration (`package.json`, `tsconfig.json`, `LICENSE`, `agents/worker.md`, `agents/reviewer.md`, `src/profiles.ts`; repository-root `package.json`, `package-lock.json`).
-- [ ] Launch and control persistent RPC children with explicit resources, accepted-input tracking, output streaming, and owned cleanup (`src/rpc.ts`, `test/fixtures/provider.ts`, `test/rpc.test.ts`).
-- [ ] Implement start/message/wait/status/stop, stable worker/run identity, one-shot retirement, and separate run outcomes (`src/manager.ts`, `src/schema.ts`, `test/lifecycle.test.ts`).
-- [ ] Register the tool and lifecycle hooks and show basic above-editor activity, including workers still running after a cancelled wait (`src/index.ts`, `src/panel.ts`, `test/panel.test.ts`).
-- [ ] Document and verify simple reviews and retained conversation continuity using the real local Pi fixture (`README.md`, `test/lifecycle.test.ts`).
+- [x] Add the loadable package, bundled profiles, validated child config, and monorepo registration (`package.json`, `tsconfig.json`, `LICENSE`, `agents/worker.md`, `agents/reviewer.md`, `src/profiles.ts`; repository-root `package.json`, `package-lock.json`).
+- [x] Launch and control persistent RPC children with explicit resources, accepted-input tracking, output streaming, and owned cleanup (`src/rpc.ts`, `test/fixtures/provider.ts`, `test/rpc.test.ts`).
+- [x] Implement start/message/wait/status/stop, stable worker/run identity, one-shot retirement, and separate run outcomes (`src/manager.ts`, `src/schema.ts`, `test/lifecycle.test.ts`).
+- [x] Register the tool and lifecycle hooks and show basic above-editor activity, including workers still running after a cancelled wait (`src/index.ts`, `src/panel.ts`, `test/panel.test.ts`).
+- [x] Document and verify simple reviews and retained conversation continuity using the real local Pi fixture (`README.md`, `test/lifecycle.test.ts`).
 
 **Verify:** From the repository root, run `npm run check --workspace=@lwlee2608/pi-subagent` and `node --test packages/subagent/test/rpc.test.ts packages/subagent/test/lifecycle.test.ts packages/subagent/test/panel.test.ts`. A real RPC child with the offline provider must retain a task marker across two tasks in the same PID/session, return different run IDs, and leave the first result unchanged. Assert busy task rejection, steering staying within one run, fast settlement before dispatch returns, and provider failure not appearing as success. More than sixteen sequential one-shot reviews must complete and retire without exhausting the process cap or losing their results. Cancel a wait and prove the task continues; stop it and prove the owned process exits without deleting a fixture edit. Panel tests cover streamed activity and terminal width bounds. Phase 1 may reject concurrent task admission explicitly; queue scheduling arrives in Phase 2, not a silent partial implementation.
 
@@ -83,11 +84,11 @@ Run a simple fresh review or send a second task to a retained worker, with basic
 Run workers concurrently in supplied worktrees, observe queued tasks, and resolve child decisions without polling or blocking sibling controls.
 
 **Blocked by:** 1
-- [ ] Schedule independent tasks with active-task/live-worker limits and truthful queued/blocked states (`src/manager.ts`, `src/schema.ts`, `test/parallel.test.ts`).
-- [ ] Add the child-only question tool and scoped request/reply/cancellation bridge (`src/child.ts`, `src/rpc.ts`, `test/questions.test.ts`).
-- [ ] Complete any/all waits, attention exits, and reply/stop handling while task capacity is full (`src/manager.ts`, `src/index.ts`, `test/parallel.test.ts`, `test/questions.test.ts`).
-- [ ] Show bounded multi-worker rows, overflow counts, question summaries, and explicit reply guidance (`src/panel.ts`, `test/panel.test.ts`).
-- [ ] Document parallel isolation, question handling, and review-to-original-worker feedback, and exercise them with disposable worktrees (`README.md`, `test/parallel.test.ts`).
+- [x] Schedule independent tasks with active-task/live-worker limits and truthful queued/blocked states (`src/manager.ts`, `src/schema.ts`, `test/parallel.test.ts`).
+- [x] Add the child-only question tool and scoped request/reply/cancellation bridge (`src/child.ts`, `src/rpc.ts`, `test/questions.test.ts`).
+- [x] Complete any/all waits, attention exits, and reply/stop handling while task capacity is full (`src/manager.ts`, `src/index.ts`, `test/parallel.test.ts`, `test/questions.test.ts`).
+- [x] Show bounded multi-worker rows, overflow counts, question summaries, and explicit reply guidance (`src/panel.ts`, `test/panel.test.ts`).
+- [x] Document parallel isolation, question handling, and review-to-original-worker feedback, and exercise them with disposable worktrees (`README.md`, `test/parallel.test.ts`).
 
 **Verify:** Run `npm run check --workspace=@lwlee2608/pi-subagent` and `node --test packages/subagent/test/parallel.test.ts packages/subagent/test/questions.test.ts packages/subagent/test/panel.test.ts`. Real fixture children in two temporary Git worktrees must write only their assigned fixture paths and stream independently. At task capacity, another run queues; a child question interrupts a wait on that queued sibling, and reply/stop works without needing a free slot. Verify any/all completion, failed-run results, simultaneous waiters, and waiter cancellation. Stop a blocked child and assert question cancellation, waiter release, and stale/duplicate reply rejection. An unexpected permission confirmation must not be auto-approved. Run a fresh one-shot reviewer, relay its report to the retained worker, and verify the worker's original session/PID is unchanged while its run ID changes.
 
@@ -95,11 +96,11 @@ Run workers concurrently in supplied worktrees, observe queued tasks, and resolv
 Resume the original parent session and explicitly reopen retained conversations, preserving prior results and cancelled-question history.
 
 **Blocked by:** 2
-- [ ] Persist private worker/run records and frozen launch contracts outside worktrees (`src/store.ts`, `src/manager.ts`, `test/recovery.test.ts`).
-- [ ] Add recover admission, exclusive process ownership, generation checks, and idle reopening of retained sessions (`src/rpc.ts`, `src/manager.ts`, `src/schema.ts`, `test/recovery.test.ts`).
-- [ ] Reconcile parent reload/shutdown/replacement, process exit, pending questions, and incomplete runs without automatic task replay (`src/index.ts`, `src/store.ts`, `src/manager.ts`, `test/recovery.test.ts`).
-- [ ] Expose closed/recoverable workers and cancelled questions through status/panel output, with concrete error diagnostics (`src/panel.ts`, `src/index.ts`, `README.md`).
-- [ ] Verify persisted context and recovery refusal paths with real disposable parent/child processes (`test/recovery.test.ts`, `test/fixtures/provider.ts`).
+- [x] Persist private worker/run records and frozen launch contracts outside worktrees (`src/store.ts`, `src/manager.ts`, `test/recovery.test.ts`).
+- [x] Add recover admission, exclusive process ownership, generation checks, and idle reopening of retained sessions (`src/rpc.ts`, `src/manager.ts`, `src/schema.ts`, `test/recovery.test.ts`).
+- [x] Reconcile parent reload/shutdown/replacement, process exit, pending questions, and incomplete runs without automatic task replay (`src/index.ts`, `src/store.ts`, `src/manager.ts`, `test/recovery.test.ts`).
+- [x] Expose closed/recoverable workers and cancelled questions through status/panel output, with concrete error diagnostics (`src/panel.ts`, `src/index.ts`, `README.md`).
+- [x] Verify persisted context and recovery refusal paths with real disposable parent/child processes (`test/recovery.test.ts`, `test/fixtures/provider.ts`).
 
 **Verify:** Run `npm run check --workspace=@lwlee2608/pi-subagent` and `node --test packages/subagent/test/recovery.test.ts`. Stop/reload a disposable parent with idle, working, and blocked retained children; confirm owned child exit and interrupted outcomes only for unfinished runs. Reopen the exact parent session: no child task starts until explicit recovery followed by a new message. Recovery must preserve worker/session identity and stored context while using a new PID and new task run ID. Old questions stay cancelled and reject replies; recovery triggers no provider request by itself. Attempt competing recoveries and verify at most one owner; reject one-shot/foreign workers, missing cwd/session/provider, corrupt metadata, and uncertain old-process ownership. Confirm no fixture writes occur after reported successful stop, previous completed results remain readable, and stored metadata never changes another parent's records.
 
@@ -107,11 +108,11 @@ Resume the original parent session and explicitly reopen retained conversations,
 Open the full inspector during work, control a selected worker safely, and apply the documented lifecycle to real orchestration and simple reviews.
 
 **Blocked by:** 3
-- [ ] Add `/subagents` with live transcript selection, scrolling, state/model/cwd details, and message/reply/confirmed-stop controls (`src/inspector.ts`, `src/index.ts`, `test/inspector.test.ts`).
-- [ ] Verify panel/inspector focus, narrow widths, Unicode, theme changes, and busy-parent operation while preserving existing UI (`src/panel.ts`, `src/inspector.ts`, `test/inspector.test.ts`).
-- [ ] Validate the packed artifact, required child resources, conflict diagnostics, and a clean isolated installation (`test/package.test.ts`, `package.json`, `README.md`; repository-root `README.md`).
-- [ ] Update the skill's tool mapping, explicit effort, retained-worker resume/stop rules, and worktree lifecycle in a separate repository change (external `agent-skills/skills/build-feature/SKILL.md`).
-- [ ] Document the exact live demo, reversible migration, simple-review recipe, and cross-repository rollout order (`README.md`, this plan; external skill).
+- [x] Add `/subagents` with live transcript selection, scrolling, state/model/cwd details, and message/reply/confirmed-stop controls (`src/inspector.ts`, `src/index.ts`, `test/inspector.test.ts`).
+- [x] Verify panel/inspector focus, narrow widths, Unicode, theme changes, and busy-parent operation while preserving existing UI (`src/panel.ts`, `src/inspector.ts`, `test/inspector.test.ts`).
+- [x] Validate the packed artifact, required child resources, conflict diagnostics, and a clean isolated installation (`test/package.test.ts`, `package.json`, `README.md`; repository-root `README.md`).
+- [x] Update the skill's tool mapping, explicit effort, retained-worker resume/stop rules, and worktree lifecycle in a separate repository change (external `agent-skills/skills/build-feature/SKILL.md`).
+- [x] Document the exact live demo, reversible migration, simple-review recipe, and cross-repository rollout order (`README.md`, this plan; external skill).
 
 **Verify:** Run repository-root `npm run check` and `npm test`, then `npm pack --dry-run --ignore-scripts --workspace=@lwlee2608/pi-subagent`. Package tests also extract a tarball into a temporary directory and load its parent entry, bundled profiles, and child bridge outside the checkout. In an isolated Pi TUI with the offline provider, open `/subagents` during a running wait, select each child, inspect output, steer a working child, answer a blocked question, and cancel then confirm stop. Esc closes only the inspector. Test regular/fullscreen and narrow/normal widths; reload and theme changes must not leak timers or steal editor focus. Load the existing footer and session-board beside it and verify both still work without registering RPC children as TUI sessions. Load the old example deliberately in an isolated fixture to verify a clear duplicate-tool diagnostic, then disable it and confirm one tool. Check the external skill against every action row above, including simple one-shot review, retained review-fix rounds, original-parent recovery, and stopping before worktree removal. No paid provider call or GitHub PR is needed for this phase's proof.
 
@@ -142,5 +143,23 @@ These are post-build instructions, not authorization to alter the user's global 
 6. Roll back by stopping all children and confirming exit, removing/disabling the new package, restoring the previous resource selection, and reloading the old extension. Revert the skill integration separately if applied. Preserve saved sessions for inspection, but do not try to run the new action API against the old example. Never remove a phase worktree as part of extension rollback.
 
 ## Agent-selected details added while completing the phases
+
+- Live demo passed on `velocirouter/gpt-6-astra-fast:high`. Initial admission failures made no child calls/edits; PR #17 fixed cached provider availability before readiness. Retry A/B changed only their assigned modules. Fresh one-shot review found A's omitted TypeError check and retired; original A PID/session stayed unchanged through fixes and both tests passed. B replied within the same run, wrote `demo-note.txt`, then left a second question pending. Reload closed A/B, preserved completed outcomes, interrupted only B's pending run, and cancelled its question. Recovery reopened B idle with the same session and new PID; old reply rejected; a new task recalled its prior work and wrote `recovery-note.txt`, with both B tests passing. User confirmed live panel/inspector/footer and blocked-question visibility. The agent ultimately sent reload after user confirmations did not correspond to the demo terminal; that procedural deviation is disclosed, not claimed as user-performed reload.
+- Demo cleanup: all five child PIDs confirmed exited, then parent exited and released ownership; temporary worktrees/repository/agent directory `/tmp/pi-subagent-live-dH2iId` and tmux session were removed. No transcripts published. Provider-reported cost: $0.571824 children + $1.998944 parent = $2.570768, including the failed initial admission's parent orchestration. No credential files read/copied or global settings changed.
+- Phase 4 round 2 sanitized stored/pasted input to prevent conceal/cursor injection, showed child diagnostics in the inspector/transcript, and distinguished failed/interrupted runs in compact wait summaries. Both small judgment-call findings fixed; nothing skipped.
+- Phase 4 round 1 sanitized pasted inspector input while preserving cursor/SGR, made tool errors and checkpoint warnings visible, and required full reviewer transcript retrieval in the external skill and README. All three findings fixed; no findings skipped.
+- Phase 4 checkpoint: `npm run check`, all 132 repository tests, and `npm pack --dry-run --ignore-scripts --workspace=@lwlee2608/pi-subagent` pass. The extracted artifact loads and runs a real offline parent/child; loading the old example produces a duplicate-tool diagnostic. Agent-driven tmux checks exercised fullscreen/regular, narrow widths, busy-parent controls, reload/recovery, theme change, and footer/session-board coexistence, but do not substitute for user visual/focus confirmation.
+- External skill: `agent-skills` PR #13 (`feat/build-feature-persistent-subagents`, commits `b11c374` and `a5bcff4`) was reviewed alongside all three Phase 4 rounds, final clean. It remains separate and unmerged/uninstalled; apply only after extension usability. Original checkout/global skill unchanged.
+- Phase 4 user confirmation received after the initial pause: startup screenshots in regular/fullscreen, live panel and inspector screenshots, then “working” for reply/stop cancel-confirm/Esc return controls. User confirmation is limited to those observations; the agent performed the remaining offline resize/theme/reload checks above. Phase checks/reviews subsequently passed; the final live-model demo ran after Phase 4 and its provider follow-up merged.
+- Phase 3 round 3 replaced per-worker usage rewrites with one atomic parent checkpoint, retained pending usage/action results after checkpoint failure, and always reconciled scheduling after terminal persistence failure. All three Medium findings fixed (including judgment calls); these final fixes are unreviewed under the three-round cap.
+- Phase 3 round 2 generation-guarded old exit finalizers, rolled back unspawned admissions after post-rename sync failure, and bounded session-header reads. All findings fixed, including both small judgment calls.
+- Phase 3 round 1 serialized recovery admission with stop, made first metadata admission transactional, revalidated project-profile trust, and disabled unsaved automatic skill discovery. All findings fixed, including the small judgment call.
+- Phase 3 uses a conservative exclusive parent-storage lock. Normal shutdown releases it after confirmed cleanup; crashes/failed cleanup retain it and require independent ownership resolution rather than stale-PID guessing. Metadata is atomic/fsynced and bounded to 20 MiB per worker.
+- Phase 2 round 2 made `ask_parent` model-only to prevent nested parallel tools bypassing its blocking boundary; a real nested-call regression verifies denial. No findings skipped.
+- Phase 2 round 1 fixed question tools not gating later tools in the same response, and idle workers hiding active panel rows. Real offline regression verifies a later write waits for reply and never runs after cancellation. No findings skipped.
+- Phase 1 review round 2 fixed uncertain steering after RPC timeout (close before accepting more tasks) and failed automatic recovery being reported as completion. Both have real offline-child regressions. No findings skipped.
+- Phase 1 review round 1 fixed late steering crossing run boundaries, lost startup errors/UI requests, missing provider-override validation (registration plus API/endpoint), and usage discarded during stop. Regression checks use real offline Pi children. No findings skipped.
+- Phase 1 bounds in-memory history to 2048 admitted runs per parent and returns a clear limit error; existing disk results remain intact. This is separate from the sixteen live-process cap.
+- Phase 1 verification uses a real offline parent/tool/child path plus real direct RPC lifecycle tests. The root checks and tests pass. npm reports one high-severity dependency advisory; dependency upgrades are outside this phase and were not applied.
 
 The user can overturn these defaults before implementation: sixteen live/reserved workers, a 30-minute wait window, package-local user configuration, event-driven waits interruptible by any owned pending question, and action field names in the contract. File/module names and offline fixture layout are implementation guides, not a new workflow engine. The approved four-phase split remains sequential. No release, global installation, or unattended detached service is included.
