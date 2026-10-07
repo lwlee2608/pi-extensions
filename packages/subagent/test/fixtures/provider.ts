@@ -6,9 +6,11 @@ import { setTimeout as delay } from "node:timers/promises";
 export default function (pi: ExtensionAPI): void {
   pi.registerCommand("fixture-command", { description: "Must not run for literal tasks", handler: async () => { throw new Error("Slash command dispatched unexpectedly"); } });
   pi.on("input", async event => {
-    if (event.text.includes("LATE_STEER")) await delay(2200);
+    if (event.text.includes("TIMEOUT_STEER")) await delay(22_000);
+    else if (event.text.includes("LATE_STEER")) await delay(2200);
     return event.text.includes("HANDLE_INPUT") ? { action: "handled" } : undefined;
   });
+  pi.on("session_before_compact", () => { throw new Error("OFFLINE_RECOVERY_FAILED"); });
   pi.registerTool({
     name: "fixture_hold", label: "Fixture hold", description: "Offline controlled tool", parameters: Type.Object({ milliseconds: Type.Number() }),
     async execute(_id, args, signal, update) {
@@ -75,7 +77,7 @@ export default function (pi: ExtensionAPI): void {
             stream.push({ type: "text_start", contentIndex: 0, partial: message });
             stream.push({ type: "text_delta", contentIndex: 0, delta: reply, partial: message });
             stream.push({ type: "text_end", contentIndex: 0, content: reply, partial: message });
-            message.stopReason = "stop";
+            message.stopReason = text.includes("TRUNCATE_RECOVERY") ? "length" : "stop";
           }
           stream.push({ type: "done", reason: message.stopReason, message });
         }

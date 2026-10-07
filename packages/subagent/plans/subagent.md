@@ -64,7 +64,7 @@ Worker states include queued, working, blocked, idle, and closed; terminal run o
 - This extension cannot bootstrap its own persistent orchestration before it exists. If built through `build-feature`, use Solo with the currently installed one-shot reviewer for all four phases. Do not change the global subagent tool mid-build. This bootstrap choice is `agent` guidance, not a recorded build-mode answer.
 
 ## Progress
-Phase 1 of 4 · 5/20 tasks — PR #13 open; round 1's four findings fixed and verified, round 2 pending.
+Phase 1 of 4 · 5/20 tasks — PR #13 open; rounds 1 and 2 fixed, final round 3 pending.
 
 All source/test paths below are relative to `packages/subagent/` unless marked repository-root or external.
 
@@ -144,6 +144,7 @@ These are post-build instructions, not authorization to alter the user's global 
 
 ## Agent-selected details added while completing the phases
 
+- Phase 1 review round 2 fixed uncertain steering after RPC timeout (close before accepting more tasks) and failed automatic recovery being reported as completion. Both have real offline-child regressions. No findings skipped.
 - Phase 1 review round 1 fixed late steering crossing run boundaries, lost startup errors/UI requests, missing provider-override validation (registration plus API/endpoint), and usage discarded during stop. Regression checks use real offline Pi children. No findings skipped.
 - Phase 1 bounds in-memory history to 2048 admitted runs per parent and returns a clear limit error; existing disk results remain intact. This is separate from the sixteen live-process cap.
 - Phase 1 verification uses a real offline parent/tool/child path plus real direct RPC lifecycle tests. The root checks and tests pass. npm reports one high-severity dependency advisory; dependency upgrades are outside this phase and were not applied.

@@ -99,6 +99,33 @@ test("late steering is cleared before another task and stop preserves final prov
   } finally { await f.cleanup(); }
 });
 
+test("steering past its RPC deadline closes the uncertain worker before another task", { timeout: 45_000 }, async () => {
+  const f = await fixture();
+  try {
+    const run = f.manager.start(f.launch, "WRITE_AND_HOLD", "retained");
+    await changedUntil(f.manager, () => f.manager.status()[0].activity === "tool: fixture_hold");
+    await assert.rejects(f.manager.message(run.workerId, "TIMEOUT_STEER", "steer"), /delivery uncertain/);
+    const result = await f.manager.wait([run.runId]);
+    assert.equal(result.runs[0].result?.outcome, "interrupted");
+    assert.equal(f.manager.status()[0].processAlive, false);
+    await assert.rejects(f.manager.message(run.workerId, "must not inherit guidance"), /idle retained/);
+  } finally { await f.cleanup(); }
+});
+
+test("real failed truncation recovery does not report task success", { timeout: 20_000 }, async () => {
+  const f = await fixture();
+  try {
+    await writeFile(join(f.launch.agentDir, "settings.json"), JSON.stringify({ retry: { enabled: false }, compaction: { enabled: true, keepRecentTokens: 0 } }));
+    const initial = f.manager.start(f.launch, "prior context", "retained");
+    await f.manager.wait([initial.runId]);
+    const run = await f.manager.message(initial.workerId, "TRUNCATE_RECOVERY");
+    const result = await f.manager.wait([run.runId], "all", 15_000);
+    assert.equal(result.reason, "completed");
+    assert.equal(result.runs[0].result?.outcome, "failed", JSON.stringify(result));
+    assert.match(result.runs[0].result?.error ?? "", /compact|recover|context/i);
+  } finally { await f.cleanup(); }
+});
+
 test("more than sixteen one-shot reviews retire and preserve failed/handled results", { timeout: 150_000 }, async () => {
   const f = await fixture();
   try {

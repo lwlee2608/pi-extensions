@@ -17,7 +17,7 @@ export interface Snapshot {
 interface Worker {
   view: Snapshot; launch: Launch; directory: string; child?: Child; run: Run; lock: Promise<unknown>;
   accepted: boolean; settled: boolean; last?: Pick<AssistantMessage, "stopReason" | "errorMessage">;
-  usage: Usage; stopping: boolean; reservation: boolean;
+  usage: Usage; stopping: boolean; reservation: boolean; recoveryError?: string;
 }
 export interface WaitResult { reason: "completed" | "timeout"; runs: Run[]; workers: Snapshot[]; pendingQuestionIds: string[] }
 export function zeroUsage(): Usage { return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }; }
@@ -112,7 +112,14 @@ export class Manager {
       if (worker.view.state !== "working" || !worker.accepted || !worker.child || worker.stopping || worker.settled) throw new Error("Steering requires a working child");
       return this.exclusive(worker, async () => {
         if (worker.view.state !== "working" || worker.settled || worker.stopping) throw new Error("Worker settled before steering could be delivered");
-        const result = await worker.child!.request({ type: "steer", message: literalInput(message) });
+        let result;
+        try { result = await worker.child!.request({ type: "steer", message: literalInput(message) }); }
+        catch (error) {
+          worker.stopping = true;
+          try { await this.closeWorker(worker); }
+          finally { await this.finish(worker, "interrupted", `Steering delivery uncertain: ${errorText(error)}`); }
+          throw new Error(`Steering delivery uncertain; worker closed or requires cleanup: ${errorText(error)}`);
+        }
         if (result.data.disposition !== "queued") throw new Error(`Steer was ${result.data.disposition}, not accepted`);
         if (worker.settled || worker.stopping) {
           await worker.child!.request({ type: "clear_queue" });
@@ -126,7 +133,7 @@ export class Manager {
     worker.run = this.newRun(id, label ?? worker.view.label);
     Object.assign(worker.view, { runId: worker.run.runId, label: worker.run.label, state: "working", startedAt: worker.run.startedAt,
       result: undefined, error: undefined, output: "", activity: "dispatching" });
-    worker.accepted = false; worker.settled = false; worker.last = undefined; worker.usage = zeroUsage();
+    worker.accepted = false; worker.settled = false; worker.last = undefined; worker.recoveryError = undefined; worker.usage = zeroUsage();
     this.changed();
     void this.exclusive(worker, async () => {
       try { if (!worker.stopping) await this.dispatch(worker, message); }
@@ -148,11 +155,18 @@ export class Manager {
       case "message_end":
         if (event.message.role === "assistant") {
           worker.last = { stopReason: event.message.stopReason, errorMessage: event.message.errorMessage };
+          if (event.message.stopReason === "stop") worker.recoveryError = undefined;
           worker.view.output = event.message.content.filter(c => c.type === "text").map(c => c.text).join("\n").slice(-8192);
           addUsage(worker.usage, event.message.usage);
         } else if (event.message.role === "toolResult") addUsage(worker.usage, event.message.usage);
         break;
-      case "compaction_end": addUsage(worker.usage, event.result?.usage); break;
+      case "compaction_end":
+        addUsage(worker.usage, event.result?.usage);
+        if (event.errorMessage || event.aborted) worker.recoveryError = event.errorMessage ?? "Child recovery was aborted";
+        break;
+      case "auto_retry_end":
+        if (!event.success) worker.recoveryError = event.finalError ?? "Child retries failed";
+        break;
       case "tool_execution_start": worker.view.activity = `tool: ${event.toolName}`; break;
       case "tool_execution_end": worker.view.activity = event.isError ? `tool failed: ${event.toolName}` : "working"; break;
       case "extension_ui_request":
@@ -178,10 +192,17 @@ export class Manager {
   private async settle(worker: Worker): Promise<void> {
     if (worker.run.result || worker.stopping) return;
     // Pi accepts steer even after its run has ended. Drain before exposing idle.
-    const cleared = await worker.child!.request({ type: "clear_queue" });
+    let cleared;
+    try { cleared = await worker.child!.request({ type: "clear_queue" }); }
+    catch (error) {
+      worker.stopping = true;
+      try { await this.closeWorker(worker); }
+      finally { await this.finish(worker, "failed", `Could not settle child queue: ${errorText(error)}`); }
+      return;
+    }
     if (cleared.data.steering.length || cleared.data.followUp.length) worker.view.error = "Child settled with unconsumed guidance; cleared it instead of forwarding to another run";
     const last = worker.last;
-    const error = worker.view.error ?? last?.errorMessage;
+    const error = worker.view.error ?? worker.recoveryError ?? last?.errorMessage;
     const outcome: Outcome = last?.stopReason === "aborted" ? "interrupted" : error || !last || !["stop", "length"].includes(last.stopReason) ? "failed" : "completed";
     await this.finish(worker, outcome, outcome === "completed" ? undefined : error ?? "Child settled without a successful final response");
     if (worker.view.lifetime === "once") await this.closeWorker(worker);
