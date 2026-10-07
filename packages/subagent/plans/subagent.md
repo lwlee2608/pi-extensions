@@ -64,7 +64,7 @@ Worker states include queued, working, blocked, idle, and closed; terminal run o
 - This extension cannot bootstrap its own persistent orchestration before it exists. If built through `build-feature`, use Solo with the currently installed one-shot reviewer for all four phases. Do not change the global subagent tool mid-build. This bootstrap choice is `agent` guidance, not a recorded build-mode answer.
 
 ## Progress
-Phase 3 of 4 · 15/20 tasks — Phases 1 and 2 merged as PRs #13/#14 after three review rounds each (final clean). PR #15 open; three review rounds complete. Round 3's Medium findings fixed and verified without a fourth review; ready for CI/merge.
+Phase 4 of 4 · 19/20 tasks — Phases 1–3 merged as PRs #13/#14/#15. Phase 3's final Medium fixes merged unreviewed under the three-round cap, with checks and CI green afterward. Phase 4 implementation and automated verification complete, but paused before its PR: the user selected “Cannot verify now” for required offline TUI confirmation. UI proof and the final live demo remain unverified. No Phase 4 reviews have run.
 
 All source/test paths below are relative to `packages/subagent/` unless marked repository-root or external.
 
@@ -108,11 +108,11 @@ Resume the original parent session and explicitly reopen retained conversations,
 Open the full inspector during work, control a selected worker safely, and apply the documented lifecycle to real orchestration and simple reviews.
 
 **Blocked by:** 3
-- [ ] Add `/subagents` with live transcript selection, scrolling, state/model/cwd details, and message/reply/confirmed-stop controls (`src/inspector.ts`, `src/index.ts`, `test/inspector.test.ts`).
+- [x] Add `/subagents` with live transcript selection, scrolling, state/model/cwd details, and message/reply/confirmed-stop controls (`src/inspector.ts`, `src/index.ts`, `test/inspector.test.ts`).
 - [ ] Verify panel/inspector focus, narrow widths, Unicode, theme changes, and busy-parent operation while preserving existing UI (`src/panel.ts`, `src/inspector.ts`, `test/inspector.test.ts`).
-- [ ] Validate the packed artifact, required child resources, conflict diagnostics, and a clean isolated installation (`test/package.test.ts`, `package.json`, `README.md`; repository-root `README.md`).
-- [ ] Update the skill's tool mapping, explicit effort, retained-worker resume/stop rules, and worktree lifecycle in a separate repository change (external `agent-skills/skills/build-feature/SKILL.md`).
-- [ ] Document the exact live demo, reversible migration, simple-review recipe, and cross-repository rollout order (`README.md`, this plan; external skill).
+- [x] Validate the packed artifact, required child resources, conflict diagnostics, and a clean isolated installation (`test/package.test.ts`, `package.json`, `README.md`; repository-root `README.md`).
+- [x] Update the skill's tool mapping, explicit effort, retained-worker resume/stop rules, and worktree lifecycle in a separate repository change (external `agent-skills/skills/build-feature/SKILL.md`).
+- [x] Document the exact live demo, reversible migration, simple-review recipe, and cross-repository rollout order (`README.md`, this plan; external skill).
 
 **Verify:** Run repository-root `npm run check` and `npm test`, then `npm pack --dry-run --ignore-scripts --workspace=@lwlee2608/pi-subagent`. Package tests also extract a tarball into a temporary directory and load its parent entry, bundled profiles, and child bridge outside the checkout. In an isolated Pi TUI with the offline provider, open `/subagents` during a running wait, select each child, inspect output, steer a working child, answer a blocked question, and cancel then confirm stop. Esc closes only the inspector. Test regular/fullscreen and narrow/normal widths; reload and theme changes must not leak timers or steal editor focus. Load the existing footer and session-board beside it and verify both still work without registering RPC children as TUI sessions. Load the old example deliberately in an isolated fixture to verify a clear duplicate-tool diagnostic, then disable it and confirm one tool. Check the external skill against every action row above, including simple one-shot review, retained review-fix rounds, original-parent recovery, and stopping before worktree removal. No paid provider call or GitHub PR is needed for this phase's proof.
 
@@ -144,6 +144,9 @@ These are post-build instructions, not authorization to alter the user's global 
 
 ## Agent-selected details added while completing the phases
 
+- Phase 4 checkpoint: `npm run check`, all 132 repository tests, and `npm pack --dry-run --ignore-scripts --workspace=@lwlee2608/pi-subagent` pass. The extracted artifact loads and runs a real offline parent/child; loading the old example produces a duplicate-tool diagnostic. Agent-driven tmux checks exercised fullscreen/regular, narrow widths, busy-parent controls, reload/recovery, theme change, and footer/session-board coexistence, but do not substitute for user visual/focus confirmation.
+- Phase 4 external skill edit is isolated in `/tmp/pi-subagent-skill-worktree`, branch `feat/build-feature-persistent-subagents` of `agent-skills`; the original checkout/global skill is unchanged. Review that separate change with the Phase 4 rounds, record its commit separately, and apply only after extension usability is confirmed. No external PR or installation has occurred.
+- Resume Phase 4 by obtaining user confirmation with `node packages/subagent/test/ui.ts fullscreen` and `regular`, then re-run checks before creating its PR. The final live-model demo runs only after Phase 4 merges; no final PR to main before that demo.
 - Phase 3 round 3 replaced per-worker usage rewrites with one atomic parent checkpoint, retained pending usage/action results after checkpoint failure, and always reconciled scheduling after terminal persistence failure. All three Medium findings fixed (including judgment calls); these final fixes are unreviewed under the three-round cap.
 - Phase 3 round 2 generation-guarded old exit finalizers, rolled back unspawned admissions after post-rename sync failure, and bounded session-header reads. All findings fixed, including both small judgment calls.
 - Phase 3 round 1 serialized recovery admission with stop, made first metadata admission transactional, revalidated project-profile trust, and disabled unsaved automatic skill discovery. All findings fixed, including the small judgment call.

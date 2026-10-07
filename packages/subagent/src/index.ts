@@ -1,7 +1,9 @@
 import { join } from "node:path";
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Manager } from "./manager.ts";
-import { attachPanel } from "./panel.ts";
+import { Inspector } from "./inspector.ts";
+import { attachPanel, display } from "./panel.ts";
+import { Text } from "@earendil-works/pi-tui";
 import { loadConfig, resolveLaunch } from "./profiles.ts";
 import { description, parameters, validateAction, type Effort } from "./schema.ts";
 
@@ -11,6 +13,8 @@ export default function (pi: ExtensionAPI): void {
   let detachPanel: (() => void) | undefined;
   let initialization: Promise<Manager> | undefined;
   let closed = false;
+  let inspectorOpen = false;
+  let closeInspector: (() => void) | undefined;
   const getManager = (ctx: ExtensionContext): Promise<Manager> => initialization ??= (async () => {
     if (closed) throw new Error("Subagent runtime is closed");
     const config = await loadConfig(getAgentDir());
@@ -22,12 +26,36 @@ export default function (pi: ExtensionAPI): void {
   pi.on("session_start", async (_event, ctx) => { await getManager(ctx); });
   pi.on("session_shutdown", async () => {
     closed = true;
+    closeInspector?.();
     detachPanel?.(); detachPanel = undefined;
     try { await initialization; } catch { /* Failed initialization owns no child. */ }
     await manager?.shutdown();
   });
+  pi.registerCommand("subagents", {
+    description: "Inspect live and saved workers; message, reply, stop or recover",
+    async handler(_args, ctx) {
+      if (ctx.mode !== "tui" || inspectorOpen) return;
+      inspectorOpen = true;
+      try {
+        const active = await getManager(ctx);
+        await ctx.ui.custom<void>((tui, theme, _keys, done) => {
+          closeInspector = () => done();
+          return new Inspector(active, theme, () => tui.requestRender(), () => tui.terminal.rows, () => done());
+        }, { overlay: true, overlayOptions: { width: "100%", maxHeight: "100%", anchor: "top-left", margin: 0 } });
+      } finally { inspectorOpen = false; closeInspector = undefined; }
+    },
+  });
   pi.registerTool({
     name: "subagent", label: "Subagent", description, parameters, exposure: "model-only", executionMode: "parallel",
+    renderCall(args, theme) {
+      return new Text(theme.fg("toolTitle", `Subagent · ${display(args.action ?? "")}${args.label ? ` · ${display(args.label)}` : ""}`), 0, 0);
+    },
+    renderResult(result, options, theme) {
+      const details = result.details as { workerId?: string; runId?: string; state?: string; reason?: string; pendingQuestionIds?: string[] } | undefined;
+      const summary = details?.reason ? `Wait: ${details.reason}${details.pendingQuestionIds?.length ? ` · ${details.pendingQuestionIds.length} question(s)` : ""}`
+        : details?.workerId ? `${details.workerId} · ${details.state ?? "accepted"} · ${details.runId ?? ""}` : "Subagent result";
+      return new Text(options.expanded ? display(JSON.stringify(result.details, null, 2)) : theme.fg("muted", summary), 0, 0);
+    },
     async execute(_id, args, signal, _update, ctx) {
       validateAction(args);
       signal?.throwIfAborted();

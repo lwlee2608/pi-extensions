@@ -65,7 +65,18 @@ export default function (pi: ExtensionAPI): void {
           stream.push({ type: "error", reason: message.stopReason, error: message });
         } else {
           stream.push({ type: "start", partial: message });
-          if (text.includes("PARENT_SMOKE")) {
+          if (text.includes("PARENT_UI")) {
+            const results = context.messages.filter(m => m.role === "toolResult" && m.toolName === "subagent");
+            const data = results.map(r => r.role === "toolResult" ? JSON.parse(r.content.filter(c => c.type === "text").map(c => c.text).join("")) : undefined);
+            const args = results.length < 2 ? { action: "start", agent: "worker", lifetime: "retained", label: results.length ? "Question worker 界" : "Working worker 😀", task: results.length ? "ASK_PARENT DELAY_QUESTION" : "WRITE_AND_HOLD LONG_HOLD" }
+              : results.length === 2 ? { action: "wait", runIds: data.slice(0, 2).map(r => r.runId), mode: "all" }
+              : undefined;
+            if (args) {
+              const call: ToolCall = { type: "toolCall", id: `ui-${results.length}`, name: "subagent", arguments: JSON.parse(JSON.stringify(args)) };
+              message.content.push(call); stream.push({ type: "toolcall_start", contentIndex: 0, partial: message });
+              stream.push({ type: "toolcall_end", contentIndex: 0, toolCall: call, partial: message }); message.stopReason = "toolUse";
+            } else { message.content.push({ type: "text", text: "Open /subagents to inspect, message, reply, stop, or recover the retained workers." }); message.stopReason = "stop"; }
+          } else if (text.includes("PARENT_SMOKE")) {
             const results = context.messages.filter(m => m.role === "toolResult" && m.toolName === "subagent");
             const first = results[0];
             const data = first?.role === "toolResult" ? JSON.parse(first.content.filter(c => c.type === "text").map(c => c.text).join("")) : undefined;
@@ -82,9 +93,15 @@ export default function (pi: ExtensionAPI): void {
           } else if (context.messages.at(-1)?.role === "user" && (text.includes("ASK_PARENT") || text.includes("UNEXPECTED_PERMISSION") || text.includes("NESTED_QUESTION"))) {
             const permission = text.includes("UNEXPECTED_PERMISSION"), nested = text.includes("NESTED_QUESTION");
             const call: ToolCall = { type: "toolCall", id: `question-${Date.now()}`, name: nested ? "fixture_nested" : permission ? "fixture_permission" : "ask_parent", arguments: permission || nested ? {} : { question: "Which disposable filename should I use?" } };
+            if (text.includes("DELAY_QUESTION")) {
+              const hold: ToolCall = { type: "toolCall", id: `before-question-${Date.now()}`, name: "fixture_hold", arguments: { milliseconds: 10_000 } };
+              message.content.push(hold); stream.push({ type: "toolcall_start", contentIndex: 0, partial: message });
+              stream.push({ type: "toolcall_end", contentIndex: 0, toolCall: hold, partial: message });
+            }
+            const questionIndex = message.content.length;
             message.content.push(call);
-            stream.push({ type: "toolcall_start", contentIndex: 0, partial: message });
-            stream.push({ type: "toolcall_end", contentIndex: 0, toolCall: call, partial: message });
+            stream.push({ type: "toolcall_start", contentIndex: questionIndex, partial: message });
+            stream.push({ type: "toolcall_end", contentIndex: questionIndex, toolCall: call, partial: message });
             if (text.includes("THEN_WRITE")) {
               const write: ToolCall = { type: "toolCall", id: `after-question-${Date.now()}`, name: "write", arguments: { path: "after-question.txt", content: "only after reply" } };
               message.content.push(write);
@@ -95,7 +112,7 @@ export default function (pi: ExtensionAPI): void {
           } else if (context.messages.at(-1)?.role === "user" && text.includes("WRITE_AND_HOLD")) {
             const calls: ToolCall[] = [
               { type: "toolCall" as const, id: `write-${Date.now()}`, name: "write", arguments: { path: "fixture-edit.txt", content: "keep this edit" } },
-              { type: "toolCall" as const, id: `hold-${Date.now()}`, name: "fixture_hold", arguments: { milliseconds: 1500 } },
+              { type: "toolCall" as const, id: `hold-${Date.now()}`, name: "fixture_hold", arguments: { milliseconds: text.includes("LONG_HOLD") ? 120_000 : 1500 } },
             ];
             calls.forEach((call, contentIndex) => { message.content.push(call); stream.push({ type: "toolcall_start", contentIndex, partial: message }); stream.push({ type: "toolcall_end", contentIndex, toolCall: call, partial: message }); });
             message.stopReason = "toolUse";
