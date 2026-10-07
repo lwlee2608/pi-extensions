@@ -15,7 +15,7 @@ export interface Question { questionId: string; workerId: string; runId: string;
 export interface Snapshot {
   workerId: string; runId: string; state: "queued" | "working" | "blocked" | "idle" | "closed"; lifetime: "once" | "retained";
   label: string; cwd: string; model: string; effort: string; pid?: number; processAlive?: boolean; sessionId: string; sessionFile?: string;
-  activity: string; output: string; startedAt: number; result?: Result; error?: string; questions?: Question[]; recoverable?: boolean;
+  activity: string; output: string; startedAt: number; result?: Result; error?: string; questions?: Question[]; recoverable?: boolean; usage?: Usage; toolOutput?: string;
 }
 interface Worker {
   view: Snapshot; launch: Launch; directory: string; child?: Child; run: Run; lock: Promise<unknown>;
@@ -196,7 +196,7 @@ export class Manager {
     this.checkTaskSlot();
     worker.run = this.newRun(id, label ?? worker.view.label);
     Object.assign(worker.view, { runId: worker.run.runId, label: worker.run.label, state: "queued", startedAt: worker.run.startedAt,
-      result: undefined, error: undefined, output: "", activity: "dispatching" });
+      result: undefined, error: undefined, output: "", toolOutput: "", usage: undefined, activity: "dispatching" });
     worker.accepted = false; worker.settled = false; worker.last = undefined; worker.recoveryError = undefined; worker.usage = zeroUsage();
     worker.task = message;
     worker.view.activity = "queued";
@@ -228,6 +228,8 @@ export class Manager {
         break;
       }
       case "message_update":
+        worker.view.usage = structuredClone(worker.usage);
+        addUsage(worker.view.usage, event.usage);
         if (event.assistantMessageEvent.type === "text_delta") worker.view.output = (worker.view.output + event.assistantMessageEvent.delta).slice(-8192);
         break;
       case "message_end":
@@ -245,6 +247,11 @@ export class Manager {
       case "auto_retry_end":
         if (!event.success) worker.recoveryError = event.finalError ?? "Child retries failed";
         break;
+      case "tool_execution_update": {
+        const result = event.partialResult as { content?: { type: string; text?: string }[] };
+        worker.view.toolOutput = result.content?.filter(c => c.type === "text").map(c => c.text ?? "").join("\n").slice(-8192);
+        break;
+      }
       case "tool_execution_start":
         worker.activeTools.set(event.toolCallId, event.toolName);
         if (worker.view.state !== "blocked") worker.view.activity = `tool: ${[...worker.activeTools.values()].join(", ")}`;

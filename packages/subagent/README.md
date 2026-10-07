@@ -2,7 +2,7 @@
 
 Persistent Pi RPC workers, fresh one-shot reviewers, and a compact panel above the editor. The footer is not replaced.
 
-**Phase 3:** `start`, `message`, `wait`, `status`, `stop`, `reply`, and `recover`. Run independent workers concurrently, answer child questions, and explicitly reopen saved retained conversations. The full `/subagents` inspector arrives in Phase 4.
+`start`, `message`, `wait`, `status`, `stop`, `reply`, and `recover` control isolated conversations. `/subagents` inspects live output and saved transcripts without replacing the footer or registering RPC children as terminal sessions.
 
 ## Isolated development
 
@@ -87,7 +87,23 @@ Children ask through `ask_parent({ question: "Which filename?" })`, not a TUI qu
 
 If the decision belongs to the user, ask them before replying. To refuse the decision, send `{"action":"reply","questionId":"q-QUESTION-ID","cancelled":true}`. Cancellation stops the child and interrupts its unfinished run; it never means permission to guess. Stop, shutdown, and process exit cancel pending questions. Stale and duplicate replies fail. Question history is bounded to 128 per worker; exceeding it stops that worker visibly through an interrupted result.
 
-For review/fix rounds, start a fresh one-shot reviewer in the worker's directory, wait for the report, then send it as a new `task` message to the **original idle retained worker**. Its PID/session stay unchanged and the fix task gets a new run ID. Stop every retained worker and confirm `processAlive: false` before removing worktrees.
+For review/fix rounds, start a fresh one-shot reviewer in the worker's directory and wait for its result. Wait/status text is a bounded summary: read the returned `sessionFile` to retrieve the complete final assistant response before deciding on findings or relaying the report. Failed retrieval blocks the review cycle. Send the full response unchanged as a new `task` message to the **original idle retained worker**. Its PID/session stay unchanged and the fix task gets a new run ID. Stop every retained worker and confirm `processAlive: false` before removing worktrees.
+
+## Inspector and offline UI verification
+
+Open `/subagents` while the parent works or waits. Use ↑/↓ to select workers, PgUp/PgDn to scroll the selected transcript, and End to follow live output. `m` sends a new task to an idle retained worker or steers a working one; `r` answers a pending question; `s` asks for stop confirmation (`y`/`n`); `c` explicitly recovers a closed retained worker. Esc cancels an editor/confirmation first, then closes only the inspector. It does not cancel the parent wait or child work.
+
+The inspector reads a bounded tail of the full private transcript (128 KiB input / 64 KiB displayed text), shows its path, and appends live streamed output. Older output stays available at that path. All displayed child text is terminal-control sanitized. Narrow terminals remain width-bounded; enlarge very short terminals to use controls.
+
+Run the disposable offline fixture from a real terminal:
+
+```sh
+node packages/subagent/test/ui.ts fullscreen
+# Repeat with regular and resize to narrow/normal widths:
+node packages/subagent/test/ui.ts regular
+```
+
+Type `PARENT_UI`, then open `/subagents` while the two rows run. Select both, inspect output, steer the working worker, reply to the question, and cancel then confirm stop. Check Esc returns focus to the editor, change the theme and reopen, then `/reload` and recover a saved worker. `/sessions` should show only the parent TUI, and the existing footer should remain intact. Exit normally to stop children and remove the fixture's own temporary directory. This uses no credentials, network provider, or global configuration changes. Automated tests do not replace a user's confirmation of actual appearance/focus.
 
 ## Explicit saved recovery
 
@@ -109,3 +125,45 @@ A private `owner.json` file exclusively reserves a parent's storage for its curr
 Private session directories and per-run result files live under `<agent-dir>/pi-subagent/<parent-session-id>/<worker-id>/`. Results reference the full persisted Pi transcript. Result files are mode `0600`; containing directories are mode `0700`. Keep transcripts private.
 
 Live text is bounded to 8 KiB, returned result text to 4 KiB, stderr to 16 KiB, and individual RPC records to 4 MiB. Oversized/malformed protocol output closes the child rather than allocating without bounds. A parent admits at most 2048 tasks before requiring a new parent session; existing disk output remains intact. Worker metadata freezes the launch contract and hashed non-secret profile/extension/skill prerequisites. Atomic, fsynced metadata updates are limited to 20 MiB per worker; persistence failures close live work and remain visible rather than silently downgrading recovery.
+
+## Live demo
+
+Run once after all phase PRs merge, in a disposable terminal session. Live calls use normal Pi authentication through the configured provider; confirm model availability without reading or copying credential files. Missing authentication/configuration is a blocker. No GitHub remote, PR, push, publication, or deployment is part of this demo.
+
+Create the exact fixture repository from the plan:
+
+```sh
+DEMO=$(mktemp -d)
+mkdir "$DEMO/repo"
+cd "$DEMO/repo"
+git init -q
+printf '%s\n' '{"type":"module","scripts":{"test":"node --test"}}' > package.json
+printf '%s\n' 'export function add() { throw new Error("TODO"); }' > add.js
+printf '%s\n' 'export function upper() { throw new Error("TODO"); }' > upper.js
+printf '%s\n' 'import assert from "node:assert/strict";' 'import { test } from "node:test";' 'import { add } from "./add.js";' 'test("add numbers", () => assert.equal(add(2, 3), 5));' 'test("reject strings", () => assert.throws(() => add("2", 3), TypeError));' > add.test.js
+printf '%s\n' 'import assert from "node:assert/strict";' 'import { test } from "node:test";' 'import { upper } from "./upper.js";' 'test("upper", () => assert.equal(upper("pi"), "PI"));' 'test("empty", () => assert.equal(upper(""), ""));' > upper.test.js
+printf '%s\n' '# Disposable tasks' 'A: implement add; add(2,3)=5 and add("2",3) throws TypeError.' 'B: implement upper; upper("pi")="PI" and upper("")="".' > demo-plan.md
+git add .
+git -c user.name=Demo -c user.email=demo@example.invalid commit -qm 'Add disposable fixture contracts'
+git worktree add -qb demo-a "$DEMO/A"
+git worktree add -qb demo-b "$DEMO/B"
+```
+
+1. Launch Pi with invocation-specific extension selection (only this package, required provider, footer, and session-board) and isolated non-secret subagent config. Do not enable the old example. Choose an available model and effort explicitly.
+2. Start retained workers in A and B. A implements **only nominal addition**, deliberately leaving the type check for review; B implements uppercase and runs `node --test upper.test.js`. A runs `node --test add.test.js`, whose omitted edge case is expected to fail initially.
+3. Wait on both run IDs. Confirm panel/inspector behavior and unchanged footer; inspect edits for worktree isolation.
+4. Start a fresh one-shot reviewer in A against all supplied requirements. Confirm it finds the missing type check, retires, and retains its result. Send its report as a new task to A's original worker. Confirm unchanged worker/session/PID, a new run ID, and passing `node --test add.test.js`.
+5. Ask B to call `ask_parent` before choosing an output filename. Inspect the blocked row, reply with a disposable filename, and wait for the same run to complete.
+6. Ask B another question and leave it unanswered. Reload the parent in the same session. Confirm child exit and cancelled question history. Explicitly recover B: new PID, idle, no replay. Reject the old question ID, then send a new task containing the decision and asking B to recall its prior work.
+7. Stop A if still live and stop B. Confirm all child exits before `git worktree remove --force "$DEMO/A"` and the equivalent B command. Remove only the known `$DEMO` fixture after checking its path. Keep transcripts private. Report isolation, review/fix, questions, recovery, and the user's UI confirmation; do not call a missing confirmation a pass.
+
+## Rollout and rollback
+
+These are post-build steps, not approval to modify global settings now.
+
+1. Let old-example children finish. Record its path and enabled resources. Preserve `~/.pi/agent/agents/*.md`.
+2. Back up only affected non-secret settings. Disable `~/.pi/agent/extensions/subagent/index.ts` through `pi config`, including its auto-discovered entry. Keep backups outside auto-loaded extension directories.
+3. Configure `<agent-dir>/pi-subagent/config.json` with reviewed provider/tool extension paths and limits. Do not inherit parent UI/orchestration extensions.
+4. After approval, run `pi install ./packages/subagent` once, then reload. Verify one active `subagent`, `/subagents`, and a one-shot smoke task whose process retires. Pi reports a duplicate-tool conflict if both implementations load; do not rename tools to bypass it.
+5. Apply the separately reviewed `agent-skills/skills/build-feature/SKILL.md` commit only after this extension is usable. The external skill change has its own Git history/PR; do not create a cross-repository commit. Publication and global installation remain user decisions.
+6. Roll back by stopping all children, confirming exit, disabling/removing this package, restoring the prior resource selection, and reloading the old example. Revert the skill separately. Preserve saved sessions; do not send this action API to the old tool or remove worktrees as part of rollback.
