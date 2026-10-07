@@ -19,6 +19,7 @@ export default function (pi: ExtensionAPI): void {
     if (ctx.mode === "tui") detachPanel = attachPanel(manager, ctx.ui);
     return manager;
   })().catch(error => { initialization = undefined; throw error; });
+  pi.on("session_start", async (_event, ctx) => { await getManager(ctx); });
   pi.on("session_shutdown", async () => {
     closed = true;
     detachPanel?.(); detachPanel = undefined;
@@ -47,6 +48,7 @@ export default function (pi: ExtensionAPI): void {
         case "wait": result = await active.wait(args.runIds, args.mode, args.timeoutMs, signal); break;
         case "status": result = active.status(args.workerId); break;
         case "stop": result = await active.stop(args.workerId); break;
+        case "recover": result = await active.recover(args.workerId); break;
         case "reply": result = await active.reply(args.questionId, "message" in args ? args.message : undefined, "cancelled" in args); break;
       }
       return { content: [{ type: "text", text: JSON.stringify(result) }], details: result, usage: active.takeUsage() };

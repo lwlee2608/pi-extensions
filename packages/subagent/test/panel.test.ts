@@ -41,7 +41,7 @@ test("invalid action and launch configuration fail before dispatch", async () =>
     const config = await loadConfig(f.launch.agentDir);
     assert.equal(config.maxActive, 4); assert.equal(config.maxWorkers, 16);
     await assert.rejects(resolveLaunch({ action: "start", agent: "worker", task: "test", model: "missing" }, { cwd: f.launch.cwd, agentDir: f.launch.agentDir, models: [], effort: "off" }, config), /available model/);
-    await mkdir(join(f.launch.agentDir, "pi-subagent"));
+    await mkdir(join(f.launch.agentDir, "pi-subagent"), { recursive: true });
     await writeFile(join(f.launch.agentDir, "pi-subagent/config.json"), '{"extensions":{"provider":"/does-not-exist"}}');
     await assert.rejects(loadConfig(f.launch.agentDir), /ENOENT/);
   } finally { await f.cleanup(); }

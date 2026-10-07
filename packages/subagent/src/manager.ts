@@ -5,6 +5,8 @@ import { join } from "node:path";
 import type { AssistantMessage, Usage } from "@earendil-works/pi-ai";
 import type { Launch } from "./profiles.ts";
 import { launchChild, literalInput, type Child, type ChildEvent } from "./rpc.ts";
+import { loadConfig } from "./profiles.ts";
+import { Store, prerequisites, verifyPrerequisites, type Prerequisites } from "./store.ts";
 
 export type Outcome = "completed" | "failed" | "interrupted";
 export interface Result { outcome: Outcome; text: string; error?: string; endedAt: number; usage: Usage }
@@ -13,13 +15,13 @@ export interface Question { questionId: string; workerId: string; runId: string;
 export interface Snapshot {
   workerId: string; runId: string; state: "queued" | "working" | "blocked" | "idle" | "closed"; lifetime: "once" | "retained";
   label: string; cwd: string; model: string; effort: string; pid?: number; processAlive?: boolean; sessionId: string; sessionFile?: string;
-  activity: string; output: string; startedAt: number; result?: Result; error?: string; questions?: Question[];
+  activity: string; output: string; startedAt: number; result?: Result; error?: string; questions?: Question[]; recoverable?: boolean;
 }
 interface Worker {
   view: Snapshot; launch: Launch; directory: string; child?: Child; run: Run; lock: Promise<unknown>;
   accepted: boolean; settled: boolean; last?: Pick<AssistantMessage, "stopReason" | "errorMessage">;
   usage: Usage; stopping: boolean; reservation: boolean; recoveryError?: string;
-  task: string; slot: boolean; generation: string; activeTools: Map<string, string>; ready: boolean;
+  task: string; slot: boolean; generation: string; activeTools: Map<string, string>; ready: boolean; prerequisites: Prerequisites; uncertain: boolean;
 }
 export interface WaitResult { reason: "completed" | "timeout" | "attention"; runs: Run[]; workers: Snapshot[]; pendingQuestionIds: string[] }
 export function zeroUsage(): Usage { return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }; }
@@ -39,6 +41,8 @@ export class Manager {
   private maxWorkers: number;
   private maxActive: number;
   private questions = new Map<string, Question>();
+  private store: Store;
+  private shutdownPromise?: Promise<void>;
   private spawn: typeof launchChild;
   constructor(options: { root: string; parentId: string; maxWorkers?: number; maxActive?: number; spawn?: typeof launchChild }) {
     if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,150}$/.test(options.parentId)) throw new Error("Invalid parent session ID");
@@ -47,6 +51,40 @@ export class Manager {
     this.maxActive = options.maxActive ?? 4;
     this.spawn = options.spawn ?? launchChild;
     this.events.setMaxListeners(0);
+    this.store = new Store(options.root, options.parentId);
+    try {
+      for (const saved of this.store.readAll()) {
+        const run = saved.runs.find(r => r.runId === saved.view.runId)!;
+        for (const history of saved.runs) this.runs.set(history.runId, history);
+        for (const id of saved.reported) this.reported.add(id);
+        const view = saved.view;
+        for (const question of view.questions ?? []) { if (question.state === "pending") question.state = "cancelled"; this.questions.set(question.questionId, question); }
+        if (!run.result) run.result = { outcome: "interrupted", text: view.output.slice(-4096), error: "Parent stopped before this run completed; never replayed", endedAt: Date.now(), usage: zeroUsage() };
+        view.result = run.result; view.state = "closed";
+        const uncertain = saved.ownership !== "closed";
+        view.recoverable = !uncertain && view.lifetime === "retained" && !!view.sessionFile;
+        if (uncertain) view.error = "Old process ownership is uncertain; recovery refused";
+        const worker: Worker = { view, launch: saved.launch, directory: join(this.root, view.workerId), run, lock: Promise.resolve(), accepted: false,
+          settled: false, usage: zeroUsage(), stopping: true, reservation: uncertain, task: "", slot: false,
+          generation: saved.generation, activeTools: new Map(), ready: false, prerequisites: saved.prerequisites, uncertain };
+        this.workers.set(view.workerId, worker);
+      }
+      if (this.runs.size > 2048) throw new Error("Stored task history exceeds limit");
+      for (const worker of this.workers.values()) if (!worker.uncertain) this.save(worker);
+    } catch (error) { this.store.close(); throw error; }
+  }
+  private save(worker: Worker): void {
+    try { this.store.save({ version: 1, parentId: this.store.parentId, view: worker.view, launch: worker.launch,
+      runs: [...this.runs.values()].filter(r => r.workerId === worker.view.workerId), generation: worker.generation,
+      prerequisites: worker.prerequisites, reported: [...this.reported].filter(id => this.runs.get(id)?.workerId === worker.view.workerId),
+      ownership: worker.reservation ? "owned" : "closed" }); }
+    catch (error) {
+      worker.stopping = true;
+      worker.view.recoverable = false;
+      worker.view.error = `Persistence failed; worker cannot accept work: ${errorText(error)}`;
+      if (worker.child && !worker.child.exited) void worker.child.close().catch(error => this.recordError(worker, error));
+      throw error;
+    }
   }
   onChange(listener: () => void): () => void { this.events.on("change", listener); return () => this.events.off("change", listener); }
   private changed(): void { this.events.emit("change"); }
@@ -71,14 +109,18 @@ export class Manager {
   }
   start(launch: Launch, task: string, lifetime: "once" | "retained" = "once", label = launch.profile.name): Snapshot {
     this.checkTaskSlot();
+    launch = structuredClone(launch);
+    const required = prerequisites(launch);
     if ([...this.workers.values()].filter(w => w.reservation).length >= this.maxWorkers) throw new Error(`Worker process cap reached (${this.maxWorkers}); stop an idle retained worker`);
     const workerId = `w-${randomUUID()}`, sessionId = randomUUID();
     const run = this.newRun(workerId, label);
     const view: Snapshot = { workerId, runId: run.runId, sessionId, lifetime, label, state: "queued", cwd: launch.cwd,
       model: `${launch.provider}/${launch.model}`, effort: launch.effort, activity: "queued", output: "", startedAt: run.startedAt, questions: [] };
     const worker: Worker = { view, launch, run, directory: join(this.root, workerId), lock: Promise.resolve(),
-      accepted: false, settled: false, usage: zeroUsage(), stopping: false, reservation: true, task, slot: false, generation: randomUUID(), activeTools: new Map(), ready: false };
+      accepted: false, settled: false, usage: zeroUsage(), stopping: false, reservation: true, task, slot: false, generation: randomUUID(), activeTools: new Map(), ready: false, prerequisites: required, uncertain: false };
     this.workers.set(workerId, worker);
+    try { this.save(worker); }
+    catch (error) { this.workers.delete(workerId); this.runs.delete(run.runId); throw error; }
     this.schedule();
     this.changed();
     return structuredClone(view);
@@ -113,6 +155,7 @@ export class Manager {
         worker.view.sessionFile = state.sessionFile;
         worker.ready = true;
       }
+      this.save(worker);
       if (!worker.stopping) await this.dispatch(worker, worker.task);
     } catch (error) { await this.finish(worker, "failed", errorText(error)); await this.closeWorker(worker); }
   }
@@ -155,6 +198,8 @@ export class Manager {
     worker.accepted = false; worker.settled = false; worker.last = undefined; worker.recoveryError = undefined; worker.usage = zeroUsage();
     worker.task = message;
     worker.view.activity = "queued";
+    try { this.save(worker); }
+    catch (error) { worker.stopping = true; void this.stop(id).catch(error => this.recordError(worker, error)); throw error; }
     this.schedule();
     this.changed();
     return structuredClone(worker.view);
@@ -176,6 +221,8 @@ export class Manager {
           generation: worker.generation, requestId: event.requestId, question: event.question, state: "pending" };
         this.questions.set(question.questionId, question); worker.view.questions!.push(question);
         worker.view.state = "blocked"; worker.view.activity = "awaiting parent reply";
+        try { this.save(worker); }
+        catch (error) { this.recordError(worker, error); void this.stop(worker.view.workerId).catch(error => this.recordError(worker, error)); }
         break;
       }
       case "message_update":
@@ -244,7 +291,7 @@ export class Manager {
   }
   private async finish(worker: Worker, outcome: Outcome, error?: string): Promise<void> {
     if (worker.run.result) return;
-    const result: Result = { outcome, error, text: worker.view.output.slice(-4096), endedAt: Date.now(), usage: structuredClone(worker.usage) };
+    const result: Result = { outcome, ...(error === undefined ? {} : { error }), text: worker.view.output.slice(-4096), endedAt: Date.now(), usage: structuredClone(worker.usage) };
     try {
       await mkdir(worker.directory, { recursive: true, mode: 0o700 });
       const path = join(worker.directory, `${worker.run.runId}.json`), temp = `${path}.tmp`;
@@ -261,6 +308,7 @@ export class Manager {
     worker.view.activity = result.outcome;
     worker.slot = false;
     this.cancelQuestions(worker);
+    this.save(worker);
     this.schedule();
     this.changed();
   }
@@ -272,6 +320,8 @@ export class Manager {
     void this.exclusive(worker, async () => {
       if (!worker.run.result) await this.finish(worker, worker.stopping ? "interrupted" : "failed", errorText(error));
       worker.view.state = "closed";
+      worker.view.recoverable = worker.view.lifetime === "retained" && !!worker.view.sessionFile;
+      this.save(worker);
       this.changed();
     }).catch(error => this.recordError(worker, error));
     this.changed();
@@ -284,16 +334,49 @@ export class Manager {
     worker.view.processAlive = false;
     worker.reservation = false;
     worker.view.state = "closed";
+    worker.view.recoverable = worker.view.lifetime === "retained" && !!worker.view.sessionFile;
+    this.save(worker);
     this.changed();
   }
   async stop(id: string): Promise<Snapshot> {
     const worker = this.worker(id);
+    if (worker.uncertain) throw new Error("Old process ownership is uncertain; refusing to claim successful stop");
     worker.stopping = true;
     this.cancelQuestions(worker);
     return this.exclusive(worker, async () => {
       await this.closeWorker(worker);
       await this.finish(worker, "interrupted", "Stopped by parent");
       return structuredClone(worker.view);
+    });
+  }
+  async recover(id: string): Promise<Snapshot> {
+    const worker = this.worker(id);
+    if (this.closing || worker.uncertain || worker.reservation || worker.view.state !== "closed" || worker.view.lifetime !== "retained") throw new Error("Recovery requires a closed retained worker with certain ownership in the original parent");
+    if ([...this.workers.values()].filter(w => w.reservation).length >= this.maxWorkers) throw new Error("Worker process cap reached");
+    worker.reservation = true;
+    return this.exclusive(worker, async () => {
+      try {
+        const config = await loadConfig(worker.launch.agentDir);
+        const saved = { version: 1 as const, parentId: this.store.parentId, view: worker.view, launch: worker.launch,
+          runs: [worker.run], generation: worker.generation, prerequisites: worker.prerequisites, reported: [], ownership: "closed" as const };
+        verifyPrerequisites(saved, Object.values(config.extensions));
+        worker.generation = randomUUID(); worker.stopping = false; worker.ready = false; worker.settled = false; worker.accepted = false;
+        worker.view.recoverable = false; worker.view.error = undefined;
+        this.save(worker);
+        const own = (child: Child) => {
+          worker.child = child; worker.view.pid = child.pid; worker.view.processAlive = true;
+          child.onEvent(event => this.event(worker, event)); child.onExit(error => this.exited(worker, error));
+        };
+        worker.child = await this.spawn(worker.launch, worker.directory, worker.view.sessionId, own, worker.view.sessionFile);
+        worker.ready = true;
+        worker.view.state = "idle"; worker.view.activity = "recovered; awaiting an explicit new task";
+        this.save(worker); this.changed();
+        return structuredClone(worker.view);
+      } catch (error) {
+        worker.view.error = errorText(error);
+        await this.closeWorker(worker);
+        throw error;
+      }
     });
   }
   private cancelQuestions(worker: Worker): void {
@@ -316,6 +399,7 @@ export class Manager {
         throw error;
       }
       question.state = "answered";
+      this.save(worker);
       if (!worker.view.questions!.some(q => q.state === "pending")) { worker.view.state = "working"; worker.view.activity = "working"; }
       this.changed();
       return { questionId: id, delivered: true, cancelled: false };
@@ -349,12 +433,15 @@ export class Manager {
     for (const [id, run] of this.runs) if (run.result && !this.reported.has(id)) {
       this.reported.add(id); addUsage(usage, run.result.usage); found = true;
     }
+    if (found) for (const worker of this.workers.values()) this.save(worker);
     return found ? usage : undefined;
   }
-  async shutdown(): Promise<void> {
+  shutdown(): Promise<void> { return this.shutdownPromise ??= this.closeAll(); }
+  private async closeAll(): Promise<void> {
     this.closing = true;
     const results = await Promise.allSettled([...this.workers.keys()].map(id => this.stop(id)));
     const failures = results.filter(r => r.status === "rejected");
-    if (failures.length) throw new AggregateError(failures.map(r => r.reason), "Subagent cleanup failed");
+    if (failures.length) throw new AggregateError(failures.map(r => r.reason), "Subagent cleanup failed; ownership lock retained");
+    this.store.close();
   }
 }

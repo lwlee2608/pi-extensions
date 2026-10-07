@@ -162,7 +162,7 @@ export class RpcProcess implements Child {
     throw new Error(`Cleanup failed: child ${this.pid} has not confirmed exit`);
   }
 }
-export async function launchChild(launch: Launch, directory: string, sessionId: string, onSpawn?: (child: Child) => void): Promise<Child> {
+export async function launchChild(launch: Launch, directory: string, sessionId: string, onSpawn?: (child: Child) => void, sessionFile?: string): Promise<Child> {
   if (process.platform !== "linux") throw new Error("Subagent owned cleanup is currently supported on Linux only");
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const promptPath = join(directory, "profile.md");
@@ -170,7 +170,7 @@ export async function launchChild(launch: Launch, directory: string, sessionId: 
   const token = randomUUID();
   const args = ["--mode", "rpc", "--no-extensions", "--no-prompt-templates", "--no-themes", "--no-approve",
     "--provider", launch.provider, "--model", launch.model, "--thinking", launch.effort,
-    "--session-dir", directory, "--session-id", sessionId, "--tools", [...new Set([...launch.profile.tools, "ask_parent"])].join(","),
+    "--session-dir", directory, ...(sessionFile ? ["--session", sessionFile] : ["--session-id", sessionId]), "--tools", [...new Set([...launch.profile.tools, "ask_parent"])].join(","),
     "--append-system-prompt", promptPath,
     ...launch.extensions.flatMap(path => ["--extension", path]),
     "--extension", fileURLToPath(new URL("./child.ts", import.meta.url)),

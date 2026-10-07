@@ -13,7 +13,7 @@ test("loadable parent tool completes the full real offline RPC start/wait/stop p
     args: ["--no-extensions", "--no-approve", "--no-session", "--provider", "subagent-offline", "--model", "fixture", "--thinking", "off",
       "--extension", f.launch.extensions[0], "--extension", fileURLToPath(new URL("../src/index.ts", import.meta.url)), "--tools", "subagent"] });
   try {
-    await mkdir(join(f.launch.agentDir, "pi-subagent"));
+    await mkdir(join(f.launch.agentDir, "pi-subagent"), { recursive: true });
     await writeFile(join(f.launch.agentDir, "pi-subagent/config.json"), JSON.stringify({ extensions: { fixture: f.launch.extensions[0] } }));
     await client.start();
     const events = await client.promptAndWait("PARENT_SMOKE", undefined, 20_000);
