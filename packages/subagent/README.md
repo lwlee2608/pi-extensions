@@ -87,7 +87,7 @@ Children ask through `ask_parent({ question: "Which filename?" })`, not a TUI qu
 
 If the decision belongs to the user, ask them before replying. To refuse the decision, send `{"action":"reply","questionId":"q-QUESTION-ID","cancelled":true}`. Cancellation stops the child and interrupts its unfinished run; it never means permission to guess. Stop, shutdown, and process exit cancel pending questions. Stale and duplicate replies fail. Question history is bounded to 128 per worker; exceeding it stops that worker visibly through an interrupted result.
 
-For review/fix rounds, start a fresh one-shot reviewer in the worker's directory, wait for the report, then send it as a new `task` message to the **original idle retained worker**. Its PID/session stay unchanged and the fix task gets a new run ID. Stop every retained worker and confirm `processAlive: false` before removing worktrees.
+For review/fix rounds, start a fresh one-shot reviewer in the worker's directory and wait for its result. Wait/status text is a bounded summary: read the returned `sessionFile` to retrieve the complete final assistant response before deciding on findings or relaying the report. Failed retrieval blocks the review cycle. Send the full response unchanged as a new `task` message to the **original idle retained worker**. Its PID/session stay unchanged and the fix task gets a new run ID. Stop every retained worker and confirm `processAlive: false` before removing worktrees.
 
 ## Inspector and offline UI verification
 

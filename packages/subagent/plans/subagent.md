@@ -64,7 +64,7 @@ Worker states include queued, working, blocked, idle, and closed; terminal run o
 - This extension cannot bootstrap its own persistent orchestration before it exists. If built through `build-feature`, use Solo with the currently installed one-shot reviewer for all four phases. Do not change the global subagent tool mid-build. This bootstrap choice is `agent` guidance, not a recorded build-mode answer.
 
 ## Progress
-Phase 4 of 4 · 20/20 tasks — Phases 1–3 merged as PRs #13/#14/#15. Phase 3's final Medium fixes merged unreviewed under the three-round cap, with checks and CI green afterward. Phase 4 offline UI confirmation received: user screenshots show startup in both modes, live panel and inspector; user reports reply, stop cancel/confirm, and return to editor working. Combined with the agent-run mode/resize/theme/reload checks, phase verification is complete. Phase 4 PR/reviews pending; final live-model demo not yet run.
+Phase 4 of 4 · 20/20 tasks — Phases 1–3 merged as PRs #13/#14/#15. Phase 3's final Medium fixes merged unreviewed under the three-round cap, with checks and CI green afterward. Phase 4 offline UI confirmation received: user screenshots show startup in both modes, live panel and inspector; user reports reply, stop cancel/confirm, and return to editor working. Combined with the agent-run mode/resize/theme/reload checks, phase verification is complete. PR #16 open; round 1's three findings fixed, round 2 pending. Final live-model demo not yet run.
 
 All source/test paths below are relative to `packages/subagent/` unless marked repository-root or external.
 
@@ -144,6 +144,7 @@ These are post-build instructions, not authorization to alter the user's global 
 
 ## Agent-selected details added while completing the phases
 
+- Phase 4 round 1 sanitized pasted inspector input while preserving cursor/SGR, made tool errors and checkpoint warnings visible, and required full reviewer transcript retrieval in the external skill and README. All three findings fixed; no findings skipped.
 - Phase 4 checkpoint: `npm run check`, all 132 repository tests, and `npm pack --dry-run --ignore-scripts --workspace=@lwlee2608/pi-subagent` pass. The extracted artifact loads and runs a real offline parent/child; loading the old example produces a duplicate-tool diagnostic. Agent-driven tmux checks exercised fullscreen/regular, narrow widths, busy-parent controls, reload/recovery, theme change, and footer/session-board coexistence, but do not substitute for user visual/focus confirmation.
 - Phase 4 external skill edit is isolated in `/tmp/pi-subagent-skill-worktree`, branch `feat/build-feature-persistent-subagents` of `agent-skills`; the original checkout/global skill is unchanged. Review that separate change with the Phase 4 rounds, record its commit separately, and apply only after extension usability is confirmed. No external PR or installation has occurred.
 - Phase 4 user confirmation received after the initial pause: startup screenshots in regular/fullscreen, live panel and inspector screenshots, then “working” for reply/stop cancel-confirm/Esc return controls. User confirmation is limited to those observations; the agent performed the remaining offline resize/theme/reload checks above. Re-run checks before the phase PR. The final live-model demo runs only after Phase 4 merges; no final PR to main before that demo.

@@ -1,6 +1,6 @@
 import { open } from "node:fs/promises";
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { Input, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, Input, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { Manager, Snapshot } from "./manager.ts";
 import { display } from "./panel.ts";
 
@@ -24,6 +24,10 @@ export async function transcriptTail(path: string): Promise<string> {
     }
     return lines.join("\n").slice(-64 * 1024);
   } finally { await file.close(); }
+}
+function editorDisplay(line: string): string {
+  return line.split(/(\x1b\[[\d;:]*m|\x1b_pi:c\x07)/g)
+    .map(part => part === CURSOR_MARKER || /^\x1b\[[\d;:]*m$/.test(part) ? part : display(part)).join("");
 }
 function fit(text: string, width: number): string {
   const line = truncateToWidth(text, width);
@@ -152,7 +156,7 @@ export class Inspector {
     const body = lines.slice(this.offset, this.offset + this.capacity);
     while (body.length < this.capacity) body.push("");
     if (this.editing) this.editing.input.focused = this.focused;
-    const control = this.editing ? this.editing.input.render(width)[0] : this.confirming ? "Stop this worker? y confirm · n/Esc cancel (edits are preserved)" : "m task/steer · r reply · s stop · c recover";
+    const control = this.editing ? editorDisplay(this.editing.input.render(width)[0]) : this.confirming ? "Stop this worker? y confirm · n/Esc cancel (edits are preserved)" : "m task/steer · r reply · s stop · c recover";
     return [...head.map(line => this.theme.fg("accent", display(line))), ...body, this.theme.fg("muted", "─".repeat(width)), control, this.theme.fg("muted", display(this.notice))].map(line => fit(line, width));
   }
   invalidate(): void {}

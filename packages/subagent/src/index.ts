@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Manager } from "./manager.ts";
 import { Inspector } from "./inspector.ts";
+import { resultText } from "./result.ts";
 import { attachPanel, display } from "./panel.ts";
 import { Text } from "@earendil-works/pi-tui";
 import { loadConfig, resolveLaunch } from "./profiles.ts";
@@ -50,11 +51,8 @@ export default function (pi: ExtensionAPI): void {
     renderCall(args, theme) {
       return new Text(theme.fg("toolTitle", `Subagent · ${display(args.action ?? "")}${args.label ? ` · ${display(args.label)}` : ""}`), 0, 0);
     },
-    renderResult(result, options, theme) {
-      const details = result.details as { workerId?: string; runId?: string; state?: string; reason?: string; pendingQuestionIds?: string[] } | undefined;
-      const summary = details?.reason ? `Wait: ${details.reason}${details.pendingQuestionIds?.length ? ` · ${details.pendingQuestionIds.length} question(s)` : ""}`
-        : details?.workerId ? `${details.workerId} · ${details.state ?? "accepted"} · ${details.runId ?? ""}` : "Subagent result";
-      return new Text(options.expanded ? display(JSON.stringify(result.details, null, 2)) : theme.fg("muted", summary), 0, 0);
+    renderResult(result, options, theme, context) {
+      return new Text(theme.fg(context.isError ? "error" : "muted", resultText(result, options.expanded, context.isError)), 0, 0);
     },
     async execute(_id, args, signal, _update, ctx) {
       validateAction(args);

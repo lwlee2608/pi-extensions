@@ -1,10 +1,20 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { visibleWidth } from "@earendil-works/pi-tui";
+import { CURSOR_MARKER, visibleWidth } from "@earendil-works/pi-tui";
 import { Inspector, transcriptTail } from "../src/inspector.ts";
+import { resultText } from "../src/result.ts";
 import { fixture, changedUntil } from "./helpers.ts";
 
 const theme = { fg: (_color: unknown, text: string) => text };
+test("tool rendering preserves errors and content-only checkpoint warnings", () => {
+  const error = { details: {}, content: [{ type: "text", text: "Recovery refused: provider missing\x1b[2J" }] };
+  for (const expanded of [false, true]) {
+    assert.equal(resultText(error, expanded, true), "Recovery refused: provider missing");
+    const details = { workerId: "w-one", runId: "r-one", state: "working" };
+    const rendered = resultText({ details, content: [{ type: "text", text: JSON.stringify(details) }, { type: "text", text: "Usage remains pending" }] }, expanded, false);
+    assert.match(rendered, /w-one/); assert.match(rendered, /Usage remains pending/);
+  }
+});
 test("inspector renders live Unicode output, replies, confirms stop and closes without stopping workers", { timeout: 25_000 }, async () => {
   const f = await fixture(); let inspector: Inspector | undefined;
   try {
@@ -17,7 +27,12 @@ test("inspector renders live Unicode output, replies, confirms stop and closes w
       const lines = inspector.render(width); assert.ok(lines.length <= 24);
       for (const line of lines) assert.ok(visibleWidth(line) <= width);
     }
-    inspector.handleInput("r"); inspector.handleInput("answer.txt"); inspector.render(80); inspector.handleInput("\r");
+    inspector.handleInput("r");
+    inspector.handleInput("\x1b[200~answer.txt\x1b]52;c;YmFk\x07\x1b[2J\x1b[201~");
+    const edited = inspector.render(80).join("\n");
+    assert.doesNotMatch(edited, /\x1b\]52|\x1b\[2J/);
+    assert.ok(edited.includes(CURSOR_MARKER));
+    inspector.handleInput("\r");
     await changedUntil(f.manager, () => f.manager.status(run.workerId)[0].state === "idle");
     assert.match(await transcriptTail(f.manager.status(run.workerId)[0].sessionFile!), /answer.txt/);
     inspector.handleInput("s"); assert.match(inspector.render(80).join("\n"), /Stop this worker/);
