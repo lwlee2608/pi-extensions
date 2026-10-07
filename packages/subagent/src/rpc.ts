@@ -24,6 +24,7 @@ export class RpcProcess implements Child {
   private events = new EventEmitter();
   private pending = new Map<string, { resolve: (response: RpcResponse) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>();
   private buffer = "";
+  private discarding = false;
   private stderr = "";
   private closePromise?: Promise<void>;
   private exitPromise: Promise<void>;
@@ -88,15 +89,17 @@ export class RpcProcess implements Child {
     for (const item of this.pending.values()) { clearTimeout(item.timer); item.reject(error); }
     this.pending.clear();
   }
+  // agent_end repeats every message of the run, so a long run can exceed the
+  // bound. Drop oversized records instead of killing a child that finished.
   private read(chunk: string): void {
     this.buffer += chunk;
     let end: number;
     while ((end = this.buffer.indexOf("\n")) >= 0) {
       const line = this.buffer.slice(0, end).replace(/\r$/, "");
       this.buffer = this.buffer.slice(end + 1);
-      if (!line) continue;
+      if (this.discarding) { this.discarding = false; continue; }
+      if (!line || line.length > limit) continue;
       try {
-        if (line.length > limit) throw new Error("RPC record exceeds 4 MiB");
         const record = JSON.parse(line) as RpcResponse | ChildEvent;
         if (!record || typeof record.type !== "string") throw new Error("Invalid RPC record");
         if (record.type === "response") {
@@ -112,7 +115,7 @@ export class RpcProcess implements Child {
         }
       } catch (error) { this.fail(error as Error); void this.close().catch(() => {}); return; }
     }
-    if (this.buffer.length > limit) { this.fail(new Error("RPC record exceeds 4 MiB")); void this.close().catch(() => {}); }
+    if (this.buffer.length > limit) { this.buffer = ""; this.discarding = true; }
   }
   request<T extends RpcCommand["type"]>(command: Extract<RpcCommand, { type: T }>, timeoutMs = 20_000): Promise<Response<T>> {
     if (this.exited || this.child.stdin!.destroyed) return Promise.reject(new Error("RPC child is closed"));

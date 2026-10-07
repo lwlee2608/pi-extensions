@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Manager } from "./manager.ts";
 import { Inspector } from "./inspector.ts";
-import { resultText } from "./result.ts";
+import { modelView, resultText } from "./result.ts";
 import { attachPanel, display } from "./panel.ts";
 import { Text } from "@earendil-works/pi-tui";
 import { loadConfig, resolveLaunch } from "./profiles.ts";
@@ -82,7 +82,7 @@ export default function (pi: ExtensionAPI): void {
       }
       const usage = active.takeUsage();
       const warning = active.takeUsageWarning();
-      return { content: [{ type: "text", text: JSON.stringify(result) }, ...(warning ? [{ type: "text" as const, text: warning }] : [])], details: result, usage };
+      return { content: [{ type: "text", text: JSON.stringify(modelView(args.action, result)) }, ...(warning ? [{ type: "text" as const, text: warning }] : [])], details: result, usage };
     },
   });
 }

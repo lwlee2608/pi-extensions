@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
-import { launchChild, literalInput, type Child, type ChildEvent } from "../src/rpc.ts";
+import { RpcProcess, launchChild, literalInput, type Child, type ChildEvent } from "../src/rpc.ts";
 import { Manager } from "../src/manager.ts";
 import { fixture } from "./helpers.ts";
 
@@ -60,4 +60,19 @@ test("early settlement before prompt response does not get lost", { timeout: 500
     const result = await manager.wait([run.runId]);
     assert.equal(result.runs[0].result?.outcome, "completed");
   } finally { await manager.shutdown(); await f.cleanup(); }
+});
+
+test("oversized records are dropped without killing the child", { timeout: 10_000 }, async () => {
+  const script = `const rl = require("node:readline").createInterface({ input: process.stdin });
+    rl.on("line", line => {
+      const { id, type } = JSON.parse(line);
+      process.stdout.write(JSON.stringify({ type: "agent_end", messages: ["x".repeat(5 * 1024 * 1024)] }) + "\\n");
+      process.stdout.write(JSON.stringify({ type: "response", id, command: type, success: true, data: {} }) + "\\n");
+    });
+    rl.on("close", () => process.exit(0));`;
+  const child = new RpcProcess("-e", [script], process.cwd(), process.env, randomUUID());
+  try {
+    assert.equal((await child.request({ type: "get_state" })).command, "get_state");
+    assert.equal(child.exited, false);
+  } finally { await child.close(); }
 });

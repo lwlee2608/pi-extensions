@@ -23,6 +23,7 @@ test("loadable parent tool completes the full real offline RPC start/wait/stop p
     const wait = JSON.parse(results[1].result.content[0].text);
     assert.equal(wait.runs[0].result.outcome, "completed");
     assert.match(wait.runs[0].result.text, /CHILD_SMOKE/);
+    assert.equal(wait.workers[0].output, undefined); assert.equal(wait.workers[0].result.text, undefined);
     const stop = JSON.parse(results[2].result.content[0].text);
     assert.equal(stop.processAlive, false);
     assert.throws(() => process.kill(stop.pid, 0), /ESRCH/);
@@ -122,6 +123,16 @@ test("real failed truncation recovery does not report task success", { timeout: 
     assert.equal(result.reason, "completed");
     assert.equal(result.runs[0].result?.outcome, "failed", JSON.stringify(result));
     assert.match(result.runs[0].result?.error ?? "", /compact|recover|context/i);
+  } finally { await f.cleanup(); }
+});
+
+test("truncated final response without recovery is not reported as success", { timeout: 20_000 }, async () => {
+  const f = await fixture();
+  try {
+    const run = f.manager.start(f.launch, "TRUNCATE_RECOVERY");
+    const result = await f.manager.wait([run.runId], "all", 15_000);
+    assert.equal(result.runs[0].result?.outcome, "failed", JSON.stringify(result));
+    assert.match(result.runs[0].result?.error ?? "", /truncated/);
   } finally { await f.cleanup(); }
 });
 

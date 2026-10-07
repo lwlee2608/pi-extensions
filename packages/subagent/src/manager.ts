@@ -293,8 +293,9 @@ export class Manager {
     }
     if (cleared.data.steering.length || cleared.data.followUp.length) worker.view.error = "Child settled with unconsumed guidance; cleared it instead of forwarding to another run";
     const last = worker.last;
-    const error = worker.view.error ?? worker.recoveryError ?? last?.errorMessage;
-    const outcome: Outcome = last?.stopReason === "aborted" ? "interrupted" : error || !last || !["stop", "length"].includes(last.stopReason) ? "failed" : "completed";
+    const truncated = last?.stopReason === "length" ? "Child response was truncated at its output limit" : undefined;
+    const error = worker.view.error ?? worker.recoveryError ?? last?.errorMessage ?? truncated;
+    const outcome: Outcome = last?.stopReason === "aborted" ? "interrupted" : error || last?.stopReason !== "stop" ? "failed" : "completed";
     await this.finish(worker, outcome, outcome === "completed" ? undefined : error ?? "Child settled without a successful final response");
     if (worker.view.lifetime === "once") await this.closeWorker(worker);
   }

@@ -65,7 +65,7 @@ Examples show tool arguments, not executable JavaScript globals. Replace placeho
 
 Task messages require an idle retained worker. The same PID and persisted Pi session handle both tasks, with different immutable run results. Busy task messages are rejected, never silently queued. A working child accepts `mode: "steer"`, retaining its run ID. Task/guidance text gets a fixed literal-input prefix so `/commands` are not dispatched.
 
-`wait` is event-driven and supports `all` (default), `any`, and an optional positive `timeoutMs`. The default is 30 minutes. A timeout is not task failure. Cancelling a wait removes only that waiter; the panel continues to show the worker. `status` with no worker ID lists this parent's workers. Repeated status/wait calls do not duplicate child usage charges.
+`wait` is event-driven and supports `all` (default), `any`, and an optional positive `timeoutMs`. The default is 30 minutes. A timeout is not task failure. Cancelling a wait removes only that waiter; the panel continues to show the worker. `status` with no worker ID lists this parent's workers. Tool results stay compact: worker snapshots omit tool output, answered/cancelled questions and finished-run text; `wait` returns each selected run's result text. Repeated status/wait calls do not duplicate child usage charges.
 
 `stop` cancels work, clears child queues, and closes the owned process with bounded escalation. It never removes worktrees, reverts edits, or deletes transcripts. Shutdown/reload closes owned workers. Unexpected child permission dialogs fail closed, not auto-approved. The orchestrator owns all Git/worktree operations.
 
