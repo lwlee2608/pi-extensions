@@ -424,6 +424,7 @@ export class Manager {
     });
   }
   status(id?: string): Snapshot[] { return (id ? [this.worker(id)] : [...this.workers.values()]).map(w => structuredClone(w.view)); }
+  some(test: (view: Readonly<Snapshot>) => boolean): boolean { return [...this.workers.values()].some(w => test(w.view)); }
   async wait(runIds: string[], mode: "all" | "any" = "all", timeoutMs = 30 * 60_000, signal?: AbortSignal): Promise<WaitResult> {
     if (!runIds.length || runIds.some(id => !this.runs.has(id))) throw new Error("Wait requires known run IDs from this parent");
     signal?.throwIfAborted();

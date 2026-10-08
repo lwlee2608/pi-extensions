@@ -38,6 +38,7 @@ test("finished worker shows outcome icon, context, cost and first plain output l
   assert.deepEqual(panelLines([done], 120, 124_000), ["✓ 界面 😀 · 2m03s · ctx 82k · $0.42", "  └ Reviewed: PR #133 (e13ee6d)"]);
   assert.match(panelLines([{ ...done, result: { ...done.result!, outcome: "failed" }, error: "boom" }], 120, 124_000).join("\n"), /^✗ .*\n  └ boom$/);
   assert.deepEqual(panelLines([done], 120, 128_000), []);
+  assert.deepEqual(panelLines([{ ...done, state: "idle" }], 120, 128_000), []);
   assert.equal(panelLines([{ ...done, recoverable: true }], 120, 999_000).length, 2);
   const colored = { fg: (color: string, text: string) => `\x1b[3${color.length % 8}m${text}\x1b[0m` };
   for (const width of [1, 10, 30]) for (const line of panelLines([done], width, 124_000, colored)) assert.ok(visibleWidth(line) <= width);

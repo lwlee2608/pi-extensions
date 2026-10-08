@@ -8,6 +8,10 @@ export function display(text: string): string {
 }
 const spinner = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
 const linger = 5000;
+const active = ["working", "blocked", "queued"];
+function shown(worker: Readonly<Snapshot>, now: number): boolean {
+  return active.includes(worker.state) || !!worker.recoverable || (!!worker.result && now - worker.result.endedAt < linger);
+}
 type Paint = Pick<Theme, "fg">;
 const plain: Paint = { fg: (_color, text) => text };
 function duration(ms: number): string {
@@ -31,17 +35,14 @@ function icon(worker: Snapshot, now: number): [Parameters<Paint["fg"]>[0], strin
 }
 export function panelLines(workers: Snapshot[], width: number, now = Date.now(), theme: Paint = plain): string[] {
   if (width < 1) return [];
-  const live = workers.filter(w => w.state !== "closed");
   const order = { blocked: 0, working: 1, queued: 2, idle: 3, closed: 4 };
-  const ordered = live.sort((a, b) => order[a.state] - order[b.state]);
-  if (!ordered.length) ordered.push(...workers.filter(w => w.recoverable));
-  if (!ordered.length) ordered.push(...workers.filter(w => w.result && now - w.result.endedAt < linger).slice(-1));
+  const ordered = workers.filter(w => shown(w, now)).sort((a, b) => order[a.state] - order[b.state]);
   const rows = ordered.slice(0, 4).flatMap(worker => {
     const cost = (worker.result?.usage ?? worker.usage)?.cost.total;
     const meta = [duration((worker.result?.endedAt ?? now) - worker.startedAt), ...(worker.context ? [`ctx ${tokens(worker.context)}`] : []), ...(cost ? [`$${cost.toFixed(2)}`] : [])].join(" · ");
     const [color, symbol] = icon(worker, now);
     const question = worker.questions?.find(q => q.state === "pending");
-    const running = ["working", "queued", "blocked"].includes(worker.state);
+    const running = active.includes(worker.state);
     const [tone, detail] = question ? ["warning", `reply ${question.questionId}: ${question.question}`] as const
       : worker.error ? ["error", worker.error] as const
       : worker.recoverable ? ["warning", `recover ${worker.workerId} · saved conversation; pending questions cancelled`] as const
@@ -64,8 +65,10 @@ export function attachPanel(manager: Manager, ui: ExtensionUIContext): () => voi
     if (!disposed && !scheduled) scheduled = setTimeout(() => { scheduled = undefined; render?.(); }, 80);
   };
   const unsubscribe = manager.onChange(update);
+  let tick = 0;
   const clock = setInterval(() => {
-    if (manager.status().some(w => ["working", "blocked", "queued"].includes(w.state) || (w.result && Date.now() - w.result.endedAt < linger + 500))) update();
+    const now = Date.now();
+    if (manager.some(w => w.state === "working") || (++tick % 10 === 0 && manager.some(w => shown(w, now - 1000)))) update();
   }, 100);
   clock.unref();
   return () => { disposed = true; unsubscribe(); clearInterval(clock); clearTimeout(scheduled); ui.setWidget("pi-subagent", undefined); };
