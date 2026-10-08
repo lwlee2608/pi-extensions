@@ -19,7 +19,11 @@ Node 22.19+ and Pi 1.x are required. Process cleanup is tested on Linux only. No
 
 ## Child resources
 
-Create `<agent-dir>/pi-subagent/config.json` in the **isolated** agent directory you use for development. Paths must point to reviewed extension files, not packages or directories:
+By default, children inherit the parent's configured extensions and explicit `-e` resources, excluding this subagent extension. Custom providers need no separate child configuration. The resolver respects package filters, `--no-extensions`, and the parent's project trust; it resolves from the **parent** cwd, not the worker's worktree. It does not import extension factories or install packages during discovery.
+
+Pi does not expose a complete loaded-extension list to extensions. Inheritance therefore resolves the current settings and CLI resources, not an exact runtime snapshot. Inline SDK factories cannot be inherited; temporary package sources without tool/command provenance require explicit configuration. Reload after changing parent resources.
+
+For stricter isolation, create `<agent-dir>/pi-subagent/config.json`. An explicit `extensions` map **replaces** inheritance; `{ "extensions": {} }` loads no parent extensions. Omitting `extensions` retains inheritance even when configuring limits. Paths must point to reviewed extension files (or Pi built-in IDs such as `builtin:codemode`), not packages or directories:
 
 ```json
 {
@@ -32,9 +36,11 @@ Create `<agent-dir>/pi-subagent/config.json` in the **isolated** agent directory
 }
 ```
 
-Built-in providers need no provider extension. A custom provider must be available both to the parent and through this child allowlist. Normal Pi authentication remains Pi's responsibility; this package never reads credential contents. Missing or different models, unsupported effort, missing tools, and invalid paths fail visibly. Model selection is exact (`provider/model` or an unambiguous model ID), never fuzzy fallback.
+Built-in providers need no provider extension. With an explicit map, a custom provider must be available both to the parent and through this child allowlist. Normal Pi authentication remains Pi's responsibility; this package never reads credential contents. Missing or different models, unsupported effort, missing tools, and invalid paths fail visibly. Model selection is exact (`provider/model` or an unambiguous model ID), never fuzzy fallback.
 
-All approved extensions load unless a profile selects names with `extensions: [provider]`. Only approve child-safe resources. Parent UI and orchestration extensions are not inherited. The package adds its private bootstrap and `ask_parent` question tool; do not load `src/bootstrap.ts` or `src/child.ts` yourself. Child nested delegation is disabled. A tool allowlist and read-only reviewer instructions are capabilities, not an OS sandbox: bash can still modify files.
+All inherited/approved extensions load unless a profile selects configured names with `extensions: [provider]`. Without a profile selection, a Pi built-in is skipped when the profile allows none of the tools it registered in the parent (for example `builtin:mcp` without an `mcp__*` tool), so it does not start servers in children. A built-in whose tools the parent cannot see, such as under `--tools`, is kept. Use an explicit map for stable names in profile selections. Inherited extensions run their hooks and can start background services; UI extensions must guard terminal-only behavior in RPC mode. A profile's tool allowlist does not disable extension hooks. Use explicit configuration if an inherited extension is not child-safe.
+
+The package adds its private bootstrap and `ask_parent` question tool; do not load `src/bootstrap.ts` or `src/child.ts` yourself. This extension also does nothing when loaded inside an owned child as a defensive nested-delegation guard; other extensions registering delegation tools fail child startup. A tool allowlist and read-only reviewer instructions are capabilities, not an OS sandbox: bash can still modify files.
 
 Profiles come from `<agent-dir>/agents/*.md`, with bundled `worker` and `reviewer` fallbacks. Existing profiles are not overwritten. Compatible frontmatter includes `name`, `description`, `tools` (CSV or YAML list), `model` (optional `:effort` suffix), `effort`, and `extensions`. Project profiles in the nearest `.pi/agents` require both `agentScope: "project"`/`"both"` and that directory's project root in `trustedProjectRoots`. The default scope is `user`.
 
@@ -116,7 +122,7 @@ Resume the **original parent Pi session**, inspect `status`, then explicitly rec
 
 Recovery preserves worker/session identity, cwd, profile, provider/model/effort, and prior terminal results. It starts a new child PID **idle**, with no model request. Only a subsequent task creates a new run. Interrupted tasks, steering, and replies are never automatically replayed. Pending questions become cancelled history and their old IDs reject replies.
 
-Stop/reload/shutdown/replacement closes owned children and interrupts only unfinished runs. Closed retained workers with saved sessions show `recoverable: true`; recovery still verifies prerequisites. It rejects one-shot, live, foreign-parent, missing-session/cwd/skill, changed profile/extension, removed allowlist, and provider-contract mismatches. Restore the saved prerequisites rather than substituting resources silently. Edited skills do not block recovery; the recovered child loads their current content.
+Stop/reload/shutdown/replacement closes owned children and interrupts only unfinished runs. Closed retained workers with saved sessions show `recoverable: true`; recovery still verifies prerequisites. It rejects one-shot, live, foreign-parent, missing-session/cwd/skill, changed profile/extension, removed inherited/approved extensions, and provider-contract mismatches. Restore the saved prerequisites rather than substituting resources silently. Edited skills do not block recovery; the recovered child loads their current content.
 
 A private `owner.json` file exclusively reserves a parent's storage for its current runtime. It is taken on first subagent use, or at session start when the parent already has saved workers; sessions that never delegate take no lock. A second parent instance cannot open it. Normal shutdown removes it only after confirmed child cleanup and metadata writes. A crash or failed cleanup leaves the lock: recovery then refuses uncertain ownership. Uncertain records stay refused but do not block later shutdowns; after confirming that old child exited, delete its worker directory to retire it. Do not remove a lock until you have independently confirmed that its parent and every child have exited. The extension does not guess from PID reuse, adopt another parent's workers, or kill an unowned process. Corrupt metadata is reported without loading partial state.
 
@@ -124,7 +130,7 @@ A private `owner.json` file exclusively reserves a parent's storage for its curr
 
 Private session directories and per-run result files live under `<agent-dir>/pi-subagent/<parent-session-id>/<worker-id>/`. Results reference the full persisted Pi transcript. Result files are mode `0600`; containing directories are mode `0700`. Keep transcripts private.
 
-Live text is bounded to 8 KiB, returned result text to 4 KiB, stderr to 16 KiB, and individual RPC records to 4 MiB. Oversized/malformed protocol output closes the child rather than allocating without bounds. A parent admits at most 2048 tasks before requiring a new parent session; existing disk output remains intact. Worker metadata freezes the launch contract and hashed non-secret profile/extension prerequisites. Atomic, fsynced metadata updates are limited to 20 MiB per worker; persistence failures close live work and remain visible rather than silently downgrading recovery.
+Live text is bounded to 8 KiB, returned result text to 4 KiB, stderr to 16 KiB, and individual RPC records to 4 MiB. Oversized/malformed protocol output closes the child rather than allocating without bounds. A parent admits at most 2048 tasks before requiring a new parent session; existing disk output remains intact. Worker metadata freezes the launch contract and hashed non-secret profile/extension prerequisites; Pi built-in extensions are recorded by ID, not hashed, because they ship with Pi itself. Atomic, fsynced metadata updates are limited to 20 MiB per worker; persistence failures close live work and remain visible rather than silently downgrading recovery.
 
 ## Live demo
 
@@ -163,7 +169,7 @@ These are post-build steps, not approval to modify global settings now.
 
 1. Let old-example children finish. Record its path and enabled resources. Preserve `~/.pi/agent/agents/*.md`.
 2. Back up only affected non-secret settings. Disable `~/.pi/agent/extensions/subagent/index.ts` through `pi config`, including its auto-discovered entry. Keep backups outside auto-loaded extension directories.
-3. Configure `<agent-dir>/pi-subagent/config.json` with reviewed provider/tool extension paths and limits. Do not inherit parent UI/orchestration extensions.
+3. Review inherited extensions for RPC compatibility. Optionally configure `<agent-dir>/pi-subagent/config.json` with an explicit provider/tool extension map for isolation, and limits.
 4. After approval, run `pi install ./packages/subagent` once, then reload. Verify one active `subagent`, `/subagents`, and a one-shot smoke task whose process retires. Pi reports a duplicate-tool conflict if both implementations load; do not rename tools to bypass it.
 5. Apply the separately reviewed `agent-skills/skills/build-feature/SKILL.md` commit only after this extension is usable. The external skill change has its own Git history/PR; do not create a cross-repository commit. Publication and global installation remain user decisions.
 6. Roll back by stopping all children, confirming exit, disabling/removing this package, restoring the prior resource selection, and reloading the old example. Revert the skill separately. Preserve saved sessions; do not send this action API to the old tool or remove worktrees as part of rollback.

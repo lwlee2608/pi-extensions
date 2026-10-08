@@ -7,10 +7,11 @@ import { modelView, resultText } from "./result.ts";
 import { attachPanel, display } from "./panel.ts";
 import { Text } from "@earendil-works/pi-tui";
 import { loadConfig, resolveLaunch } from "./profiles.ts";
+import { parentExtensions } from "./extensions.ts";
 import { description, parameters, validateAction, type Effort } from "./schema.ts";
 
 export default function (pi: ExtensionAPI): void {
-  if (process.env.PI_SUBAGENT_TOKEN) throw new Error("Nested subagent delegation is disabled; remove the parent extension from the child allowlist");
+  if (process.env.PI_SUBAGENT_TOKEN) return;
   let manager: Manager | undefined;
   let detachPanel: (() => void) | undefined;
   let initialization: Promise<Manager> | undefined;
@@ -21,7 +22,8 @@ export default function (pi: ExtensionAPI): void {
     if (closed) throw new Error("Subagent runtime is closed");
     const config = await loadConfig(getAgentDir());
     if (closed) throw new Error("Subagent runtime closed during initialization");
-    manager = new Manager({ root: join(getAgentDir(), "pi-subagent"), parentId: ctx.sessionManager.getSessionId(), maxWorkers: config.maxWorkers, maxActive: config.maxActive });
+    manager = new Manager({ root: join(getAgentDir(), "pi-subagent"), parentId: ctx.sessionManager.getSessionId(), maxWorkers: config.maxWorkers, maxActive: config.maxActive,
+      config: () => loadConfig(getAgentDir(), () => parentExtensions(pi, ctx, getAgentDir())) });
     if (ctx.mode === "tui") detachPanel = attachPanel(manager, ctx.ui);
     return manager;
   })().catch(error => { initialization = undefined; throw error; });
@@ -64,11 +66,11 @@ export default function (pi: ExtensionAPI): void {
       let result: unknown;
       switch (args.action) {
         case "start": {
-          const config = await loadConfig(getAgentDir());
+          const config = await loadConfig(getAgentDir(), () => parentExtensions(pi, ctx, getAgentDir()));
           const skills = pi.getCommands().filter(command => command.source === "skill").flatMap(command => command.sourceInfo?.path ? [command.sourceInfo.path] : []);
           const launch = await resolveLaunch(args, { cwd: ctx.cwd, agentDir: getAgentDir(), model: ctx.model,
             effort: pi.getThinkingLevel() as Effort, models: ctx.modelRegistry.getAvailable(), skills,
-            registeredProviders: ctx.modelRegistry.getRegisteredProviderIds() }, config);
+            registeredProviders: ctx.modelRegistry.getRegisteredProviderIds(), tools: pi.getAllTools() }, config);
           signal?.throwIfAborted();
           result = active.start(launch, args.task, args.lifetime, args.label);
           break;

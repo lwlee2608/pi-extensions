@@ -3,7 +3,7 @@ import { EventEmitter } from "node:events";
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { AssistantMessage, Usage } from "@earendil-works/pi-ai";
-import type { Launch } from "./profiles.ts";
+import type { Config, Launch } from "./profiles.ts";
 import { launchChild, literalInput, type Child, type ChildEvent } from "./rpc.ts";
 import { loadConfig } from "./profiles.ts";
 import { Store, prerequisites, verifyPrerequisites, type Prerequisites } from "./store.ts";
@@ -45,12 +45,14 @@ export class Manager {
   private shutdownPromise?: Promise<void>;
   private usageWarning?: string;
   private spawn: typeof launchChild;
-  constructor(options: { root: string; parentId: string; maxWorkers?: number; maxActive?: number; spawn?: typeof launchChild }) {
+  private config?: () => Promise<Config>;
+  constructor(options: { root: string; parentId: string; maxWorkers?: number; maxActive?: number; spawn?: typeof launchChild; config?: () => Promise<Config> }) {
     if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,150}$/.test(options.parentId)) throw new Error("Invalid parent session ID");
     this.root = join(options.root, options.parentId);
     this.maxWorkers = options.maxWorkers ?? 16;
     this.maxActive = options.maxActive ?? 4;
     this.spawn = options.spawn ?? launchChild;
+    this.config = options.config;
     this.events.setMaxListeners(0);
     this.store = new Store(options.root, options.parentId);
     try {
@@ -368,7 +370,7 @@ export class Manager {
       worker.reservation = true;
       worker.stopping = false;
       try {
-        const config = await loadConfig(worker.launch.agentDir);
+        const config = await (this.config?.() ?? loadConfig(worker.launch.agentDir));
         const saved = { version: 1 as const, parentId: this.store.parentId, view: worker.view, launch: worker.launch,
           runs: [worker.run], generation: worker.generation, prerequisites: worker.prerequisites, reported: [], ownership: "closed" as const };
         verifyPrerequisites(saved, Object.values(config.extensions), config.trustedProjectRoots);
