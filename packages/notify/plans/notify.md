@@ -25,7 +25,7 @@
 - **One-shot vs prompt ping** — Prompt ping does not consume one-shot; one-shot disarms when a run settles with a recorded `completed` or `error` outcome, subject to the accepted pre-settlement cancellation limitation
 
 ## Progress
-Phase 2 of 2 · 13/13 tasks · Phase 2 implemented; pending PR review and merge. Phase 1 merged via PR #20 after two review rounds and green CI; live phone verification deferred to the final Demo with user approval (not yet run).
+Phase 2 of 2 · 13/13 tasks · Both phases merged into `integrate/notify`: PR #20 and PR #22, each after two review rounds and green CI. Phase 2 had no actionable findings or review fixes. Awaiting the user's final phone Demo; final PR to `main` follows its result. Live phone verification has not yet run.
 
 Phase 2 verification: `npm test -w packages/notify` passes (6 tests), including disposable command/env fixtures, literal shell metacharacters, nonzero exit, cancellation/timeout cleanup, tool arming/config errors/non-TUI exclusion, and active-run prompt privacy/one-shot settlement. `npm run check` passes all 7 workspaces; `env -u PI_SUBAGENT_TOKEN -u PI_SUBAGENT_TOOLS npm test` passes all 148 tests. `git diff --check` passes. Initial type checking found missing local dependencies (`tsc: not found`); `npm ci --ignore-scripts` installed them and checks then passed. No credentials or external services used. The manual agent/phone proof and final Demo remain deferred to the user; not run.
 
