@@ -32,7 +32,7 @@ Run `/reload` after installation. Requires Node.js 22.19 or newer and Pi 1.0.0.
 ## Display
 
 - **Provider, model, and thinking:** the active provider, model ID, and thinking level. Uses Pi's provider field, not the vendor label in the model's display name.
-- **Context:** a 20-cell progress bar, percentage, and estimated tokens / context window. Unknown context (such as immediately after compaction) shows `?`.
+- **Context:** a 20-cell progress bar with bright filled cells and a muted empty track, percentage, and estimated tokens / context window. The fill uses the theme's text color for contrast on dark and light backgrounds. Unknown context (such as immediately after compaction) shows `?`.
 - **Cost:** Pi's reported cost for the active session branch, including tool, compaction, summary, and background usage entries. This is an estimate, not a subscription bill.
 - **Cache:** cached input / total input across that branch. `new` is uncached input plus cache writes, excluding output tokens; it is cumulative, not the current context size.
 - **Timer:** elapsed wall time for the current or most recent agent run, including tools and retries, stopping when the agent settles. Resets on reload, session change, and tree navigation; historical run times are not restored.

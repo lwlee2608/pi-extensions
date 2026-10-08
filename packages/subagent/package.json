@@ -1,0 +1,27 @@
+{
+  "name": "@lwlee2608/pi-subagent",
+  "version": "0.1.0",
+  "description": "Persistent Pi subagents with live progress and explicit task controls.",
+  "type": "module",
+  "license": "MIT",
+  "author": "lwlee2608",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lwlee2608/pi-extensions.git",
+    "directory": "packages/subagent"
+  },
+  "homepage": "https://github.com/lwlee2608/pi-extensions/tree/main/packages/subagent#readme",
+  "bugs": "https://github.com/lwlee2608/pi-extensions/issues",
+  "keywords": ["pi-package", "pi-extension", "subagents"],
+  "files": ["src", "agents"],
+  "pi": { "extensions": ["./src/index.ts"] },
+  "engines": { "node": ">=22.19.0" },
+  "scripts": { "check": "tsc --noEmit", "test": "node --test test/*.test.ts" },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  },
+  "publishConfig": { "access": "public" }
+}

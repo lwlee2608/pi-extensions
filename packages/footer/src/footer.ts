@@ -1,4 +1,4 @@
-import type { ContextUsage, SessionEntry } from "@earendil-works/pi-coding-agent";
+import type { ContextUsage, SessionEntry, Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 
 export interface Totals {
@@ -54,17 +54,20 @@ export interface FooterSnapshot {
   statuses: readonly string[];
 }
 
-export function renderFooter(snapshot: FooterSnapshot, width: number): string[] {
+export function renderFooter(snapshot: FooterSnapshot, width: number, theme?: Pick<Theme, "fg">): string[] {
   if (width <= 0) return ["", ""];
+  const dim = (text: string) => theme ? theme.fg("dim", text) : text;
+  const bright = (text: string) => theme ? theme.fg("text", text) : text;
   const { context, totals } = snapshot;
   const percent = context.percent === null ? null : Math.max(0, Math.min(100, context.percent));
   const filled = Math.round((percent ?? 0) / 5);
-  const bar = `[${"━".repeat(filled)}${"─".repeat(20 - filled)}]`;
+  const bar = dim("[") + bright("━".repeat(filled)) + dim(`${"─".repeat(20 - filled)}]`);
   const cached = totals.cached + totals.fresh > 0
     ? Math.round(totals.cached / (totals.cached + totals.fresh) * 100) : 0;
   const tokens = context.tokens === null ? "?" : formatTokens(context.tokens);
-  const status = `${snapshot.model} [${snapshot.thinking}] ${bar} ${percent === null ? "?" : Math.round(percent)}% ${tokens} / ${formatTokens(context.contextWindow)} tokens • $${totals.cost.toFixed(2)} (${cached}% cached, ${formatTokens(totals.fresh)} new) • ${formatDuration(snapshot.elapsed)}`;
+  const status = dim(`${snapshot.model} [${snapshot.thinking}] `) + bar
+    + dim(` ${percent === null ? "?" : Math.round(percent)}% ${tokens} / ${formatTokens(context.contextWindow)} tokens • $${totals.cost.toFixed(2)} (${cached}% cached, ${formatTokens(totals.fresh)} new) • ${formatDuration(snapshot.elapsed)}`);
   const project = `${snapshot.cwd}${snapshot.branch ? ` (${snapshot.branch})` : ""}`;
-  return [status, [project, ...snapshot.statuses].filter(Boolean).join(" • ")]
+  return [status, dim([project, ...snapshot.statuses].filter(Boolean).join(" • "))]
     .map(line => truncateToWidth(singleLine(line), width));
 }

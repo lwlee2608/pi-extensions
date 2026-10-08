@@ -53,7 +53,7 @@ export default function (pi: ExtensionAPI): void {
             totals = summarize(ctx.sessionManager.getBranch());
             leaf = currentLeaf;
           }
-          const lines = renderFooter({
+          return renderFooter({
             model: ctx.model ? `(${ctx.model.provider}) ${ctx.model.id}` : "No model",
             thinking: pi.getThinkingLevel(),
             context: ctx.getContextUsage() ?? {
@@ -64,8 +64,7 @@ export default function (pi: ExtensionAPI): void {
             cwd: projectPath(ctx.cwd, homedir()),
             branch: footerData.getGitBranch(),
             statuses: [...footerData.getExtensionStatuses().values()],
-          }, width);
-          return lines.map(line => theme.fg("dim", line));
+          }, width, theme);
         },
       };
     });
