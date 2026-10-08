@@ -31,7 +31,7 @@ Create `~/.pi/agent/pi-notify/config.json` (under `PI_CODING_AGENT_DIR` when ove
 
 Create a bot with Telegram's BotFather, start a conversation with it, and supply the destination chat ID. Export the environment variables before starting Pi, or supply literal strings. A string consisting entirely of `$VAR` resolves from Pi's environment; missing or empty values are rejected. Keep tokens private and restrict access to the config file.
 
-At least one valid connector is required. Every connector fires on each ping; `onPrompt` defaults to `false`. Config is read for every command, tool arming request, and send, so edits apply without `/reload`. Invalid config refuses arming and leaves notifications off. Send failures show a warning per connector without exposing command output or tokens.
+At least one valid connector is required. Every connector fires on each ping; `onPrompt` defaults to `false`. Set `"nerdFont": true` to show the Nerd Font bell (U+F0F3) instead of 🔔 in the status; it applies on the next arming, and outgoing messages keep standard emoji. Config is read for every command, tool arming request, and send, so edits apply without `/reload`. Invalid config refuses arming and leaves notifications off. Send failures show a warning per connector without exposing command output or tokens.
 
 ### Shell command connector
 
@@ -59,7 +59,7 @@ Only configure commands you trust: they execute with your permissions and can ac
 | `/notify test` | Send a test immediately without changing arming. |
 | “Notify me when you finish” | The agent can call `notify_me` to arm one-shot. |
 
-The agent's tool description restricts `notify_me` to explicit user requests; it must not arm proactively. The tool is removed from active tools outside TUI, and calls outside TUI fail. Arming shows ` once` or ` on` in extension status (including Pi Footer). The terminal indicator requires a Nerd Font (bell, U+F0F3); outgoing notifications keep standard emoji. New, resumed, and forked sessions reset to off; arming is never persisted.
+The agent's tool description restricts `notify_me` to explicit user requests; it must not arm proactively. The tool is removed from active tools outside TUI, and calls outside TUI fail. Arming shows `🔔 once` or `🔔 on` in extension status (including Pi Footer). New, resumed, and forked sessions reset to off; arming is never persisted.
 
 Notifications contain only the optional session name, working directory, and outcome:
 

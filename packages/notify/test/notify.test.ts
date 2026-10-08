@@ -12,15 +12,15 @@ const connector = { type: "telegram", botToken: "123:fake-token", chatId: "-123"
 const config = { connectors: [connector] };
 
 test("config validates shape, resolves env and never echoes secrets", async () => {
-  assert.deepEqual(parseConfig(config), { ...config, onPrompt: false });
+  assert.deepEqual(parseConfig(config), { ...config, onPrompt: false, nerdFont: false });
   assert.deepEqual(parseConfig({ connectors: [{ type: "command", run: "$RUN" }] }, { RUN: "echo test" }), {
-    onPrompt: false, connectors: [{ type: "command", run: "echo test" }],
+    onPrompt: false, nerdFont: false, connectors: [{ type: "command", run: "echo test" }],
   });
   assert.throws(() => parseConfig({ connectors: [{ type: "command", run: "$MISSING" }] }, {}));
-  assert.deepEqual(parseConfig({ onPrompt: true, connectors: [{ ...connector, botToken: "$TOKEN", chatId: "$CHAT" }] }, { TOKEN: connector.botToken, CHAT: "@channel" }), {
-    onPrompt: true, connectors: [{ ...connector, chatId: "@channel" }],
+  assert.deepEqual(parseConfig({ onPrompt: true, nerdFont: true, connectors: [{ ...connector, botToken: "$TOKEN", chatId: "$CHAT" }] }, { TOKEN: connector.botToken, CHAT: "@channel" }), {
+    onPrompt: true, nerdFont: true, connectors: [{ ...connector, chatId: "@channel" }],
   });
-  for (const value of [null, [], {}, { connectors: [] }, { ...config, onPrompt: "true" },
+  for (const value of [null, [], {}, { connectors: [] }, { ...config, onPrompt: "true" }, { ...config, nerdFont: "true" },
     { connectors: [{ type: "command", run: " " }] }, { connectors: [{ ...connector, chatId: 123 }] },
     { connectors: [{ ...connector, botToken: "$MISSING" }] }, { connectors: [{ ...connector, botToken: "secret/invalid" }] },
     { connectors: [{ ...connector, chatId: " " }] }]) {
@@ -33,7 +33,7 @@ test("config validates shape, resolves env and never echoes secrets", async () =
     await writeFile(path, "{ secret invalid json");
     await assert.rejects(loadConfig(path), /not valid JSON/);
     await writeFile(path, JSON.stringify(config));
-    assert.deepEqual(await loadConfig(path), { ...config, onPrompt: false });
+    assert.deepEqual(await loadConfig(path), { ...config, onPrompt: false, nerdFont: false });
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -145,10 +145,10 @@ test("TUI lifecycle sends once at final settle, never on abort/unarmed, reloads 
     await mkdir(join(root, "pi-notify"));
     const path = join(root, "pi-notify", "config.json");
     await writeFile(path, JSON.stringify(config));
-    await command("", ctx); assert.equal(status, "\uf0f3 once");
+    await command("", ctx); assert.equal(status, "🔔 once");
     emit("agent_start"); emit("agent_before_settle", "completed"); emit("agent_start");
     assert.equal(sent.length, 0); emit("agent_settled"); await flush();
-    assert.equal(sent.length, 0); assert.equal(status, "\uf0f3 once");
+    assert.equal(sent.length, 0); assert.equal(status, "🔔 once");
     emit("agent_start"); emit("agent_before_settle", "completed"); emit("agent_start");
     emit("agent_before_settle", "error"); assert.equal(emit("agent_settled"), undefined);
     assert.equal(status, undefined); await flush();
@@ -158,7 +158,7 @@ test("TUI lifecycle sends once at final settle, never on abort/unarmed, reloads 
     await writeFile(path, JSON.stringify({ connectors: [{ ...connector, chatId: "456" }] }));
     release = () => {};
     assert.equal(settle(), undefined); await flush(); assert.equal(sent[1].chat_id, "456");
-    assert.equal(status, "\uf0f3 on"); release!(); release = undefined;
+    assert.equal(status, "🔔 on"); release!(); release = undefined;
     await command("off", ctx); settle(); await flush(); assert.equal(sent.length, 2);
     await command("test", ctx); await flush(); assert.equal(sent.length, 3); assert.match(sent[2].text, /test$/); assert.equal(status, undefined);
     await command("on", ctx); emit("session_start"); assert.equal(status, undefined); settle(); await flush(); assert.equal(sent.length, 3);
@@ -172,7 +172,7 @@ test("TUI lifecycle sends once at final settle, never on abort/unarmed, reloads 
     }
     await flush(); assert.equal(sent.length, 3);
     ctx.mode = "tui";
-    await writeFile(path, JSON.stringify({ ...config, onPrompt: true }));
+    await writeFile(path, JSON.stringify({ ...config, onPrompt: true, nerdFont: true }));
     const result = await tool.execute("id", {}, undefined, undefined, ctx);
     assert.match(result.content[0].text, /armed/); assert.match(tool.description, /explicitly asks/);
     assert.equal(status, "\uf0f3 once");

@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 
 export interface TelegramConnector { type: "telegram"; botToken: string; chatId: string }
 export interface CommandConnector { type: "command"; run: string }
-export interface Config { onPrompt: boolean; connectors: (TelegramConnector | CommandConnector)[] }
+export interface Config { onPrompt: boolean; nerdFont: boolean; connectors: (TelegramConnector | CommandConnector)[] }
 
 function object(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -10,8 +10,9 @@ function object(value: unknown): value is Record<string, unknown> {
 
 export function parseConfig(value: unknown, env: NodeJS.ProcessEnv = process.env): Config {
   if (!object(value) || (value.onPrompt !== undefined && typeof value.onPrompt !== "boolean") ||
+      (value.nerdFont !== undefined && typeof value.nerdFont !== "boolean") ||
       !Array.isArray(value.connectors) || value.connectors.length === 0) {
-    throw new Error("Notify config needs a non-empty connectors array and an optional boolean onPrompt.");
+    throw new Error("Notify config needs a non-empty connectors array and optional boolean onPrompt and nerdFont.");
   }
   function resolve(value: unknown, field: string): string {
     if (typeof value !== "string") throw new Error(`Notify config needs a string ${field}.`);
@@ -22,6 +23,7 @@ export function parseConfig(value: unknown, env: NodeJS.ProcessEnv = process.env
   }
   return {
     onPrompt: value.onPrompt ?? false,
+    nerdFont: value.nerdFont ?? false,
     connectors: value.connectors.map(connector => {
       if (!object(connector)) throw new Error("Notify config needs connector objects.");
       if (connector.type === "command") return { type: "command", run: resolve(connector.run, "run") };

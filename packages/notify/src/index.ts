@@ -12,10 +12,11 @@ export default function (pi: ExtensionAPI): void {
   let generation = 0;
   let command = 0;
   let activeRun = false;
+  let nerdFont = false;
   let controller = new AbortController();
 
   function status(ctx: ExtensionContext): void {
-    ctx.ui.setStatus("notify", state.armed === "off" ? undefined : `\uf0f3 ${state.armed}`);
+    ctx.ui.setStatus("notify", state.armed === "off" ? undefined : `${nerdFont ? "\uf0f3" : "🔔"} ${state.armed}`);
   }
   function reset(ctx: ExtensionContext): void {
     generation++;
@@ -84,7 +85,7 @@ export default function (pi: ExtensionAPI): void {
     };
     const config = loadConfig(path);
     if (action === "off") { state.armed = "off"; status(ctx); }
-    try { await config; }
+    try { nerdFont = (await config).nerdFont; }
     catch (error) {
       if (stale()) return;
       state.armed = "off";
