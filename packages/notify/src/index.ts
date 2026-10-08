@@ -15,7 +15,7 @@ export default function (pi: ExtensionAPI): void {
   let controller = new AbortController();
 
   function status(ctx: ExtensionContext): void {
-    ctx.ui.setStatus("notify", state.armed === "off" ? undefined : `🔔 ${state.armed}`);
+    ctx.ui.setStatus("notify", state.armed === "off" ? undefined : `\uf0f3 ${state.armed}`);
   }
   function reset(ctx: ExtensionContext): void {
     generation++;

@@ -145,10 +145,10 @@ test("TUI lifecycle sends once at final settle, never on abort/unarmed, reloads 
     await mkdir(join(root, "pi-notify"));
     const path = join(root, "pi-notify", "config.json");
     await writeFile(path, JSON.stringify(config));
-    await command("", ctx); assert.equal(status, "🔔 once");
+    await command("", ctx); assert.equal(status, "\uf0f3 once");
     emit("agent_start"); emit("agent_before_settle", "completed"); emit("agent_start");
     assert.equal(sent.length, 0); emit("agent_settled"); await flush();
-    assert.equal(sent.length, 0); assert.equal(status, "🔔 once");
+    assert.equal(sent.length, 0); assert.equal(status, "\uf0f3 once");
     emit("agent_start"); emit("agent_before_settle", "completed"); emit("agent_start");
     emit("agent_before_settle", "error"); assert.equal(emit("agent_settled"), undefined);
     assert.equal(status, undefined); await flush();
@@ -158,7 +158,7 @@ test("TUI lifecycle sends once at final settle, never on abort/unarmed, reloads 
     await writeFile(path, JSON.stringify({ connectors: [{ ...connector, chatId: "456" }] }));
     release = () => {};
     assert.equal(settle(), undefined); await flush(); assert.equal(sent[1].chat_id, "456");
-    assert.equal(status, "🔔 on"); release!(); release = undefined;
+    assert.equal(status, "\uf0f3 on"); release!(); release = undefined;
     await command("off", ctx); settle(); await flush(); assert.equal(sent.length, 2);
     await command("test", ctx); await flush(); assert.equal(sent.length, 3); assert.match(sent[2].text, /test$/); assert.equal(status, undefined);
     await command("on", ctx); emit("session_start"); assert.equal(status, undefined); settle(); await flush(); assert.equal(sent.length, 3);
@@ -175,13 +175,13 @@ test("TUI lifecycle sends once at final settle, never on abort/unarmed, reloads 
     await writeFile(path, JSON.stringify({ ...config, onPrompt: true }));
     const result = await tool.execute("id", {}, undefined, undefined, ctx);
     assert.match(result.content[0].text, /armed/); assert.match(tool.description, /explicitly asks/);
-    assert.equal(status, "🔔 once");
+    assert.equal(status, "\uf0f3 once");
     emit("ui_prompt_start"); await flush(); assert.equal(sent.length, 3);
     emit("agent_start");
     handlers.get("ui_prompt_start")!({ title: "PRIVATE PROMPT", type: "select" }, ctx);
     await flush(); assert.equal(sent.length, 4);
     assert.equal(sent[3].text, "🔔 session · /project · waiting for input");
-    assert.equal(status, "🔔 once");
+    assert.equal(status, "\uf0f3 once");
     settle(); await flush(); assert.equal(sent.length, 5); assert.match(sent[4].text, /done$/);
     assert.equal(status, undefined);
     emit("agent_start"); emit("ui_prompt_start"); await flush(); assert.equal(sent.length, 5);
