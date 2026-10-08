@@ -15,7 +15,7 @@ export interface Question { questionId: string; workerId: string; runId: string;
 export interface Snapshot {
   workerId: string; runId: string; state: "queued" | "working" | "blocked" | "idle" | "closed"; lifetime: "once" | "retained";
   label: string; cwd: string; model: string; effort: string; pid?: number; processAlive?: boolean; sessionId: string; sessionFile?: string;
-  activity: string; output: string; startedAt: number; result?: Result; error?: string; questions?: Question[]; recoverable?: boolean; usage?: Usage; toolOutput?: string;
+  activity: string; output: string; startedAt: number; result?: Result; error?: string; questions?: Question[]; recoverable?: boolean; usage?: Usage; context?: number; toolOutput?: string;
 }
 interface Worker {
   view: Snapshot; launch: Launch; directory: string; child?: Child; run: Run; lock: Promise<unknown>;
@@ -232,6 +232,7 @@ export class Manager {
       case "message_update":
         worker.view.usage = structuredClone(worker.usage);
         addUsage(worker.view.usage, event.usage);
+        if (event.usage.totalTokens) worker.view.context = event.usage.totalTokens;
         if (event.assistantMessageEvent.type === "text_delta") worker.view.output = (worker.view.output + event.assistantMessageEvent.delta).slice(-8192);
         break;
       case "message_end":
@@ -240,6 +241,7 @@ export class Manager {
           if (event.message.stopReason === "stop") worker.recoveryError = undefined;
           worker.view.output = event.message.content.filter(c => c.type === "text").map(c => c.text).join("\n").slice(-8192);
           addUsage(worker.usage, event.message.usage);
+          if (event.message.usage.totalTokens) worker.view.context = event.message.usage.totalTokens;
         } else if (event.message.role === "toolResult") addUsage(worker.usage, event.message.usage);
         break;
       case "compaction_end":
@@ -422,6 +424,7 @@ export class Manager {
     });
   }
   status(id?: string): Snapshot[] { return (id ? [this.worker(id)] : [...this.workers.values()]).map(w => structuredClone(w.view)); }
+  some(test: (view: Readonly<Snapshot>) => boolean): boolean { return [...this.workers.values()].some(w => test(w.view)); }
   async wait(runIds: string[], mode: "all" | "any" = "all", timeoutMs = 30 * 60_000, signal?: AbortSignal): Promise<WaitResult> {
     if (!runIds.length || runIds.some(id => !this.runs.has(id))) throw new Error("Wait requires known run IDs from this parent");
     signal?.throwIfAborted();

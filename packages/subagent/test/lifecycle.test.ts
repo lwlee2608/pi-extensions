@@ -59,6 +59,7 @@ test("retained tasks share PID/session/context, runs stay immutable and input st
     assert.match(next.runs[0].result!.text, /\/fixture-command recall marker/);
     const after = f.manager.status(first.workerId)[0];
     assert.equal(after.pid, before.pid); assert.equal(after.sessionId, before.sessionId);
+    assert.equal(after.context, 11);
     assert.deepEqual((await f.manager.wait([first.runId])).runs, completed.runs);
     assert.equal(f.manager.takeUsage()?.totalTokens, 22); assert.equal(f.manager.takeUsage(), undefined);
     assert.ok(after.sessionFile); assert.match(await readFile(after.sessionFile!, "utf8"), /MARKER-219/);
