@@ -25,11 +25,11 @@
 - **One-shot vs prompt ping** — Prompt ping does not consume one-shot; one-shot disarms when a run settles with a recorded `completed` or `error` outcome, subject to the accepted pre-settlement cancellation limitation
 
 ## Progress
-Phase 1 of 2 · 9/13 tasks · implementation and automated proof complete; live phone verification deferred to the final Demo with user approval (not yet run).
+Phase 2 of 2 · 9/13 tasks · Phase 1 merged via PR #20 after two review rounds and green CI; live phone verification deferred to the final Demo with user approval (not yet run).
 
 Phase 1 verification: `npm test -w packages/notify` passes (5 tests); `npm run check` passes all 7 workspaces; `env -u PI_SUBAGENT_TOKEN -u PI_SUBAGENT_TOOLS npm test` passes all 147 tests. Plain `npm test` initially exceeded a 120-second timeout, then failed 5 subagent integration tests because this retained worker's inherited `PI_SUBAGENT_TOKEN` disables the subagent extension; clearing worker-only variables fixes the test environment.
 
-Round 1 review: finding 1, “Abort during pre-settlement still sends and consumes one-shot” (Medium severity / Medium likelihood), consciously accepted by the user as a narrow Pi lifecycle limitation. No code workaround; locked decisions amended above. Awaiting fresh round 2 review.
+Round 1 review: finding 1, “Abort during pre-settlement still sends and consumes one-shot” (Medium severity / Medium likelihood), consciously accepted by the user as a narrow Pi lifecycle limitation. No code workaround; locked decisions amended above. Round 2 found no new actionable issues. All automated checks passed again on the final phase commit before merge.
 
 Unrelated dependency note: `npm audit --json` reports one existing high-severity `brace-expansion` dependency vulnerability under Pi; dependency versions are unchanged. The user's real-bot `pi -e ./packages/notify/src/index.ts` → `/notify test` phone check and final Demo have not run.
 
