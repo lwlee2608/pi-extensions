@@ -1,7 +1,8 @@
 import { readFile } from "node:fs/promises";
 
 export interface TelegramConnector { type: "telegram"; botToken: string; chatId: string }
-export interface Config { onPrompt: boolean; connectors: TelegramConnector[] }
+export interface CommandConnector { type: "command"; run: string }
+export interface Config { onPrompt: boolean; connectors: (TelegramConnector | CommandConnector)[] }
 
 function object(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -22,7 +23,9 @@ export function parseConfig(value: unknown, env: NodeJS.ProcessEnv = process.env
   return {
     onPrompt: value.onPrompt ?? false,
     connectors: value.connectors.map(connector => {
-      if (!object(connector) || connector.type !== "telegram") throw new Error("Notify supports telegram connectors only.");
+      if (!object(connector)) throw new Error("Notify config needs connector objects.");
+      if (connector.type === "command") return { type: "command", run: resolve(connector.run, "run") };
+      if (connector.type !== "telegram") throw new Error("Notify supports telegram and command connectors only.");
       const botToken = resolve(connector.botToken, "botToken");
       const chatId = resolve(connector.chatId, "chatId");
       if (!/^\d+:[A-Za-z0-9_-]+$/.test(botToken)) throw new Error("Notify config has an invalid botToken.");
@@ -35,7 +38,7 @@ export function parseConfig(value: unknown, env: NodeJS.ProcessEnv = process.env
 export async function loadConfig(path: string): Promise<Config> {
   let raw: string;
   try { raw = await readFile(path, "utf8"); }
-  catch { throw new Error("Cannot read pi-notify/config.json; configure a Telegram connector first."); }
+  catch { throw new Error("Cannot read pi-notify/config.json; configure a telegram or command connector first."); }
   let value: unknown;
   try { value = JSON.parse(raw); }
   catch { throw new Error("Notify config is not valid JSON."); }

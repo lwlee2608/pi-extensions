@@ -6,6 +6,7 @@
 | --- | --- | --- |
 | [`@lwlee2608/pi-model-plus`](packages/model-plus) | `/model-plus` | Bookmark favorite models and switch between them. |
 | [`@lwlee2608/pi-session-board`](packages/session-board) | `/sessions` | Observe independent Pi terminal sessions. |
+| [`@lwlee2608/pi-notify`](packages/notify) | `/notify`, `notify_me` tool | Opt-in phone pings on completion or waiting for input, via Telegram or a shell command. |
 | [`@lwlee2608/pi-footer`](packages/footer) | Automatic | Context, cost, cache usage, and run timer in a compact footer. |
 | [`@lwlee2608/pi-ask-user`](packages/ask-user) | `ask_user_question` tool | Lean inline questionnaires with previews, notes, and review. |
 | [`@lwlee2608/pi-subagent`](packages/subagent) | `subagent` tool, `/subagents` | Persistent workers, parallel tasks, child questions, and explicit recovery (local package; not yet published). |
@@ -18,6 +19,7 @@ Install one package from npm:
 pi install npm:@lwlee2608/pi-model-plus
 pi install npm:@lwlee2608/pi-session-board
 pi install npm:@lwlee2608/pi-footer
+pi install npm:@lwlee2608/pi-notify
 pi install npm:@lwlee2608/pi-ask-user
 ```
 

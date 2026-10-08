@@ -25,7 +25,9 @@
 - **One-shot vs prompt ping** — Prompt ping does not consume one-shot; one-shot disarms when a run settles with a recorded `completed` or `error` outcome, subject to the accepted pre-settlement cancellation limitation
 
 ## Progress
-Phase 2 of 2 · 9/13 tasks · Phase 1 merged via PR #20 after two review rounds and green CI; live phone verification deferred to the final Demo with user approval (not yet run).
+Phase 2 of 2 · 13/13 tasks · Phase 2 implemented; pending PR review and merge. Phase 1 merged via PR #20 after two review rounds and green CI; live phone verification deferred to the final Demo with user approval (not yet run).
+
+Phase 2 verification: `npm test -w packages/notify` passes (6 tests), including disposable command/env fixtures, literal shell metacharacters, nonzero exit, cancellation/timeout cleanup, tool arming/config errors/non-TUI exclusion, and active-run prompt privacy/one-shot settlement. `npm run check` passes all 7 workspaces; `env -u PI_SUBAGENT_TOKEN -u PI_SUBAGENT_TOOLS npm test` passes all 148 tests. `git diff --check` passes. Initial type checking found missing local dependencies (`tsc: not found`); `npm ci --ignore-scripts` installed them and checks then passed. No credentials or external services used. The manual agent/phone proof and final Demo remain deferred to the user; not run.
 
 Phase 1 verification: `npm test -w packages/notify` passes (5 tests); `npm run check` passes all 7 workspaces; `env -u PI_SUBAGENT_TOKEN -u PI_SUBAGENT_TOOLS npm test` passes all 147 tests. Plain `npm test` initially exceeded a 120-second timeout, then failed 5 subagent integration tests because this retained worker's inherited `PI_SUBAGENT_TOKEN` disables the subagent extension; clearing worker-only variables fixes the test environment.
 
@@ -48,10 +50,10 @@ User can `/notify`, walk away, and get a Telegram message when the run completes
 
 ### Phase 2 — Ask the agent to notify you, reach any service, and get pinged when it waits on you
 User can ask the agent "notify me when you finish", route pings to Slack/ntfy/apprise via a shell command, and gets a ping when ask-user blocks.
-- [ ] Register `notify_me` tool that arms one-shot exactly like `/notify`; remove from active tools outside TUI (packages/notify/src/index.ts)
-- [ ] Add `command` connector passing `PI_NOTIFY_TEXT` in env, with a timeout (packages/notify/src/connectors.ts)
-- [ ] Ping on `ui_prompt_start` when armed and `onPrompt` is set, without consuming one-shot (packages/notify/src/index.ts)
-- [ ] Write package README, document the accepted pre-settlement cancellation limitation, and add row/install line to root README (packages/notify/README.md, README.md)
+- [x] Register `notify_me` tool that arms one-shot exactly like `/notify`; remove from active tools outside TUI (packages/notify/src/index.ts)
+- [x] Add `command` connector passing `PI_NOTIFY_TEXT` in env, with a timeout (packages/notify/src/connectors.ts)
+- [x] Ping on `ui_prompt_start` when armed and `onPrompt` is set, without consuming one-shot (packages/notify/src/index.ts)
+- [x] Write package README, document the accepted pre-settlement cancellation limitation, and add row/install line to root README (packages/notify/README.md, README.md)
 **Verify:** `npm test -w packages/notify` with new tests: command connector writes `$PI_NOTIFY_TEXT` to a temp file; prompt event pings when armed + `onPrompt` during a run, does not ping outside a run, never includes the title, and one-shot still pings on settle; `notify_me` tool call arms one-shot, returns error on bad config, and is not active when mode is not `tui`. Manual: tell agent "notify me when done" → 🔔 appears, ping arrives on settle
 
 ## Demo

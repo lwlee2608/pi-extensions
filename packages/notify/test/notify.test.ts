@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { loadConfig, parseConfig } from "../src/config.ts";
-import { sendTelegram, SEND_TIMEOUT_MS } from "../src/connectors.ts";
+import { sendCommand, sendTelegram, SEND_TIMEOUT_MS } from "../src/connectors.ts";
 import { formatMessage } from "../src/message.ts";
 import { NotifyState } from "../src/state.ts";
 
@@ -13,11 +13,15 @@ const config = { connectors: [connector] };
 
 test("config validates shape, resolves env and never echoes secrets", async () => {
   assert.deepEqual(parseConfig(config), { ...config, onPrompt: false });
+  assert.deepEqual(parseConfig({ connectors: [{ type: "command", run: "$RUN" }] }, { RUN: "echo test" }), {
+    onPrompt: false, connectors: [{ type: "command", run: "echo test" }],
+  });
+  assert.throws(() => parseConfig({ connectors: [{ type: "command", run: "$MISSING" }] }, {}));
   assert.deepEqual(parseConfig({ onPrompt: true, connectors: [{ ...connector, botToken: "$TOKEN", chatId: "$CHAT" }] }, { TOKEN: connector.botToken, CHAT: "@channel" }), {
     onPrompt: true, connectors: [{ ...connector, chatId: "@channel" }],
   });
   for (const value of [null, [], {}, { connectors: [] }, { ...config, onPrompt: "true" },
-    { connectors: [{ type: "command", run: "echo x" }] }, { connectors: [{ ...connector, chatId: 123 }] },
+    { connectors: [{ type: "command", run: " " }] }, { connectors: [{ ...connector, chatId: 123 }] },
     { connectors: [{ ...connector, botToken: "$MISSING" }] }, { connectors: [{ ...connector, botToken: "secret/invalid" }] },
     { connectors: [{ ...connector, chatId: " " }] }]) {
     assert.throws(() => parseConfig(value, {}), error => error instanceof Error && !error.message.includes("secret/invalid"));
@@ -80,6 +84,26 @@ test("Telegram sends JSON without parse mode, checks API failures, redacts error
   await assert.rejects(pending, /Telegram send failed/);
 });
 
+test("command passes text literally in env, redacts failures and cleans up on abort/timeout", async () => {
+  const root = await mkdtemp(join(tmpdir(), "notify-command-"));
+  try {
+    const text = 'hello "quotes"\n$(touch injected); `touch injected`';
+    await sendCommand({ type: "command", run: 'printf "%s" "$PI_NOTIFY_TEXT" > message' }, text, undefined, root);
+    assert.equal(await readFile(join(root, "message"), "utf8"), text);
+    await assert.rejects(readFile(join(root, "injected")), /ENOENT/);
+    await assert.rejects(sendCommand({ type: "command", run: "echo private >&2; exit 9" }, text), /Command send failed/);
+    const controller = new AbortController();
+    const pending = sendCommand({ type: "command", run: "sleep 1; touch leaked" }, text, controller.signal, root);
+    controller.abort(); await assert.rejects(pending, /Command send failed/);
+    const start = Date.now();
+    await assert.rejects(sendCommand({ type: "command", run: "sleep 11; touch leaked" }, text, undefined, root), /timeout/);
+    assert.ok(Date.now() - start < SEND_TIMEOUT_MS + 2000);
+    await new Promise(resolve => setTimeout(resolve, 1200));
+    await assert.rejects(readFile(join(root, "leaked")), /ENOENT/);
+    await assert.rejects(sendCommand({ type: "command", run: "touch leaked" }, text, controller.signal, root), /Command send failed/);
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("TUI lifecycle sends once at final settle, never on abort/unarmed, reloads config and resets", async t => {
   const root = await mkdtemp(join(tmpdir(), "notify-lifecycle-"));
   const previous = process.env.PI_CODING_AGENT_DIR;
@@ -92,7 +116,13 @@ test("TUI lifecycle sends once at final settle, never on abort/unarmed, reloads 
   const { default: extension } = await import("../src/index.ts");
   const handlers = new Map<string, (event: any, ctx: any) => unknown>();
   let command!: (args: string, ctx: any) => Promise<void>;
-  extension({ on: (name: string, fn: any) => handlers.set(name, fn), registerCommand: (_name: string, def: any) => { command = def.handler; } } as any);
+  let tool: any;
+  let activeTools = ["read", "notify_me"];
+  extension({ on: (name: string, fn: any) => handlers.set(name, fn),
+    registerCommand: (_name: string, def: any) => { command = def.handler; },
+    registerTool: (def: any) => { tool = def; },
+    getActiveTools: () => activeTools, setActiveTools: (names: string[]) => { activeTools = names; },
+  } as any);
   let status: string | undefined;
   const warnings: string[] = [];
   const sent: { chat_id: string; text: string }[] = [];
@@ -110,6 +140,8 @@ test("TUI lifecycle sends once at final settle, never on abort/unarmed, reloads 
   try {
     emit("session_start"); settle(); await flush(); assert.equal(sent.length, 0);
     await command("", ctx); assert.equal(status, undefined); assert.match(warnings.pop()!, /Cannot read/);
+    await assert.rejects(tool.execute("id", {}, undefined, undefined, ctx), /Cannot read/);
+    assert.equal(status, undefined);
     await mkdir(join(root, "pi-notify"));
     const path = join(root, "pi-notify", "config.json");
     await writeFile(path, JSON.stringify(config));
@@ -131,10 +163,32 @@ test("TUI lifecycle sends once at final settle, never on abort/unarmed, reloads 
     await command("test", ctx); await flush(); assert.equal(sent.length, 3); assert.match(sent[2].text, /test$/); assert.equal(status, undefined);
     await command("on", ctx); emit("session_start"); assert.equal(status, undefined); settle(); await flush(); assert.equal(sent.length, 3);
     for (const mode of ["rpc", "json", "print"]) {
-      ctx.mode = mode; emit("session_start"); await command("test", ctx); await command("on", ctx); emit("agent_start"); settle();
+      activeTools = ["read", "notify_me"];
+      ctx.mode = mode; emit("session_start");
+      assert.deepEqual(activeTools, ["read"]);
+      activeTools.push("notify_me"); emit("before_agent_start"); assert.deepEqual(activeTools, ["read"]);
+      await assert.rejects(tool.execute("id", {}, undefined, undefined, ctx), /only available in TUI/);
+      await command("test", ctx); await command("on", ctx); emit("agent_start"); emit("ui_prompt_start"); settle();
     }
     await flush(); assert.equal(sent.length, 3);
     ctx.mode = "tui";
+    await writeFile(path, JSON.stringify({ ...config, onPrompt: true }));
+    const result = await tool.execute("id", {}, undefined, undefined, ctx);
+    assert.match(result.content[0].text, /armed/); assert.match(tool.description, /explicitly asks/);
+    assert.equal(status, "🔔 once");
+    emit("ui_prompt_start"); await flush(); assert.equal(sent.length, 3);
+    emit("agent_start");
+    handlers.get("ui_prompt_start")!({ title: "PRIVATE PROMPT", type: "select" }, ctx);
+    await flush(); assert.equal(sent.length, 4);
+    assert.equal(sent[3].text, "🔔 session · /project · waiting for input");
+    assert.equal(status, "🔔 once");
+    settle(); await flush(); assert.equal(sent.length, 5); assert.match(sent[4].text, /done$/);
+    assert.equal(status, undefined);
+    emit("agent_start"); emit("ui_prompt_start"); await flush(); assert.equal(sent.length, 5);
+    await command("", ctx);
+    await writeFile(path, JSON.stringify(config));
+    emit("ui_prompt_start"); await flush(); assert.equal(sent.length, 5);
+    emit("session_start");
     await writeFile(path, JSON.stringify({ connectors: [connector, connector] }));
     t.mock.method(globalThis, "fetch", async () => { throw new Error("sensitive"); });
     await command("test", ctx); await flush();
