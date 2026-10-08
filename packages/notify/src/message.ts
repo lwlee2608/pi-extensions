@@ -2,7 +2,7 @@ import { homedir } from "node:os";
 import { sep } from "node:path";
 import type { Outcome } from "./state.ts";
 
-export function formatMessage(name: string | undefined, cwd: string, outcome: Outcome | "test", home = homedir()): string {
+export function formatMessage(name: string | undefined, cwd: string, outcome: Outcome | "test" | "waiting for input", home = homedir()): string {
   const directory = cwd === home ? "~" : cwd.startsWith(home + sep) ? `~${cwd.slice(home.length)}` : cwd;
   const label = outcome === "completed" ? "done" : outcome;
   const icon = outcome === "completed" ? "✅" : outcome === "error" ? "❌" : "🔔";
