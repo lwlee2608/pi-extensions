@@ -25,19 +25,23 @@
 - **One-shot vs prompt ping** — Prompt ping does not consume one-shot; one-shot disarms only when a run settles with `completed` or `error`
 
 ## Progress
-Phase 1 of 2 · 0/13 tasks
+Phase 1 of 2 · 9/13 tasks · implementation and automated proof complete; live phone verification pending.
+
+Phase 1 verification: `npm test -w packages/notify` passes (5 tests); `npm run check` passes all 7 workspaces; `env -u PI_SUBAGENT_TOKEN -u PI_SUBAGENT_TOOLS npm test` passes all 147 tests. Plain `npm test` initially exceeded a 120-second timeout, then failed 5 subagent integration tests because this retained worker's inherited `PI_SUBAGENT_TOKEN` disables the subagent extension; clearing worker-only variables fixes the test environment.
+
+Unrelated dependency note: `npm audit --json` reports one existing high-severity `brace-expansion` dependency vulnerability under Pi; dependency versions are unchanged. The user's real-bot `pi -e ./packages/notify/src/index.ts` → `/notify test` phone check and final Demo have not run.
 
 ### Phase 1 — Get a Telegram ping when an armed run finishes
 User can `/notify`, walk away, and get a Telegram message when the run completes or errors.
-- [ ] Scaffold `@lwlee2608/pi-notify` package and register it in root `package.json` (packages/notify)
-- [ ] Load and validate config with `$VAR` env resolution (packages/notify/src/config.ts)
-- [ ] Send via Telegram connector with a timeout (packages/notify/src/connectors.ts)
-- [ ] Track armed state: once / on / off, abort keeps one-shot armed, reset on session start (packages/notify/src/state.ts)
-- [ ] Format message from session name, cwd, outcome (packages/notify/src/message.ts)
-- [ ] Register `/notify` with `on`, `off`, `test`; refuse to arm on bad config; inert outside TUI (packages/notify/src/index.ts)
-- [ ] Track run outcome (clear on `agent_start`, record on `agent_before_settle`) and ping on `agent_settled` when armed; warn per failed connector (packages/notify/src/index.ts)
-- [ ] Show 🔔 status while armed (packages/notify/src/index.ts)
-- [ ] Test config, state, message, settle lifecycle, Telegram request with stubbed fetch (packages/notify/test)
+- [x] Scaffold `@lwlee2608/pi-notify` package and register it in root `package.json` (packages/notify)
+- [x] Load and validate config with `$VAR` env resolution (packages/notify/src/config.ts)
+- [x] Send via Telegram connector with a timeout (packages/notify/src/connectors.ts)
+- [x] Track armed state: once / on / off, abort keeps one-shot armed, reset on session start (packages/notify/src/state.ts)
+- [x] Format message from session name, cwd, outcome (packages/notify/src/message.ts)
+- [x] Register `/notify` with `on`, `off`, `test`; refuse to arm on bad config; inert outside TUI (packages/notify/src/index.ts)
+- [x] Track run outcome (clear on `agent_start`, record on `agent_before_settle`) and ping on `agent_settled` when armed; warn per failed connector (packages/notify/src/index.ts)
+- [x] Show 🔔 status while armed (packages/notify/src/index.ts)
+- [x] Test config, state, message, settle lifecycle, Telegram request with stubbed fetch (packages/notify/test)
 **Verify:** `npm test -w packages/notify` passes (state incl. session reset, config, message, telegram tests; settle lifecycle: run continued after `agent_before_settle` pings once at `agent_settled`, aborted run pings nothing and keeps one-shot armed); user step: `pi -e ./packages/notify/src/index.ts` with a real bot config → `/notify test` delivers to phone
 
 ### Phase 2 — Ask the agent to notify you, reach any service, and get pinged when it waits on you
