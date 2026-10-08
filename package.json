@@ -14,7 +14,8 @@
       "./packages/session-board/src/index.ts",
       "./packages/footer/src/index.ts",
       "./packages/ask-user/src/index.ts",
-      "./packages/subagent/src/index.ts"
+      "./packages/subagent/src/index.ts",
+      "./packages/notify/src/index.ts"
     ]
   },
   "engines": {
