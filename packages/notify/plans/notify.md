@@ -25,15 +25,17 @@
 - **One-shot vs prompt ping** — Prompt ping does not consume one-shot; one-shot disarms when a run settles with a recorded `completed` or `error` outcome, subject to the accepted pre-settlement cancellation limitation
 
 ## Progress
-Phase 2 of 2 · 13/13 tasks · Both phases merged into `integrate/notify`: PR #20 and PR #22, each after two review rounds and green CI. Phase 2 had no actionable findings or review fixes. Awaiting the user's final phone Demo; final PR to `main` follows its result. Live phone verification has not yet run.
+Phase 2 of 2 · 13/13 tasks · Both phases merged into `integrate/notify`: PR #20 and PR #22, each after two review rounds and green CI. Phase 2 had no actionable findings or review fixes. Final Demo passed by user confirmation: Telegram test delivery shown in a screenshot; user confirmed armed completion, unarmed silence, and agent-requested notification checks work. Ready for final PR to `main`; user owns the merge.
 
-Phase 2 verification: `npm test -w packages/notify` passes (6 tests), including disposable command/env fixtures, literal shell metacharacters, nonzero exit, cancellation/timeout cleanup, tool arming/config errors/non-TUI exclusion, and active-run prompt privacy/one-shot settlement. `npm run check` passes all 7 workspaces; `env -u PI_SUBAGENT_TOKEN -u PI_SUBAGENT_TOOLS npm test` passes all 148 tests. `git diff --check` passes. Initial type checking found missing local dependencies (`tsc: not found`); `npm ci --ignore-scripts` installed them and checks then passed. No credentials or external services used. The manual agent/phone proof and final Demo remain deferred to the user; not run.
+Integration verification: merged updated `main` and reran `npm run check` (all 7 workspaces), `npm test` (149 tests), and `git diff --check`; all passed.
+
+Phase 2 verification: `npm test -w packages/notify` passes (6 tests), including disposable command/env fixtures, literal shell metacharacters, nonzero exit, cancellation/timeout cleanup, tool arming/config errors/non-TUI exclusion, and active-run prompt privacy/one-shot settlement. `npm run check` passes all 7 workspaces; `env -u PI_SUBAGENT_TOKEN -u PI_SUBAGENT_TOOLS npm test` passes all 148 tests. `git diff --check` passes. Initial type checking found missing local dependencies (`tsc: not found`); `npm ci --ignore-scripts` installed them and checks then passed. No credentials or external services used. The manual agent/phone proof was deferred to the final Demo and is now user-confirmed.
 
 Phase 1 verification: `npm test -w packages/notify` passes (5 tests); `npm run check` passes all 7 workspaces; `env -u PI_SUBAGENT_TOKEN -u PI_SUBAGENT_TOOLS npm test` passes all 147 tests. Plain `npm test` initially exceeded a 120-second timeout, then failed 5 subagent integration tests because this retained worker's inherited `PI_SUBAGENT_TOKEN` disables the subagent extension; clearing worker-only variables fixes the test environment.
 
 Round 1 review: finding 1, “Abort during pre-settlement still sends and consumes one-shot” (Medium severity / Medium likelihood), consciously accepted by the user as a narrow Pi lifecycle limitation. No code workaround; locked decisions amended above. Round 2 found no new actionable issues. All automated checks passed again on the final phase commit before merge.
 
-Unrelated dependency note: `npm audit --json` reports one existing high-severity `brace-expansion` dependency vulnerability under Pi; dependency versions are unchanged. The user's real-bot `pi -e ./packages/notify/src/index.ts` → `/notify test` phone check and final Demo have not run.
+Unrelated dependency note: `npm audit --json` reports one existing high-severity `brace-expansion` dependency vulnerability under Pi; dependency versions are unchanged. The user's real-bot `pi -e ./packages/notify/src/index.ts` → `/notify test` delivery and final Demo are now user-confirmed.
 
 ### Phase 1 — Get a Telegram ping when an armed run finishes
 User can `/notify`, walk away, and get a Telegram message when the run completes or errors.
@@ -46,7 +48,7 @@ User can `/notify`, walk away, and get a Telegram message when the run completes
 - [x] Track run outcome (clear on `agent_start`, record on `agent_before_settle`) and ping on `agent_settled` when armed; warn per failed connector (packages/notify/src/index.ts)
 - [x] Show 🔔 status while armed (packages/notify/src/index.ts)
 - [x] Test config, state, message, settle lifecycle, Telegram request with stubbed fetch (packages/notify/test)
-**Verify:** `npm test -w packages/notify` passes (state incl. session reset, config, message, telegram tests; settle lifecycle: run continued after `agent_before_settle` pings once at `agent_settled`, normal aborted run pings nothing and keeps one-shot armed (accepted pre-settlement exception above)); user step (deferred to the final Demo with user approval; not yet run): `pi -e ./packages/notify/src/index.ts` with a real bot config → `/notify test` delivers to phone
+**Verify:** `npm test -w packages/notify` passes (state incl. session reset, config, message, telegram tests; settle lifecycle: run continued after `agent_before_settle` pings once at `agent_settled`, normal aborted run pings nothing and keeps one-shot armed (accepted pre-settlement exception above)); user step (deferred to the final Demo with user approval; now confirmed): `pi -e ./packages/notify/src/index.ts` with a real bot config → `/notify test` delivers to phone
 
 ### Phase 2 — Ask the agent to notify you, reach any service, and get pinged when it waits on you
 User can ask the agent "notify me when you finish", route pings to Slack/ntfy/apprise via a shell command, and gets a ping when ask-user blocks.
@@ -57,6 +59,8 @@ User can ask the agent "notify me when you finish", route pings to Slack/ntfy/ap
 **Verify:** `npm test -w packages/notify` with new tests: command connector writes `$PI_NOTIFY_TEXT` to a temp file; prompt event pings when armed + `onPrompt` during a run, does not ping outside a run, never includes the title, and one-shot still pings on settle; `notify_me` tool call arms one-shot, returns error on bad config, and is not active when mode is not `tui`. Manual: tell agent "notify me when done" → 🔔 appears, ping arrives on settle
 
 ## Demo
+Result: user confirmed the checks work after showing the received Telegram test message. Live results are user-reported, not independently observed by the agent beyond that screenshot.
+
 User runs, with their phone:
 1. Create Telegram bot, write `~/.pi/agent/pi-notify/config.json` with a `telegram` connector
 2. `/notify test` → message arrives
