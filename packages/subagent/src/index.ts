@@ -70,7 +70,7 @@ export default function (pi: ExtensionAPI): void {
           const skills = pi.getCommands().filter(command => command.source === "skill").flatMap(command => command.sourceInfo?.path ? [command.sourceInfo.path] : []);
           const launch = await resolveLaunch(args, { cwd: ctx.cwd, agentDir: getAgentDir(), model: ctx.model,
             effort: pi.getThinkingLevel() as Effort, models: ctx.modelRegistry.getAvailable(), skills,
-            registeredProviders: ctx.modelRegistry.getRegisteredProviderIds() }, config);
+            registeredProviders: ctx.modelRegistry.getRegisteredProviderIds(), tools: pi.getAllTools() }, config);
           signal?.throwIfAborted();
           result = active.start(launch, args.task, args.lifetime, args.label);
           break;

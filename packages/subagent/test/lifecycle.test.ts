@@ -13,7 +13,7 @@ for (const source of ["CLI", "npm", "settings"] as const) test(`parent inherits 
     env: { PI_CODING_AGENT_DIR: f.launch.agentDir, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1" },
     args: [...(source === "CLI" ? ["--no-extensions", "--extension", f.launch.extensions[0]] : source === "npm" ? ["--no-extensions", "--extension", "npm:subagent-fixture"] : []),
       "--no-approve", "--no-session", "--provider", "subagent-offline", "--model", "fixture", "--thinking", "off",
-      "--extension", fileURLToPath(new URL("../src/index.ts", import.meta.url)), "--tools", "subagent"] });
+      "--extension", fileURLToPath(new URL("../src/index.ts", import.meta.url)), "--tools", source === "settings" ? "subagent,codemode" : "subagent"] });
   try {
     await rm(join(f.launch.agentDir, "pi-subagent/config.json"));
     if (source === "npm") {
@@ -39,7 +39,7 @@ for (const source of ["CLI", "npm", "settings"] as const) test(`parent inherits 
     assert.equal(stop.processAlive, false);
     assert.throws(() => process.kill(stop.pid, 0), /ESRCH/);
     const saved = JSON.parse(await readFile(join(f.launch.agentDir, "pi-subagent", (await client.getState()).sessionId, stop.workerId, "worker.json"), "utf8"));
-    assert.deepEqual(saved.launch.extensions, [...f.launch.extensions, ...(source === "settings" ? ["builtin:codemode"] : [])]);
+    assert.deepEqual(saved.launch.extensions, f.launch.extensions);
   } finally { await client.stop(); await f.cleanup(); }
 });
 

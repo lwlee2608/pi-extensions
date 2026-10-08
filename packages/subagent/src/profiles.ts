@@ -2,9 +2,9 @@ import { readFile, readdir, realpath, stat } from "node:fs/promises";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getSupportedThinkingLevels, type Api, type Model } from "@earendil-works/pi-ai";
-import { parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import { parseFrontmatter, type ToolInfo } from "@earendil-works/pi-coding-agent";
 import type { Effort, Start } from "./schema.ts";
-import { normalizeExtensions } from "./extensions.ts";
+import { isBuiltinExtension, normalizeExtensions } from "./extensions.ts";
 
 export interface Config { extensions: Record<string, string>; trustedProjectRoots: string[]; maxActive: number; maxWorkers: number }
 export interface Profile { name: string; path: string; prompt: string; trustedProjectRoot?: string; tools: string[]; model?: string; effort?: Effort; extensions?: string[] }
@@ -63,7 +63,7 @@ async function findProfile(dir: string, name: string): Promise<Profile | undefin
   }
   return found;
 }
-export async function resolveLaunch(input: Start, parent: { cwd: string; agentDir: string; model?: Model<Api>; effort: Effort; models: Model<Api>[]; skills?: string[]; registeredProviders?: readonly string[] }, config: Config): Promise<Launch> {
+export async function resolveLaunch(input: Start, parent: { cwd: string; agentDir: string; model?: Model<Api>; effort: Effort; models: Model<Api>[]; skills?: string[]; registeredProviders?: readonly string[]; tools?: ToolInfo[] }, config: Config): Promise<Launch> {
   const cwd = await realpath(resolve(parent.cwd, input.cwd ?? "."));
   if (!(await stat(cwd)).isDirectory()) throw new Error(`Not a working directory: ${cwd}`);
   let profile: Profile | undefined;
@@ -96,7 +96,12 @@ export async function resolveLaunch(input: Start, parent: { cwd: string; agentDi
   const model = candidates[0];
   const effort = (input.effort ?? (input.model ? suffix : undefined) ?? profile.effort ?? suffix ?? parent.effort) as Effort;
   if (!getSupportedThinkingLevels(model).includes(effort)) throw new Error(`${model.provider}/${model.id} does not support effort ${effort}`);
-  const extensions = (profile.extensions ?? Object.keys(config.extensions)).map(name => {
+  const allowed = profile.tools;
+  const unusedBuiltin = (path: string) => {
+    const owned = parent.tools?.filter(tool => tool.sourceInfo?.path === path) ?? [];
+    return isBuiltinExtension(path) && owned.length > 0 && !owned.some(tool => allowed.includes(tool.name));
+  };
+  const extensions = (profile.extensions ?? Object.keys(config.extensions).filter(name => !unusedBuiltin(config.extensions[name]))).map(name => {
     if (!Object.hasOwn(config.extensions, name)) throw new Error(`Profile requests unapproved child extension: ${name}`);
     return config.extensions[name];
   });
