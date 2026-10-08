@@ -1,5 +1,6 @@
+import { existsSync } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
-import { isAbsolute, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { DefaultPackageManager, parseArgs, SettingsManager, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
@@ -19,6 +20,11 @@ export async function normalizeExtensions(paths: string[]): Promise<string[]> {
     result.push(path);
   }
   return [...new Set(result)];
+}
+
+async function entryFile(path: string): Promise<string> {
+  if (isBuiltinExtension(path) || !(await stat(path)).isDirectory()) return path;
+  return ["index.ts", "index.js"].map(name => join(path, name)).find(file => existsSync(file)) ?? path;
 }
 
 // Pi exposes tool/command provenance, but not the complete loaded extension set.
@@ -43,5 +49,5 @@ export async function parentExtensions(pi: ExtensionAPI, ctx: ExtensionContext, 
     explicit.push(...loaded);
   }
   const configured = args.noExtensions ? [] : (await packages.resolve(async () => "error")).extensions.filter(entry => entry.enabled).map(entry => entry.path);
-  return normalizeExtensions([...explicit, ...configured]);
+  return normalizeExtensions(await Promise.all([...explicit, ...configured].map(entryFile)));
 }
