@@ -32,13 +32,15 @@ test("multi-worker panel is bounded, prioritizes questions and shows overflow", 
   for (const width of [1, 5, 40]) for (const line of panelLines(workers, width)) assert.ok(visibleWidth(line) <= width);
 });
 
-test("finished worker shows outcome icon, compact metrics and first plain output line", () => {
-  const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 648184, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
-  const done: Snapshot = { ...worker, state: "closed", activity: "completed", output: "**Reviewed:** PR #133 (`e13ee6d`)\nmore", result: { outcome: "completed", text: "", endedAt: 123_000, usage } };
-  assert.deepEqual(panelLines([done], 120), ["✓ 界面 😀 · 2m03s · 648k tok", "  └ Reviewed: PR #133 (e13ee6d)"]);
-  assert.match(panelLines([{ ...done, result: { ...done.result!, outcome: "failed" }, error: "boom" }], 120).join("\n"), /^✗ .*\n  └ boom$/);
+test("finished worker shows outcome icon, context, cost and first plain output line, then hides", () => {
+  const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 648184, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.4213 } };
+  const done: Snapshot = { ...worker, state: "closed", activity: "completed", output: "**Reviewed:** PR #133 (`e13ee6d`)\nmore", context: 82_400, result: { outcome: "completed", text: "", endedAt: 123_000, usage } };
+  assert.deepEqual(panelLines([done], 120, 124_000), ["✓ 界面 😀 · 2m03s · ctx 82k · $0.42", "  └ Reviewed: PR #133 (e13ee6d)"]);
+  assert.match(panelLines([{ ...done, result: { ...done.result!, outcome: "failed" }, error: "boom" }], 120, 124_000).join("\n"), /^✗ .*\n  └ boom$/);
+  assert.deepEqual(panelLines([done], 120, 128_000), []);
+  assert.equal(panelLines([{ ...done, recoverable: true }], 120, 999_000).length, 2);
   const colored = { fg: (color: string, text: string) => `\x1b[3${color.length % 8}m${text}\x1b[0m` };
-  for (const width of [1, 10, 30]) for (const line of panelLines([done], width, 0, colored)) assert.ok(visibleWidth(line) <= width);
+  for (const width of [1, 10, 30]) for (const line of panelLines([done], width, 124_000, colored)) assert.ok(visibleWidth(line) <= width);
 });
 
 test("invalid action and launch configuration fail before dispatch", async () => {

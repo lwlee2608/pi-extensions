@@ -7,6 +7,7 @@ export function display(text: string): string {
   return stripVTControlCharacters(text.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "")).replace(/[\x00-\x1f\x7f-\x9f\u2028\u2029\u202a-\u202e\u2066-\u2069]/g, " ");
 }
 const spinner = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
+const linger = 5000;
 type Paint = Pick<Theme, "fg">;
 const plain: Paint = { fg: (_color, text) => text };
 function duration(ms: number): string {
@@ -29,15 +30,15 @@ function icon(worker: Snapshot, now: number): [Parameters<Paint["fg"]>[0], strin
   return outcome === "completed" ? ["success", "✓"] : outcome === "failed" ? ["error", "✗"] : outcome === "interrupted" ? ["warning", "⊘"] : ["dim", "○"];
 }
 export function panelLines(workers: Snapshot[], width: number, now = Date.now(), theme: Paint = plain): string[] {
-  if (width < 1 || !workers.length) return [];
+  if (width < 1) return [];
   const live = workers.filter(w => w.state !== "closed");
   const order = { blocked: 0, working: 1, queued: 2, idle: 3, closed: 4 };
   const ordered = live.sort((a, b) => order[a.state] - order[b.state]);
   if (!ordered.length) ordered.push(...workers.filter(w => w.recoverable));
-  if (!ordered.length) ordered.push(workers.at(-1)!);
+  if (!ordered.length) ordered.push(...workers.filter(w => w.result && now - w.result.endedAt < linger).slice(-1));
   const rows = ordered.slice(0, 4).flatMap(worker => {
-    const total = (worker.result?.usage ?? worker.usage)?.totalTokens;
-    const meta = [duration((worker.result?.endedAt ?? now) - worker.startedAt), ...(total ? [`${tokens(total)} tok`] : [])].join(" · ");
+    const cost = (worker.result?.usage ?? worker.usage)?.cost.total;
+    const meta = [duration((worker.result?.endedAt ?? now) - worker.startedAt), ...(worker.context ? [`ctx ${tokens(worker.context)}`] : []), ...(cost ? [`$${cost.toFixed(2)}`] : [])].join(" · ");
     const [color, symbol] = icon(worker, now);
     const question = worker.questions?.find(q => q.state === "pending");
     const running = ["working", "queued", "blocked"].includes(worker.state);
@@ -63,7 +64,9 @@ export function attachPanel(manager: Manager, ui: ExtensionUIContext): () => voi
     if (!disposed && !scheduled) scheduled = setTimeout(() => { scheduled = undefined; render?.(); }, 80);
   };
   const unsubscribe = manager.onChange(update);
-  const clock = setInterval(() => { if (manager.status().some(w => ["working", "blocked", "queued"].includes(w.state))) update(); }, 100);
+  const clock = setInterval(() => {
+    if (manager.status().some(w => ["working", "blocked", "queued"].includes(w.state) || (w.result && Date.now() - w.result.endedAt < linger + 500))) update();
+  }, 100);
   clock.unref();
   return () => { disposed = true; unsubscribe(); clearInterval(clock); clearTimeout(scheduled); ui.setWidget("pi-subagent", undefined); };
 }
