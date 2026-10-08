@@ -99,7 +99,7 @@ export default function (pi: ExtensionAPI): void {
     if (action === "test") {
       void send(ctx, formatMessage(ctx.sessionManager.getSessionName(), ctx.cwd, "test"));
     } else if (action === "" || action === "on") {
-      state.armed = action === "on" ? "on" : "once";
+      state.armed = action === "on" || (tool && state.armed === "on") ? "on" : "once";
       status(ctx);
     } else {
       ctx.ui.notify("Usage: /notify [on|off|test]", "warning");

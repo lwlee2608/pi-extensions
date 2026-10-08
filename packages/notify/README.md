@@ -57,7 +57,7 @@ Only configure commands you trust: they execute with your permissions and can ac
 | `/notify on` | Notify on every completed or errored run in this session. |
 | `/notify off` | Disarm. |
 | `/notify test` | Send a test immediately without changing arming. |
-| “Notify me when you finish” | The agent can call `notify_me` to arm one-shot. |
+| “Notify me when you finish” | The agent can call `notify_me` to arm one-shot; `/notify on` stays on. |
 
 The agent's tool description restricts `notify_me` to explicit user requests; it must not arm proactively. The tool is removed from active tools outside TUI, and calls outside TUI fail. Arming shows `🔔 once` or `🔔 on` in extension status (including Pi Footer). New, resumed, and forked sessions reset to off; arming is never persisted.
 
