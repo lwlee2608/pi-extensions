@@ -1,0 +1,33 @@
+{
+  "name": "@lwlee2608/pi-notify",
+  "version": "0.1.0",
+  "description": "Phone notifications when an armed Pi run finishes.",
+  "type": "module",
+  "license": "MIT",
+  "author": "lwlee2608",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lwlee2608/pi-extensions.git",
+    "directory": "packages/notify"
+  },
+  "homepage": "https://github.com/lwlee2608/pi-extensions/tree/main/packages/notify#readme",
+  "bugs": "https://github.com/lwlee2608/pi-extensions/issues",
+  "keywords": ["pi-package", "pi-extension", "notifications"],
+  "files": ["src"],
+  "pi": {
+    "extensions": ["./src/index.ts"]
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "node --test test/*.test.ts"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
