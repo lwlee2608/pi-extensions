@@ -130,7 +130,7 @@ A private `owner.json` file exclusively reserves a parent's storage for its curr
 
 Private session directories and per-run result files live under `<agent-dir>/pi-subagent/<parent-session-id>/<worker-id>/`. Results reference the full persisted Pi transcript. Result files are mode `0600`; containing directories are mode `0700`. Keep transcripts private.
 
-Live text is bounded to 8 KiB, returned result text to 4 KiB, stderr to 16 KiB, and individual RPC records to 4 MiB. Oversized/malformed protocol output closes the child rather than allocating without bounds. A parent admits at most 2048 tasks before requiring a new parent session; existing disk output remains intact. Worker metadata freezes the launch contract and hashed non-secret profile/extension prerequisites. Atomic, fsynced metadata updates are limited to 20 MiB per worker; persistence failures close live work and remain visible rather than silently downgrading recovery.
+Live text is bounded to 8 KiB, returned result text to 4 KiB, stderr to 16 KiB, and individual RPC records to 4 MiB. Oversized/malformed protocol output closes the child rather than allocating without bounds. A parent admits at most 2048 tasks before requiring a new parent session; existing disk output remains intact. Worker metadata freezes the launch contract and hashed non-secret profile/extension prerequisites; Pi built-in extensions are recorded by ID, not hashed, because they ship with Pi itself. Atomic, fsynced metadata updates are limited to 20 MiB per worker; persistence failures close live work and remain visible rather than silently downgrading recovery.
 
 ## Live demo
 

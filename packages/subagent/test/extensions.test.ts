@@ -65,7 +65,7 @@ test("normalize deduplicates real paths and excludes self even through a symlink
     assert.deepEqual(await normalizeExtensions([own, link, ...f.launch.extensions, ...f.launch.extensions]), [await realpath(f.launch.extensions[0])]);
     assert.deepEqual(await normalizeExtensions(["builtin:mcp"]), ["builtin:mcp"]);
     const builtins = ["builtin:llama.cpp", "builtin:codemode", "builtin:tool-search", "builtin:mcp"];
-    assert.equal(Object.keys(prerequisites({ ...f.launch, extensions: builtins }).files).length, 5);
+    assert.deepEqual(Object.keys(prerequisites({ ...f.launch, extensions: builtins }).files), [f.launch.profile.path]);
     const withBuiltin = { getAllTools: () => [{ sourceInfo: { path: "builtin:codemode" } }], getCommands: () => [] } as unknown as ExtensionAPI;
     assert.deepEqual(await parentExtensions(withBuiltin, context(f.launch.cwd), f.launch.agentDir, ["--no-extensions", "-e", "builtin:codemode"]), ["builtin:codemode"]);
     await assert.rejects(normalizeExtensions(["builtin:unknown"]), /known builtin/);
