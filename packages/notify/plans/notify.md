@@ -15,19 +15,21 @@
 - **TUI only** — Subagent children inherit parent extensions `research`, so the extension is inert unless `ctx.mode === "tui"`; `notify_me` is removed from active tools outside TUI, same as ask-user's `excludeOutsideTerminal`
 - **Armed indicator** — `ctx.ui.setStatus("notify", ...)`; footer already renders extension statuses `research`
 - **Ping on blocking prompt** — `onPrompt` config flag; uses `ui_prompt_start` (fires for any blocking extension UI prompt, e.g. ask-user) `research`. Only pings while an agent run is active (`agent_start` → `agent_settled`). Text is "waiting for input" — never the prompt `title`. Known gotcha: commands run immediately mid-run and the event has no source, so opening `/sessions`, `/subagents` or `/model-plus` during a run also pings; accepted since the user is at the keyboard
-- **Settle detection** — `agent_before_settle` is not final (other extensions or queued messages can continue the run) and is skipped on abort `research`. So: clear outcome on `agent_start` (fires per continuation too), record it on `agent_before_settle`, send on `agent_settled` only if outcome is `completed` / `error`. Same pattern as session-board
+- **Settle detection** — `agent_before_settle` is not final (other extensions or queued messages can continue the run) and is skipped when cancellation happens before pre-settlement dispatch. Clear outcome on `agent_start` (fires per continuation too), record it on `agent_before_settle`, send on `agent_settled` only if the recorded outcome is `completed` / `error`. Same pattern as session-board. Amended with user approval: Escape during a pending asynchronous pre-settlement handler does not update the recorded outcome, and Pi exposes no final cancellation state at settlement; this narrow limitation is accepted without a code workaround.
 - **Agent-callable `notify_me` tool** — Amended (was: not in v1). Tool arms one-shot, same as `/notify`; user can say "notify me when you finish". Description restricts use to explicit user requests. Invalid config → tool returns error so agent tells user. Hidden outside TUI. Known gotcha: if the agent stops to ask a question, that settle consumes the ping
 - **Message content** — Session name (if set) + cwd + outcome, e.g. `✅ fix-login · ~/src/app · done`. No prompt/reply text
-- **Aborted runs** — No ping; one-shot stays armed for the next run
+- **Aborted runs** — Normal aborts send no ping and keep one-shot armed for the next run. Accepted exception: Escape during a pending asynchronous pre-settlement handler can send the recorded completion/error notification and consume one-shot because Pi exposes no final cancellation state. Phase 2's README must document this limitation.
 - **Send failures / missing config** — `/notify` with no valid config warns and stays off; failed send shows a UI warning per connector
 - **Test command** — `/notify test` sends a test message through all connectors now
 - **Config load timing** — Read on every `/notify` and every send; edits apply without `/reload`
-- **One-shot vs prompt ping** — Prompt ping does not consume one-shot; one-shot disarms only when a run settles with `completed` or `error`
+- **One-shot vs prompt ping** — Prompt ping does not consume one-shot; one-shot disarms when a run settles with a recorded `completed` or `error` outcome, subject to the accepted pre-settlement cancellation limitation
 
 ## Progress
 Phase 1 of 2 · 9/13 tasks · implementation and automated proof complete; live phone verification deferred to the final Demo with user approval (not yet run).
 
 Phase 1 verification: `npm test -w packages/notify` passes (5 tests); `npm run check` passes all 7 workspaces; `env -u PI_SUBAGENT_TOKEN -u PI_SUBAGENT_TOOLS npm test` passes all 147 tests. Plain `npm test` initially exceeded a 120-second timeout, then failed 5 subagent integration tests because this retained worker's inherited `PI_SUBAGENT_TOKEN` disables the subagent extension; clearing worker-only variables fixes the test environment.
+
+Round 1 review: finding 1, “Abort during pre-settlement still sends and consumes one-shot” (Medium severity / Medium likelihood), consciously accepted by the user as a narrow Pi lifecycle limitation. No code workaround; locked decisions amended above. Awaiting fresh round 2 review.
 
 Unrelated dependency note: `npm audit --json` reports one existing high-severity `brace-expansion` dependency vulnerability under Pi; dependency versions are unchanged. The user's real-bot `pi -e ./packages/notify/src/index.ts` → `/notify test` phone check and final Demo have not run.
 
@@ -36,20 +38,20 @@ User can `/notify`, walk away, and get a Telegram message when the run completes
 - [x] Scaffold `@lwlee2608/pi-notify` package and register it in root `package.json` (packages/notify)
 - [x] Load and validate config with `$VAR` env resolution (packages/notify/src/config.ts)
 - [x] Send via Telegram connector with a timeout (packages/notify/src/connectors.ts)
-- [x] Track armed state: once / on / off, abort keeps one-shot armed, reset on session start (packages/notify/src/state.ts)
+- [x] Track armed state: once / on / off, normal abort keeps one-shot armed (accepted pre-settlement exception above), reset on session start (packages/notify/src/state.ts)
 - [x] Format message from session name, cwd, outcome (packages/notify/src/message.ts)
 - [x] Register `/notify` with `on`, `off`, `test`; refuse to arm on bad config; inert outside TUI (packages/notify/src/index.ts)
 - [x] Track run outcome (clear on `agent_start`, record on `agent_before_settle`) and ping on `agent_settled` when armed; warn per failed connector (packages/notify/src/index.ts)
 - [x] Show 🔔 status while armed (packages/notify/src/index.ts)
 - [x] Test config, state, message, settle lifecycle, Telegram request with stubbed fetch (packages/notify/test)
-**Verify:** `npm test -w packages/notify` passes (state incl. session reset, config, message, telegram tests; settle lifecycle: run continued after `agent_before_settle` pings once at `agent_settled`, aborted run pings nothing and keeps one-shot armed); user step (deferred to the final Demo with user approval; not yet run): `pi -e ./packages/notify/src/index.ts` with a real bot config → `/notify test` delivers to phone
+**Verify:** `npm test -w packages/notify` passes (state incl. session reset, config, message, telegram tests; settle lifecycle: run continued after `agent_before_settle` pings once at `agent_settled`, normal aborted run pings nothing and keeps one-shot armed (accepted pre-settlement exception above)); user step (deferred to the final Demo with user approval; not yet run): `pi -e ./packages/notify/src/index.ts` with a real bot config → `/notify test` delivers to phone
 
 ### Phase 2 — Ask the agent to notify you, reach any service, and get pinged when it waits on you
 User can ask the agent "notify me when you finish", route pings to Slack/ntfy/apprise via a shell command, and gets a ping when ask-user blocks.
 - [ ] Register `notify_me` tool that arms one-shot exactly like `/notify`; remove from active tools outside TUI (packages/notify/src/index.ts)
 - [ ] Add `command` connector passing `PI_NOTIFY_TEXT` in env, with a timeout (packages/notify/src/connectors.ts)
 - [ ] Ping on `ui_prompt_start` when armed and `onPrompt` is set, without consuming one-shot (packages/notify/src/index.ts)
-- [ ] Write package README and add row/install line to root README (packages/notify/README.md, README.md)
+- [ ] Write package README, document the accepted pre-settlement cancellation limitation, and add row/install line to root README (packages/notify/README.md, README.md)
 **Verify:** `npm test -w packages/notify` with new tests: command connector writes `$PI_NOTIFY_TEXT` to a temp file; prompt event pings when armed + `onPrompt` during a run, does not ping outside a run, never includes the title, and one-shot still pings on settle; `notify_me` tool call arms one-shot, returns error on bad config, and is not active when mode is not `tui`. Manual: tell agent "notify me when done" → 🔔 appears, ping arrives on settle
 
 ## Demo
