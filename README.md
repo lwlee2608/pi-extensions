@@ -9,7 +9,7 @@
 | [`@lwlee2608/pi-notify`](packages/notify) | `/notify`, `notify_me` tool | Opt-in phone pings on completion or waiting for input, via Telegram or a shell command. |
 | [`@lwlee2608/pi-footer`](packages/footer) | Automatic | Context, cost, cache usage, and run timer in a compact footer. |
 | [`@lwlee2608/pi-ask-user`](packages/ask-user) | `ask_user_question` tool | Lean inline questionnaires with previews, notes, and review. |
-| [`@lwlee2608/pi-subagent`](packages/subagent) | `subagent` tool, `/subagents` | Persistent workers, parallel tasks, child questions, and explicit recovery (local package; not yet published). |
+| [`@lwlee2608/pi-subagent`](packages/subagent) | `subagent` tool, `/subagents` | Persistent workers, parallel tasks, child questions, and explicit recovery. |
 
 ## Install
 
@@ -21,6 +21,7 @@ pi install npm:@lwlee2608/pi-session-board
 pi install npm:@lwlee2608/pi-footer
 pi install npm:@lwlee2608/pi-notify
 pi install npm:@lwlee2608/pi-ask-user
+pi install npm:@lwlee2608/pi-subagent
 ```
 
 Ask-user must not load alongside rpiv's `ask_user_question`; if you use rpiv, read its [replacement instructions](packages/ask-user#replace-rpiv-user-action-after-verification) first.
