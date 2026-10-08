@@ -27,16 +27,20 @@ export async function parentExtensions(pi: ExtensionAPI, ctx: ExtensionContext, 
   const args = parseArgs(argv);
   const settingsManager = SettingsManager.create(ctx.cwd, agentDir, { projectTrusted: ctx.isProjectTrusted() });
   const packages = new DefaultPackageManager({ cwd: ctx.cwd, agentDir, settingsManager, builtinExtensions: builtins });
-  const sources = [...pi.getAllTools(), ...pi.getCommands()].flatMap(item => item.sourceInfo ? [item.sourceInfo] : []);
-  const explicit: string[] = [];
+  const explicit: string[] = [], remote: string[] = [];
   for (const source of args.extensions ?? []) {
     if (isBuiltinExtension(source)) { explicit.push(source); continue; }
-    const remote = source.startsWith("npm:") || source.startsWith("git:") || /^https?:/.test(source);
-    const installed = remote ? sources.find(info => info.source === source && info.scope === "temporary")?.baseDir
-      : source.startsWith("~/") ? resolve(homedir(), source.slice(2)) : resolve(ctx.cwd, source);
-    if (!installed) throw new Error(`Cannot resolve parent extension ${source} without installing it; configure pi-subagent/config.json extensions explicitly`);
-    const resolved = await packages.resolveExtensionSources([installed], { temporary: true });
+    if (source.startsWith("npm:") || source.startsWith("git:") || /^https?:/.test(source)) { remote.push(source); continue; }
+    const local = source.startsWith("~/") ? resolve(homedir(), source.slice(2)) : resolve(ctx.cwd, source);
+    const resolved = await packages.resolveExtensionSources([local], { temporary: true });
     explicit.push(...resolved.extensions.filter(entry => entry.enabled).map(entry => entry.path));
+  }
+  if (remote.length) {
+    // Pi records every -e resource as source "cli" without its package source or install directory.
+    const loaded = [...pi.getAllTools(), ...pi.getCommands().filter(command => command.source === "extension")]
+      .flatMap(item => item.sourceInfo?.source === "cli" && !explicit.includes(item.sourceInfo.path) ? [item.sourceInfo.path] : []);
+    if (!loaded.length) throw new Error(`Cannot resolve parent extension ${remote.join(", ")} without tool or command provenance; configure pi-subagent/config.json extensions explicitly`);
+    explicit.push(...loaded);
   }
   const configured = args.noExtensions ? [] : (await packages.resolve(async () => "error")).extensions.filter(entry => entry.enabled).map(entry => entry.path);
   return normalizeExtensions([...explicit, ...configured]);

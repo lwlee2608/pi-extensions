@@ -1,20 +1,27 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { readFile, stat, rm, writeFile } from "node:fs/promises";
+import { readFile, stat, rm, writeFile, mkdir, symlink } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { RpcClient, getPackageDir } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
 import { fixture, changedUntil } from "./helpers.ts";
 
-for (const source of ["CLI", "settings"] as const) test(`parent inherits ${source} provider without child config and completes offline RPC start/wait/stop`, { timeout: 30_000 }, async () => {
+for (const source of ["CLI", "npm", "settings"] as const) test(`parent inherits ${source} provider without child config and completes offline RPC start/wait/stop`, { timeout: 30_000 }, async () => {
   const f = await fixture();
   const client = new RpcClient({ cliPath: join(getPackageDir(), "dist/cli.js"), cwd: f.launch.cwd,
     env: { PI_CODING_AGENT_DIR: f.launch.agentDir, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1" },
-    args: [...(source === "CLI" ? ["--no-extensions", "--extension", f.launch.extensions[0]] : []),
+    args: [...(source === "CLI" ? ["--no-extensions", "--extension", f.launch.extensions[0]] : source === "npm" ? ["--no-extensions", "--extension", "npm:subagent-fixture"] : []),
       "--no-approve", "--no-session", "--provider", "subagent-offline", "--model", "fixture", "--thinking", "off",
       "--extension", fileURLToPath(new URL("../src/index.ts", import.meta.url)), "--tools", "subagent"] });
   try {
     await rm(join(f.launch.agentDir, "pi-subagent/config.json"));
+    if (source === "npm") {
+      const pkg = join(f.launch.agentDir, "tmp/extensions/npm", createHash("sha256").update("npm-").digest("hex").slice(0, 8), "node_modules/subagent-fixture");
+      await mkdir(pkg, { recursive: true });
+      await writeFile(join(pkg, "package.json"), JSON.stringify({ name: "subagent-fixture", version: "1.0.0", pi: { extensions: ["./provider.ts"] } }));
+      await symlink(f.launch.extensions[0], join(pkg, "provider.ts"));
+    }
     if (source === "settings") await writeFile(join(f.launch.agentDir, "settings.json"), JSON.stringify({
       packages: [f.launch.extensions[0]], retry: { enabled: false }, compaction: { enabled: false },
       extensions: ["-builtin:llama.cpp", "-builtin:tool-search", "-builtin:mcp"],

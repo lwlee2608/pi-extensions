@@ -32,7 +32,7 @@ test("inheritance resolves packages, resource filters, CLI paths and project tru
     assert.ok(!trusted.includes(join(pkg, "disabled.js")));
     const explicit = f.launch.extensions[0];
     assert.deepEqual(await parentExtensions(pi, context(f.launch.cwd, true), f.launch.agentDir, ["--no-extensions", "-e", explicit]), [explicit]);
-    await assert.rejects(parentExtensions(pi, context(f.launch.cwd), f.launch.agentDir, ["-e", "npm:missing-provider"]), /without installing/);
+    await assert.rejects(parentExtensions(pi, context(f.launch.cwd), f.launch.agentDir, ["-e", "npm:missing-provider"]), /without tool or command provenance/);
   } finally { await f.cleanup(); }
 });
 
