@@ -25,7 +25,7 @@
 - **One-shot vs prompt ping** — Prompt ping does not consume one-shot; one-shot disarms only when a run settles with `completed` or `error`
 
 ## Progress
-Phase 1 of 2 · 9/13 tasks · implementation and automated proof complete; live phone verification pending.
+Phase 1 of 2 · 9/13 tasks · implementation and automated proof complete; live phone verification deferred to the final Demo with user approval (not yet run).
 
 Phase 1 verification: `npm test -w packages/notify` passes (5 tests); `npm run check` passes all 7 workspaces; `env -u PI_SUBAGENT_TOKEN -u PI_SUBAGENT_TOOLS npm test` passes all 147 tests. Plain `npm test` initially exceeded a 120-second timeout, then failed 5 subagent integration tests because this retained worker's inherited `PI_SUBAGENT_TOKEN` disables the subagent extension; clearing worker-only variables fixes the test environment.
 
@@ -42,7 +42,7 @@ User can `/notify`, walk away, and get a Telegram message when the run completes
 - [x] Track run outcome (clear on `agent_start`, record on `agent_before_settle`) and ping on `agent_settled` when armed; warn per failed connector (packages/notify/src/index.ts)
 - [x] Show 🔔 status while armed (packages/notify/src/index.ts)
 - [x] Test config, state, message, settle lifecycle, Telegram request with stubbed fetch (packages/notify/test)
-**Verify:** `npm test -w packages/notify` passes (state incl. session reset, config, message, telegram tests; settle lifecycle: run continued after `agent_before_settle` pings once at `agent_settled`, aborted run pings nothing and keeps one-shot armed); user step: `pi -e ./packages/notify/src/index.ts` with a real bot config → `/notify test` delivers to phone
+**Verify:** `npm test -w packages/notify` passes (state incl. session reset, config, message, telegram tests; settle lifecycle: run continued after `agent_before_settle` pings once at `agent_settled`, aborted run pings nothing and keeps one-shot armed); user step (deferred to the final Demo with user approval; not yet run): `pi -e ./packages/notify/src/index.ts` with a real bot config → `/notify test` delivers to phone
 
 ### Phase 2 — Ask the agent to notify you, reach any service, and get pinged when it waits on you
 User can ask the agent "notify me when you finish", route pings to Slack/ntfy/apprise via a shell command, and gets a ping when ask-user blocks.
