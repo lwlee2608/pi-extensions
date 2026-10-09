@@ -9,8 +9,9 @@ export function display(text: string): string {
 const spinner = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
 const linger = 5000;
 const active = ["working", "blocked", "queued"];
+function reminded(worker: Readonly<Snapshot>): boolean { return !!worker.recoverable && !worker.stopped; }
 function shown(worker: Readonly<Snapshot>, now: number): boolean {
-  return active.includes(worker.state) || !!worker.recoverable || (!!worker.result && now - worker.result.endedAt < linger);
+  return active.includes(worker.state) || reminded(worker) || (!!worker.result && now - worker.result.endedAt < linger);
 }
 type Paint = Pick<Theme, "fg">;
 const plain: Paint = { fg: (_color, text) => text };
@@ -33,7 +34,7 @@ export function mark(state: Snapshot["state"], outcome: Outcome | undefined, now
   return outcome === "completed" ? ["success", "✓"] : outcome === "failed" ? ["error", "✗"] : outcome === "interrupted" ? ["warning", "⊘"] : ["dim", "○"];
 }
 function icon(worker: Snapshot, now: number): Mark {
-  return worker.recoverable && !active.includes(worker.state) ? ["warning", "↻"] : mark(worker.state, worker.result?.outcome, now);
+  return reminded(worker) && !active.includes(worker.state) ? ["warning", "↻"] : mark(worker.state, worker.result?.outcome, now);
 }
 export function stepMark(step: Step, now: number): Mark { return mark(step.result ? "closed" : step.state, step.result?.outcome, now); }
 export interface Node { root: Snapshot; title: string; members: Snapshot[]; steps: Step[] }
@@ -81,7 +82,7 @@ export function panelLines(workers: Snapshot[], width: number, now = Date.now(),
     const running = active.includes(worker.state);
     const [tone, detail] = question ? ["warning", `reply ${question.questionId}: ${question.question}`] as const
       : worker.error ? ["error", worker.error] as const
-      : worker.recoverable ? ["warning", `recover ${worker.workerId} · saved conversation; pending questions cancelled`] as const
+      : reminded(worker) ? ["warning", `recover ${worker.workerId} · saved conversation${worker.questions?.some(q => q.state === "cancelled") ? "; pending questions cancelled" : ""}`] as const
       : ["muted", running ? [worker.activity, line(worker.output, true)].filter(Boolean).join(" · ") : line(worker.output, false) || worker.activity] as const;
     return [`${head}${chain}`,
       `${theme.fg("dim", "  └ ")}${theme.fg(tone, display(detail))}`];

@@ -15,7 +15,7 @@ export interface Question { questionId: string; workerId: string; runId: string;
 export interface Snapshot {
   workerId: string; runId: string; state: "queued" | "working" | "blocked" | "idle" | "closed"; lifetime: "once" | "retained";
   label: string; parentWorkerId?: string; cwd: string; model: string; effort: string; pid?: number; processAlive?: boolean; sessionId: string; sessionFile?: string;
-  activity: string; output: string; startedAt: number; result?: Result; error?: string; questions?: Question[]; recoverable?: boolean; usage?: Usage; context?: number; toolOutput?: string;
+  activity: string; output: string; startedAt: number; result?: Result; error?: string; questions?: Question[]; recoverable?: boolean; stopped?: boolean; usage?: Usage; context?: number; toolOutput?: string;
 }
 interface Worker {
   view: Snapshot; launch: Launch; directory: string; child?: Child; run: Run; lock: Promise<unknown>;
@@ -205,7 +205,7 @@ export class Manager {
     worker.task = message;
     worker.view.activity = "queued";
     try { this.save(worker); }
-    catch (error) { worker.stopping = true; void this.stop(id).catch(error => this.recordError(worker, error)); throw error; }
+    catch (error) { worker.stopping = true; void this.stop(id, false).catch(error => this.recordError(worker, error)); throw error; }
     this.schedule();
     this.changed();
     return structuredClone(worker.view);
@@ -220,7 +220,7 @@ export class Manager {
     switch (event.type) {
       case "subagent_question": {
         if (!worker.ready || worker.view.questions!.length >= 128 || worker.view.questions!.some(q => q.requestId === event.requestId)) {
-          void this.stop(worker.view.workerId).catch(error => this.recordError(worker, error));
+          void this.stop(worker.view.workerId, false).catch(error => this.recordError(worker, error));
           break;
         }
         const question: Question = { questionId: `q-${randomUUID()}`, workerId: worker.view.workerId, runId: worker.run.runId,
@@ -228,7 +228,7 @@ export class Manager {
         this.questions.set(question.questionId, question); worker.view.questions!.push(question);
         worker.view.state = "blocked"; worker.view.activity = "awaiting parent reply";
         try { this.save(worker); }
-        catch (error) { this.recordError(worker, error); void this.stop(worker.view.workerId).catch(error => this.recordError(worker, error)); }
+        catch (error) { this.recordError(worker, error); void this.stop(worker.view.workerId, false).catch(error => this.recordError(worker, error)); }
         break;
       }
       case "message_update":
@@ -355,12 +355,13 @@ export class Manager {
     this.save(worker);
     this.changed();
   }
-  async stop(id: string): Promise<Snapshot> {
+  async stop(id: string, explicit = true): Promise<Snapshot> {
     const worker = this.worker(id);
     if (worker.uncertain) throw new Error("Old process ownership is uncertain; refusing to claim successful stop");
     worker.stopping = true;
     this.cancelQuestions(worker);
     return this.exclusive(worker, async () => {
+      if (explicit) worker.view.stopped = true;
       await this.closeWorker(worker);
       await this.finish(worker, "interrupted", "Stopped by parent");
       return structuredClone(worker.view);
@@ -380,7 +381,7 @@ export class Manager {
         verifyPrerequisites(saved, Object.values(config.extensions), config.trustedProjectRoots);
         if (worker.stopping || this.closing) throw new Error("Recovery cancelled during prerequisite validation");
         worker.generation = randomUUID(); worker.ready = false; worker.settled = false; worker.accepted = false;
-        worker.view.recoverable = false; worker.view.error = undefined;
+        worker.view.recoverable = false; worker.view.error = undefined; delete worker.view.stopped;
         this.save(worker);
         const own = (child: Child) => {
           worker.child = child; worker.view.pid = child.pid; worker.view.processAlive = true;
@@ -474,7 +475,7 @@ export class Manager {
   private async closeAll(): Promise<void> {
     this.closing = true;
     const owned = [...this.workers.values()].filter(w => !w.uncertain);
-    const results = await Promise.allSettled(owned.map(w => this.stop(w.view.workerId)));
+    const results = await Promise.allSettled(owned.map(w => this.stop(w.view.workerId, false)));
     const failures = results.filter(r => r.status === "rejected");
     if (failures.length) throw new AggregateError(failures.map(r => r.reason), "Subagent cleanup failed; ownership lock retained");
     this.store.close();
