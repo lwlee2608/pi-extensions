@@ -72,7 +72,7 @@ export default function (pi: ExtensionAPI): void {
             effort: pi.getThinkingLevel() as Effort, models: ctx.modelRegistry.getAvailable(), skills,
             registeredProviders: ctx.modelRegistry.getRegisteredProviderIds(), tools: pi.getAllTools() }, config);
           signal?.throwIfAborted();
-          result = active.start(launch, args.task, args.lifetime, args.label);
+          result = active.start(launch, args.task, args.lifetime, args.label, args.parentWorkerId);
           break;
         }
         case "message": result = await active.message(args.workerId, args.message, args.mode, args.label); break;

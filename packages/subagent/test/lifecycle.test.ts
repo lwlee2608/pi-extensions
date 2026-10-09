@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { RpcClient, getPackageDir } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
+import { Manager } from "../src/manager.ts";
 import { fixture, changedUntil } from "./helpers.ts";
 
 for (const source of ["CLI", "npm", "settings"] as const) test(`parent inherits ${source} provider without child config and completes offline RPC start/wait/stop`, { timeout: 30_000 }, async () => {
@@ -171,4 +172,21 @@ test("more than sixteen one-shot reviews retire and preserve failed/handled resu
       await f.manager.stop(run.workerId);
     }
   } finally { await f.cleanup(); }
+});
+
+test("parentWorkerId links one level deep, shows in history and survives reload", { timeout: 30_000 }, async () => {
+  const f = await fixture(); let restored: Manager | undefined;
+  try {
+    const root = f.manager.start(f.launch, "ROOT_TASK", "retained", "phase 1");
+    await f.manager.wait([root.runId]);
+    const child = f.manager.start(f.launch, "REVIEW_TASK", "once", "phase 1 review", root.workerId);
+    await f.manager.wait([child.runId]);
+    assert.deepEqual(f.manager.history().map(s => [s.runId, s.agent, s.parentWorkerId]), [[root.runId, "fixture", undefined], [child.runId, "fixture", root.workerId]]);
+    assert.throws(() => f.manager.start(f.launch, "x", "once", "x", "w-missing"), /Unknown worker/);
+    assert.throws(() => f.manager.start(f.launch, "x", "once", "x", child.workerId), /one level deep/);
+    await f.manager.shutdown();
+    restored = new Manager({ root: join(f.launch.agentDir, "pi-subagent"), parentId: "fixture-parent" });
+    assert.equal(restored.status(child.workerId)[0].parentWorkerId, root.workerId);
+    assert.equal(restored.status(root.workerId)[0].parentWorkerId, undefined);
+  } finally { await restored?.shutdown(); await f.cleanup(); }
 });

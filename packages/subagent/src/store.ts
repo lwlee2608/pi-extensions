@@ -59,6 +59,7 @@ function validate(value: unknown, parentId: string, id: string, directory: strin
     || !["once", "retained"].includes(view.lifetime) || !["queued", "working", "blocked", "idle", "closed"].includes(view.state)
     || !["owned", "closed"].includes(value.ownership) || typeof value.generation !== "string"
     || ![view.label, view.cwd, view.model, view.effort, view.activity, view.output].every(v => typeof v === "string") || !Number.isFinite(view.startedAt)) return fail();
+  if (view.parentWorkerId !== undefined && (typeof view.parentWorkerId !== "string" || !workerId.test(view.parentWorkerId))) return fail();
   if (view.sessionFile !== undefined && (typeof view.sessionFile !== "string" || dirname(resolve(view.sessionFile)) !== resolve(directory))) return fail();
   if (!object(launch.profile) || ![launch.cwd, launch.agentDir, launch.provider, launch.model, launch.profile.name, launch.profile.path, launch.profile.prompt].every(v => typeof v === "string")
     || !["off", "minimal", "low", "medium", "high", "xhigh", "max"].includes(launch.effort) || !strings(launch.extensions) || !strings(launch.skills) || !strings(launch.profile.tools)
