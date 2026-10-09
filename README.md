@@ -26,8 +26,6 @@ pi install npm:@lwlee2608/pi-subagent
 
 Ask-user must not load alongside rpiv's `ask_user_question`; if you use rpiv, read its [replacement instructions](packages/ask-user#replace-rpiv-user-action-after-verification) first.
 
-Subagent must not load beside the old local subagent example. Follow its [isolated verification and reversible migration](packages/subagent#rollout-and-rollback) before using the root package. It requires an explicit child-provider allowlist for custom providers.
-
 Or install all of them from git:
 
 ```sh
