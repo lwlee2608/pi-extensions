@@ -117,6 +117,7 @@ test("live stop/recover overlap cannot let the old exit close a new generation",
     await stopped;
     const next = await recovered;
     assert.notEqual(next.pid, before.pid);
+    assert.equal(next.stopped, undefined);
     const task = await f.manager.message(run.workerId, "new generation task");
     assert.equal((await f.manager.wait([task.runId])).runs[0].result?.outcome, "completed");
     assert.equal(f.manager.status(run.workerId)[0].state, "idle");
@@ -135,6 +136,7 @@ test("exclusive parent ownership, foreign/one-shot/live refusal and changed prer
     await assert.rejects(f.manager.recover(once.workerId), /closed retained/);
     foreign = reopen(root, "foreign-parent"); await assert.rejects(foreign.recover(retained.workerId), /Unknown worker/);
     await f.manager.stop(retained.workerId);
+    assert.deepEqual([f.manager.status(retained.workerId)[0].stopped, f.manager.status(retained.workerId)[0].recoverable], [true, true]);
     const original = await readFile(f.launch.profile.path, "utf8");
     await writeFile(f.launch.profile.path, "changed profile");
     await assert.rejects(f.manager.recover(retained.workerId), /prerequisites changed/);
@@ -150,6 +152,7 @@ test("exclusive parent ownership, foreign/one-shot/live refusal and changed prer
     await assert.rejects(f.manager.recover(retained.workerId), /no longer approved/);
     await f.manager.shutdown();
     restored = reopen(root);
+    assert.equal(restored.status(retained.workerId)[0].stopped, true);
     assert.equal((await restored.wait([retained.runId])).runs[0].result?.outcome, "completed");
   } finally { await foreign?.shutdown(); await restored?.shutdown(); await f.cleanup(); }
 });

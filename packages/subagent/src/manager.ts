@@ -15,7 +15,7 @@ export interface Question { questionId: string; workerId: string; runId: string;
 export interface Snapshot {
   workerId: string; runId: string; state: "queued" | "working" | "blocked" | "idle" | "closed"; lifetime: "once" | "retained";
   label: string; parentWorkerId?: string; cwd: string; model: string; effort: string; pid?: number; processAlive?: boolean; sessionId: string; sessionFile?: string;
-  activity: string; output: string; startedAt: number; result?: Result; error?: string; questions?: Question[]; recoverable?: boolean; usage?: Usage; context?: number; toolOutput?: string;
+  activity: string; output: string; startedAt: number; result?: Result; error?: string; questions?: Question[]; recoverable?: boolean; stopped?: boolean; usage?: Usage; context?: number; toolOutput?: string;
 }
 interface Worker {
   view: Snapshot; launch: Launch; directory: string; child?: Child; run: Run; lock: Promise<unknown>;
@@ -361,6 +361,7 @@ export class Manager {
     worker.stopping = true;
     this.cancelQuestions(worker);
     return this.exclusive(worker, async () => {
+      worker.view.stopped = true;
       await this.closeWorker(worker);
       await this.finish(worker, "interrupted", "Stopped by parent");
       return structuredClone(worker.view);
@@ -380,7 +381,7 @@ export class Manager {
         verifyPrerequisites(saved, Object.values(config.extensions), config.trustedProjectRoots);
         if (worker.stopping || this.closing) throw new Error("Recovery cancelled during prerequisite validation");
         worker.generation = randomUUID(); worker.ready = false; worker.settled = false; worker.accepted = false;
-        worker.view.recoverable = false; worker.view.error = undefined;
+        worker.view.recoverable = false; worker.view.error = undefined; delete worker.view.stopped;
         this.save(worker);
         const own = (child: Child) => {
           worker.child = child; worker.view.pid = child.pid; worker.view.processAlive = true;
