@@ -70,7 +70,9 @@ test("nested workers collapse into one panel entry with a step chain", () => {
   ];
   const lines = panelLines([root, child], 200, 104_000, undefined, steps);
   assert.equal(lines.length, 2);
-  assert.match(lines[0], /^⠋ owctl phase 1 · ✓ worker › ✓ worker › ⠋ reviewer · 1m44s · ctx 41k · \$1\.70$/);
+  assert.match(lines[0], /^⠋ owctl phase 1 · 1m44s · ctx 41k · \$1\.70 · ✓ worker › ✓ worker › ⠋ reviewer$/);
+  const rounds = [...steps.slice(0, 2), ...steps.slice(0, 2), ...steps.slice(0, 2), steps[2]];
+  assert.equal(panelLines([root, child], 80, 104_000, undefined, rounds)[0], "⠋ owctl phase 1 · 1m44s · ctx 41k · $4.70 · +5 › ✓ worker › ⠋ reviewer");
   assert.equal(lines[1], "  └ tool: bash · gh pr diff 69");
   const asking = { ...child, state: "blocked" as const, questions: [{ questionId: "q-one", workerId: "w-child", runId: "r-3", generation: "g", requestId: "request", question: "Which file?", state: "pending" as const }] };
   assert.match(panelLines([root, asking], 200, 104_000, undefined, steps).join("\n"), /^\? owctl phase 1.*\n  └ reply q-one: Which file\?$/);

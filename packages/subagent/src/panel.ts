@@ -1,5 +1,5 @@
 import { stripVTControlCharacters } from "node:util";
-import { truncateToWidth, type Component } from "@earendil-works/pi-tui";
+import { truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { Manager, Outcome, Snapshot, Step } from "./manager.ts";
 
@@ -70,18 +70,20 @@ export function panelLines(workers: Snapshot[], width: number, now = Date.now(),
   const rows = entries.slice(0, 4).flatMap(({ node, lead: worker }) => {
     const total = cost(node);
     const meta = [duration(span(node, now)), ...(worker.context ? [`ctx ${tokens(worker.context)}`] : []), ...(total ? [`$${total.toFixed(2)}`] : [])].join(" · ");
-    const chain = node.steps.length > 1 ? `${theme.fg("dim", " · ")}${node.steps.map(step => {
-      const [color, symbol] = stepMark(step, now);
-      return `${theme.fg(color, symbol)} ${theme.fg("muted", display(step.agent))}`;
-    }).join(theme.fg("dim", " › "))}` : "";
     const [color, symbol] = icon(worker, now);
+    const head = `${theme.fg(color, symbol)} ${theme.fg("accent", display(node.title))} ${theme.fg("dim", `· ${meta}`)}`;
+    const parts = node.steps.map(step => { const [tone, mark] = stepMark(step, now), agent = display(step.agent); return { text: `${theme.fg(tone, mark)} ${theme.fg("muted", agent)}`, width: visibleWidth(`${mark} ${agent}`) }; });
+    const fits = (n: number) => parts.slice(-n).reduce((sum, p) => sum + p.width + 3, n < parts.length ? `+${parts.length - n}`.length + 3 : 0) <= width - visibleWidth(head);
+    let kept = parts.length;
+    while (kept > 1 && !fits(kept)) kept--;
+    const chain = parts.length > 1 ? `${theme.fg("dim", " · ")}${[...(kept < parts.length ? [theme.fg("dim", `+${parts.length - kept}`)] : []), ...parts.slice(-kept).map(p => p.text)].join(theme.fg("dim", " › "))}` : "";
     const question = worker.questions?.find(q => q.state === "pending");
     const running = active.includes(worker.state);
     const [tone, detail] = question ? ["warning", `reply ${question.questionId}: ${question.question}`] as const
       : worker.error ? ["error", worker.error] as const
       : worker.recoverable ? ["warning", `recover ${worker.workerId} · saved conversation; pending questions cancelled`] as const
       : ["muted", running ? [worker.activity, line(worker.output, true)].filter(Boolean).join(" · ") : line(worker.output, false) || worker.activity] as const;
-    return [`${theme.fg(color, symbol)} ${theme.fg("accent", display(node.title))}${chain} ${theme.fg("dim", `· ${meta}`)}`,
+    return [`${head}${chain}`,
       `${theme.fg("dim", "  └ ")}${theme.fg(tone, display(detail))}`];
   });
   if (entries.length > 4) rows.push(theme.fg("muted", `+${entries.length - 4} more workers · subagent status for details`));
