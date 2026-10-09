@@ -76,7 +76,7 @@ test("shutdown reopens retained context idle with new PID, immutable results and
     for (const view of before) assert.throws(() => process.kill(view.pid!, 0), /ESRCH/);
     const root = join(f.launch.agentDir, "pi-subagent");
     restored = reopen(root);
-    assert.ok(restored.status().every(w => w.state === "closed" && w.processAlive === false));
+    assert.ok(restored.status().every(w => w.state === "closed" && w.processAlive === false && w.recoverable && w.stopped === undefined));
     assert.deepEqual((await restored.wait([idle.runId])).runs, first.runs);
     assert.equal((await restored.wait([working.runId])).runs[0].result?.outcome, "interrupted");
     assert.equal(restored.status(blocked.workerId)[0].questions?.[0].state, "cancelled");
