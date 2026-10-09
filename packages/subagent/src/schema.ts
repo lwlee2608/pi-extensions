@@ -11,7 +11,7 @@ const actionSchema = Type.Union([
   object({ action: Type.Literal("start"), agent: Type.String({ pattern: "^[a-zA-Z0-9_-]+$" }), task: text, label,
     cwd: Type.Optional(text), model: Type.Optional(text), effort: Type.Optional(effortSchema),
     lifetime: Type.Optional(Type.Union([Type.Literal("once"), Type.Literal("retained")])),
-    agentScope: Type.Optional(Type.Union([Type.Literal("user"), Type.Literal("project"), Type.Literal("both")])) }),
+    agentScope: Type.Optional(Type.Union([Type.Literal("user"), Type.Literal("project"), Type.Literal("both")])), parentWorkerId: Type.Optional(id) }),
   object({ action: Type.Literal("message"), workerId: id, message: text, label,
     mode: Type.Optional(Type.Union([Type.Literal("task"), Type.Literal("steer")])) }),
   object({ action: Type.Literal("wait"), runIds: Type.Array(id, { minItems: 1, maxItems: 100, uniqueItems: true }),
@@ -30,7 +30,7 @@ export const parameters = Type.Object({
   agent: Type.Optional(text), task: Type.Optional(text), label, cwd: Type.Optional(text), model: Type.Optional(text),
   effort: Type.Optional(effortSchema), lifetime: Type.Optional(Type.Union([Type.Literal("once"), Type.Literal("retained")])),
   agentScope: Type.Optional(Type.Union([Type.Literal("user"), Type.Literal("project"), Type.Literal("both")])),
-  workerId: Type.Optional(id), message: Type.Optional(text), questionId: Type.Optional(id), cancelled: Type.Optional(Type.Literal(true)),
+  workerId: Type.Optional(id), parentWorkerId: Type.Optional(id), message: Type.Optional(text), questionId: Type.Optional(id), cancelled: Type.Optional(Type.Literal(true)),
   mode: Type.Optional(Type.Union([Type.Literal("task"), Type.Literal("steer"), Type.Literal("all"), Type.Literal("any")])),
   runIds: Type.Optional(Type.Array(id, { minItems: 1, maxItems: 100, uniqueItems: true })),
   timeoutMs: Type.Optional(Type.Integer({ minimum: 1, maximum: 2_147_483_647 })),
@@ -42,4 +42,4 @@ export function validateAction(value: unknown): asserts value is Action {
   const action = value as Action;
   if (action.action === "message" && action.mode === "steer" && action.label !== undefined) throw new Error("Steering cannot relabel a run.");
 }
-export const description = "Start isolated Pi workers and fresh reviewers. start returns admission, not completion: wait on its runId. Only wait returns result text; other actions return compact worker state. Default lifetime once retires automatically; retained workers accept new task messages only while idle. A working worker accepts steer, not another task. Cancelling wait leaves workers running. stop closes a worker without deleting edits. Profiles are instruction-based capabilities, not an OS sandbox. Tasks run within configured active/live limits; excess admitted work queues. Any owned pending question interrupts wait with attention, even for other selected runs. Answer with reply or explicitly cancel; cancellation interrupts the child. recover explicitly reopens a closed retained conversation in the original parent, idle without replay; follow it with a new task. Missing/changed prerequisites or uncertain ownership refuse recovery.";
+export const description = "Start isolated Pi workers and fresh reviewers. start returns admission, not completion: wait on its runId. Only wait returns result text; other actions return compact worker state. Default lifetime once retires automatically; retained workers accept new task messages only while idle. A working worker accepts steer, not another task. Cancelling wait leaves workers running. stop closes a worker without deleting edits. Profiles are instruction-based capabilities, not an OS sandbox. Tasks run within configured active/live limits; excess admitted work queues. Any owned pending question interrupts wait with attention, even for other selected runs. Answer with reply or explicitly cancel; cancellation interrupts the child. recover explicitly reopens a closed retained conversation in the original parent, idle without replay; follow it with a new task. Missing/changed prerequisites or uncertain ownership refuse recovery. Optional parentWorkerId on start nests the new worker's runs under that top-level worker in the panel and /subagents flow view; display only, the parent still owns both.";

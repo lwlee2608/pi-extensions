@@ -14,7 +14,7 @@ export interface Run { runId: string; workerId: string; label: string; startedAt
 export interface Question { questionId: string; workerId: string; runId: string; generation: string; requestId: string; question: string; state: "pending" | "answered" | "cancelled" }
 export interface Snapshot {
   workerId: string; runId: string; state: "queued" | "working" | "blocked" | "idle" | "closed"; lifetime: "once" | "retained";
-  label: string; cwd: string; model: string; effort: string; pid?: number; processAlive?: boolean; sessionId: string; sessionFile?: string;
+  label: string; parentWorkerId?: string; cwd: string; model: string; effort: string; pid?: number; processAlive?: boolean; sessionId: string; sessionFile?: string;
   activity: string; output: string; startedAt: number; result?: Result; error?: string; questions?: Question[]; recoverable?: boolean; usage?: Usage; context?: number; toolOutput?: string;
 }
 interface Worker {
@@ -23,6 +23,7 @@ interface Worker {
   usage: Usage; stopping: boolean; reservation: boolean; recoveryError?: string;
   task: string; slot: boolean; generation: string; activeTools: Map<string, string>; ready: boolean; prerequisites: Prerequisites; uncertain: boolean;
 }
+export interface Step extends Run { agent: string; parentWorkerId?: string; state: Snapshot["state"] }
 export interface WaitResult { reason: "completed" | "timeout" | "attention"; runs: Run[]; workers: Snapshot[]; pendingQuestionIds: string[] }
 export function zeroUsage(): Usage { return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }; }
 function addUsage(target: Usage, source?: Usage): void {
@@ -111,14 +112,15 @@ export class Manager {
     this.runs.set(run.runId, run);
     return run;
   }
-  start(launch: Launch, task: string, lifetime: "once" | "retained" = "once", label = launch.profile.name): Snapshot {
+  start(launch: Launch, task: string, lifetime: "once" | "retained" = "once", label = launch.profile.name, parentWorkerId?: string): Snapshot {
     this.checkTaskSlot();
+    if (parentWorkerId && this.worker(parentWorkerId).view.parentWorkerId) throw new Error("parentWorkerId must name a top-level worker; nesting is one level deep");
     launch = structuredClone(launch);
     const required = prerequisites(launch);
     if ([...this.workers.values()].filter(w => w.reservation).length >= this.maxWorkers) throw new Error(`Worker process cap reached (${this.maxWorkers}); stop an idle retained worker`);
     const workerId = `w-${randomUUID()}`, sessionId = randomUUID();
     const run = this.newRun(workerId, label);
-    const view: Snapshot = { workerId, runId: run.runId, sessionId, lifetime, label, state: "queued", cwd: launch.cwd,
+    const view: Snapshot = { workerId, runId: run.runId, sessionId, lifetime, label, ...(parentWorkerId ? { parentWorkerId } : {}), state: "queued", cwd: launch.cwd,
       model: `${launch.provider}/${launch.model}`, effort: launch.effort, activity: "queued", output: "", startedAt: run.startedAt, questions: [] };
     const worker: Worker = { view, launch, run, directory: join(this.root, workerId), lock: Promise.resolve(),
       accepted: false, settled: false, usage: zeroUsage(), stopping: false, reservation: true, task, slot: false, generation: randomUUID(), activeTools: new Map(), ready: false, prerequisites: required, uncertain: false };
@@ -424,6 +426,12 @@ export class Manager {
     });
   }
   status(id?: string): Snapshot[] { return (id ? [this.worker(id)] : [...this.workers.values()]).map(w => structuredClone(w.view)); }
+  history(): Step[] {
+    return [...this.runs.values()].flatMap(run => {
+      const worker = this.workers.get(run.workerId);
+      return worker ? [{ ...run, agent: worker.launch.profile.name, parentWorkerId: worker.view.parentWorkerId, state: worker.view.state }] : [];
+    }).sort((a, b) => a.startedAt - b.startedAt);
+  }
   some(test: (view: Readonly<Snapshot>) => boolean): boolean { return [...this.workers.values()].some(w => test(w.view)); }
   async wait(runIds: string[], mode: "all" | "any" = "all", timeoutMs = 30 * 60_000, signal?: AbortSignal): Promise<WaitResult> {
     if (!runIds.length || runIds.some(id => !this.runs.has(id))) throw new Error("Wait requires known run IDs from this parent");

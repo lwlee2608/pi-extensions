@@ -75,6 +75,8 @@ Task messages require an idle retained worker. The same PID and persisted Pi ses
 
 `stop` cancels work, clears child queues, and closes the owned process with bounded escalation. It never removes worktrees, reverts edits, or deletes transcripts. Shutdown/reload closes owned workers. Unexpected child permission dialogs fail closed, not auto-approved. The orchestrator owns all Git/worktree operations.
 
+Pass `parentWorkerId` on `start` to nest a worker under a top-level worker from the same parent, for example a reviewer under its phase worker. It is display only: the panel collapses the group into one row with a step chain, and `/subagents` shows it as a tree. The parent still starts, waits on, and stops each worker; stopping one does not stop the other. Nesting is one level deep, and an unknown or nested target is rejected.
+
 ## Parallel workers and questions
 
 Supply separate disposable worktree paths in each `start`; this extension does not create or remove them. Save both run IDs and wait without polling:
@@ -97,7 +99,7 @@ For review/fix rounds, start a fresh one-shot reviewer in the worker's directory
 
 ## Inspector and offline UI verification
 
-Open `/subagents` while the parent works or waits. Use ↑/↓ to select workers, PgUp/PgDn to scroll the selected transcript, and End to follow live output. `m` sends a new task to an idle retained worker or steers a working one; `r` answers a pending question; `s` asks for stop confirmation (`y`/`n`); `c` explicitly recovers a closed retained worker. Esc cancels an editor/confirmation first, then closes only the inspector. It does not cancel the parent wait or child work.
+Open `/subagents` while the parent works or waits. Use ↑/↓ to select workers, PgUp/PgDn to scroll the selected transcript, and End to follow live output. `m` sends a new task to an idle retained worker or steers a working one; `r` answers a pending question; `s` asks for stop confirmation (`y`/`n`); `c` explicitly recovers a closed retained worker. `f` toggles a flow view: every run grouped by top-level worker, with nested reviewers beneath. ↑/↓ selects a run and Enter or `f` opens that worker's detail view. Esc cancels an editor/confirmation first, then closes only the inspector. It does not cancel the parent wait or child work.
 
 The inspector reads a bounded tail of the full private transcript (128 KiB input / 64 KiB displayed text), shows its path, and appends live streamed output. Older output stays available at that path. All displayed child text is terminal-control sanitized. Narrow terminals remain width-bounded; enlarge very short terminals to use controls.
 
