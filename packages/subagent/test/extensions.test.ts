@@ -25,17 +25,17 @@ test("inheritance resolves packages, resource filters, CLI paths and project tru
     const project = join(f.launch.cwd, ".pi/extensions");
     await mkdir(project, { recursive: true });
     await writeFile(join(project, "project.js"), "export default () => {};");
-    assert.deepEqual(await parentExtensions(pi, context(f.launch.cwd), f.launch.agentDir, []), [join(pkg, "provider.js"),
+    assert.deepEqual(await parentExtensions(pi, context(f.launch.cwd), f.launch.agentDir, []), [await realpath(join(pkg, "provider.js")),
       "builtin:llama.cpp", "builtin:codemode", "builtin:tool-search", "builtin:mcp"]);
     const trusted = await parentExtensions(pi, context(f.launch.cwd, true), f.launch.agentDir, []);
-    assert.ok(trusted.includes(join(project, "project.js")));
-    assert.ok(!trusted.includes(join(pkg, "disabled.js")));
+    assert.ok(trusted.includes(await realpath(join(project, "project.js"))));
+    assert.ok(!trusted.includes(await realpath(join(pkg, "disabled.js"))));
     const explicit = f.launch.extensions[0];
     assert.deepEqual(await parentExtensions(pi, context(f.launch.cwd, true), f.launch.agentDir, ["--no-extensions", "-e", explicit]), [explicit]);
     const dir = join(f.root, "directory-extension");
     await mkdir(dir);
     await writeFile(join(dir, "index.js"), 'throw new Error("must not import");');
-    assert.deepEqual(await parentExtensions(pi, context(f.launch.cwd), f.launch.agentDir, ["--no-extensions", "-e", dir]), [join(dir, "index.js")]);
+    assert.deepEqual(await parentExtensions(pi, context(f.launch.cwd), f.launch.agentDir, ["--no-extensions", "-e", dir]), [await realpath(join(dir, "index.js"))]);
     await assert.rejects(parentExtensions(pi, context(f.launch.cwd), f.launch.agentDir, ["-e", "npm:missing-provider"]), /without tool or command provenance/);
   } finally { await f.cleanup(); }
 });

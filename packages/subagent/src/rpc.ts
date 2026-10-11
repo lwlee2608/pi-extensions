@@ -166,7 +166,7 @@ export class RpcProcess implements Child {
   }
 }
 export async function launchChild(launch: Launch, directory: string, sessionId: string, onSpawn?: (child: Child) => void, sessionFile?: string): Promise<Child> {
-  if (process.platform !== "linux") throw new Error("Subagent owned cleanup is currently supported on Linux only");
+  if (process.platform !== "linux" && process.platform !== "darwin") throw new Error("Subagent owned cleanup is currently supported on Linux and macOS only");
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const promptPath = join(directory, "profile.md");
   await writeFile(promptPath, launch.profile.prompt, { mode: 0o600 });

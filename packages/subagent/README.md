@@ -8,7 +8,7 @@ Delegate tasks to isolated Pi child processes. Run one-shot reviewers, keep long
 pi install npm:@lwlee2608/pi-subagent
 ```
 
-Run `/reload` afterward. Requires Node.js 22.19+ and Pi 1.x. Only one `subagent` tool can load at a time.
+Run `/reload` afterward. Requires Node.js 22.19+ and Pi 1.x on Linux or macOS. Only one `subagent` tool can load at a time.
 
 ## Tool actions
 
