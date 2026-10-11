@@ -165,8 +165,11 @@ export class RpcProcess implements Child {
     throw new Error(`Cleanup failed: child ${this.pid} has not confirmed exit`);
   }
 }
+export function assertSupportedPlatform(platform: NodeJS.Platform = process.platform): void {
+  if (platform !== "linux" && platform !== "darwin") throw new Error("Subagent owned cleanup is currently supported on Linux and macOS only");
+}
 export async function launchChild(launch: Launch, directory: string, sessionId: string, onSpawn?: (child: Child) => void, sessionFile?: string): Promise<Child> {
-  if (process.platform !== "linux" && process.platform !== "darwin") throw new Error("Subagent owned cleanup is currently supported on Linux and macOS only");
+  assertSupportedPlatform();
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const promptPath = join(directory, "profile.md");
   await writeFile(promptPath, launch.profile.prompt, { mode: 0o600 });

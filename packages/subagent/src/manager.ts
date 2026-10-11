@@ -4,7 +4,7 @@ import { mkdir, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { AssistantMessage, Usage } from "@earendil-works/pi-ai";
 import type { Config, Launch } from "./profiles.ts";
-import { launchChild, literalInput, type Child, type ChildEvent } from "./rpc.ts";
+import { assertSupportedPlatform, launchChild, literalInput, type Child, type ChildEvent } from "./rpc.ts";
 import { loadConfig } from "./profiles.ts";
 import { Store, prerequisites, verifyPrerequisites, type Prerequisites } from "./store.ts";
 
@@ -104,6 +104,7 @@ export class Manager {
     return worker;
   }
   private checkTaskSlot(): void {
+    assertSupportedPlatform();
     if (this.closing) throw new Error("Parent is shutting down");
     if (this.runs.size >= 2048) throw new Error("Session history limit reached (2048 tasks); use a new parent session. Saved results remain on disk.");
   }
@@ -377,6 +378,7 @@ export class Manager {
     });
   }
   async recover(id: string): Promise<Snapshot> {
+    assertSupportedPlatform();
     const worker = this.worker(id);
     return this.exclusive(worker, async () => {
       if (this.closing || worker.uncertain || worker.reservation || worker.view.state !== "closed" || worker.view.lifetime !== "retained") throw new Error("Recovery requires a closed retained worker with certain ownership in the original parent");

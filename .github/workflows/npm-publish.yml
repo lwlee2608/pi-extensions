@@ -27,8 +27,22 @@ jobs:
       - run: npm test
       - run: npm pack --dry-run --ignore-scripts --workspaces
 
+  subagent-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run check --workspace=@lwlee2608/pi-subagent
+      - run: npm test --workspace=@lwlee2608/pi-subagent
+        env:
+          PI_OFFLINE: "1"
+
   publish:
-    needs: check
+    needs: [check, subagent-macos]
     if: startsWith(github.ref, 'refs/tags/') && contains(github.ref_name, '-v')
     runs-on: ubuntu-latest
     permissions:

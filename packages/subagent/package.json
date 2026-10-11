@@ -16,6 +16,7 @@
   "files": ["src", "agents"],
   "pi": { "extensions": ["./src/index.ts"] },
   "engines": { "node": ">=22.19.0" },
+  "os": ["linux", "darwin"],
   "scripts": { "check": "tsc --noEmit", "test": "node --test test/*.test.ts" },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",

@@ -3,9 +3,22 @@ import { test } from "node:test";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
-import { RpcProcess, launchChild, literalInput, type Child, type ChildEvent } from "../src/rpc.ts";
+import { assertSupportedPlatform, RpcProcess, launchChild, literalInput, type Child, type ChildEvent } from "../src/rpc.ts";
 import { Manager } from "../src/manager.ts";
 import { fixture } from "./helpers.ts";
+
+test("unsupported platforms reject admission without recording a run", async () => {
+  assert.doesNotThrow(() => assertSupportedPlatform("linux"));
+  assert.doesNotThrow(() => assertSupportedPlatform("darwin"));
+  const f = await fixture();
+  const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
+  try {
+    Object.defineProperty(process, "platform", { ...platform, value: "win32" });
+    assert.throws(() => f.manager.start(f.launch, "must not admit"), /Linux and macOS only/);
+    assert.equal(f.manager.status().length, 0);
+    await assert.rejects(f.manager.recover("unknown"), /Linux and macOS only/);
+  } finally { Object.defineProperty(process, "platform", platform); await f.cleanup(); }
+});
 
 test("real RPC validates provider, tool loadout and confirmed process exit", { timeout: 40_000 }, async () => {
   const f = await fixture();
