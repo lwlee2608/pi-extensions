@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { Manager } from "../src/manager.ts";
 import type { Launch } from "../src/profiles.ts";
 
-export async function fixture(options: { maxActive?: number; maxWorkers?: number } = {}) {
+export async function fixture(options: Pick<ConstructorParameters<typeof Manager>[0], "maxActive" | "maxWorkers" | "spawn"> = {}) {
   const root = await mkdtemp(join(tmpdir(), "pi-subagent-test-"));
   const agentDir = join(root, "agent"), cwd = join(root, "work");
   await mkdir(agentDir); await mkdir(cwd);

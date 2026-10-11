@@ -8,6 +8,7 @@ import { join } from "node:path";
 import { Manager } from "../src/manager.ts";
 import { fixture, changedUntil } from "./helpers.ts";
 import { modelView } from "../src/result.ts";
+import { launchChild } from "../src/rpc.ts";
 
 for (const source of ["CLI", "npm", "settings"] as const) test(`parent inherits ${source} provider without child config and completes offline RPC start/wait/stop`, { timeout: 30_000 }, async () => {
   const f = await fixture();
@@ -162,12 +163,17 @@ test("late steering is cleared before another task and stop preserves final prov
   } finally { await f.cleanup(); }
 });
 
-test("steering past its RPC deadline closes the uncertain worker before another task", { timeout: 45_000 }, async () => {
-  const f = await fixture();
+test("steering past its RPC deadline closes the uncertain worker before another task", { timeout: 15_000 }, async () => {
+  const f = await fixture({ spawn: async (...args) => {
+    const child = await launchChild(...args);
+    const request = child.request.bind(child);
+    child.request = (command, timeoutMs) => request(command, command.type === "steer" ? 100 : timeoutMs);
+    return child;
+  } });
   try {
     const run = f.manager.start(f.launch, "WRITE_AND_HOLD", "retained");
     await changedUntil(f.manager, () => f.manager.status()[0].activity === "tool: fixture_hold");
-    await assert.rejects(f.manager.message(run.workerId, "TIMEOUT_STEER", "steer"), /delivery uncertain/);
+    await assert.rejects(f.manager.message(run.workerId, "TIMEOUT_STEER", "steer"), /RPC steer timed out/);
     const result = await f.manager.wait([run.runId]);
     assert.equal(result.runs[0].result?.outcome, "interrupted");
     assert.equal(f.manager.status()[0].processAlive, false);
@@ -199,11 +205,12 @@ test("truncated final response without recovery is not reported as success", { t
   } finally { await f.cleanup(); }
 });
 
-test("more than sixteen one-shot reviews retire and preserve failed/handled results", { timeout: 150_000 }, async () => {
-  const f = await fixture();
+test("one-shot reviews exceed the process cap over time and preserve failed/handled results", { timeout: 30_000 }, async () => {
+  const maxWorkers = 2, reviews = maxWorkers + 2;
+  const f = await fixture({ maxWorkers, maxActive: maxWorkers });
   try {
     const runIds: string[] = [];
-    for (let i = 0; i < 18; i++) {
+    for (let i = 0; i < reviews; i++) {
       const run = f.manager.start(f.launch, `review ${i}`); runIds.push(run.runId);
       const result = await f.manager.wait([run.runId]);
       assert.equal(result.runs[0].result?.outcome, "completed");
@@ -212,7 +219,7 @@ test("more than sixteen one-shot reviews retire and preserve failed/handled resu
       assert.equal(view.state, "closed"); assert.throws(() => process.kill(view.pid!, 0), /ESRCH/);
       assert.equal((await stat(join(f.launch.agentDir, "pi-subagent/fixture-parent", run.workerId, `${run.runId}.json`))).mode & 0o777, 0o600);
     }
-    assert.equal((await f.manager.wait(runIds)).runs.filter(r => r.result?.outcome === "completed").length, 18);
+    assert.equal((await f.manager.wait(runIds)).runs.filter(r => r.result?.outcome === "completed").length, reviews);
     for (const task of ["FAIL_PROVIDER", "HANDLE_INPUT"]) {
       const run = f.manager.start(f.launch, task);
       const done = await f.manager.wait([run.runId]);
