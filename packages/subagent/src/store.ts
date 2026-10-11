@@ -47,6 +47,8 @@ function object(value: unknown): value is Record<string, any> { return !!value &
 function strings(value: unknown): value is string[] { return Array.isArray(value) && value.every(v => typeof v === "string"); }
 function validResult(value: unknown): boolean {
   if (!object(value) || !["completed", "failed", "interrupted"].includes(value.outcome) || typeof value.text !== "string" || !Number.isFinite(value.endedAt)) return false;
+  if (value.truncated !== undefined && typeof value.truncated !== "boolean") return false;
+  if (value.outputFile !== undefined && typeof value.outputFile !== "string") return false;
   const usage = value.usage;
   return object(usage) && object(usage.cost) && ["input", "output", "cacheRead", "cacheWrite", "totalTokens"].every(k => Number.isFinite(usage[k]) && usage[k] >= 0)
     && ["input", "output", "cacheRead", "cacheWrite", "total"].every(k => Number.isFinite(usage.cost[k]) && usage.cost[k] >= 0);
@@ -68,6 +70,7 @@ function validate(value: unknown, parentId: string, id: string, directory: strin
     || (launch.profile.trustedProjectRoot !== undefined && (typeof launch.profile.trustedProjectRoot !== "string" || !isAbsolute(launch.profile.trustedProjectRoot)))
     || launch.cwd !== view.cwd || `${launch.provider}/${launch.model}` !== view.model || launch.effort !== view.effort) return fail();
   if (!Array.isArray(value.runs) || !value.runs.length || value.runs.length > 2048 || value.runs.some(r => !object(r) || r.workerId !== id || !runId.test(r.runId) || typeof r.label !== "string" || !Number.isFinite(r.startedAt) || (r.result !== undefined && !validResult(r.result)))
+    || value.runs.some(r => r.result?.outputFile !== undefined && r.result.outputFile !== join(directory, `${r.runId}.txt`))
     || !value.runs.some(r => r.runId === view.runId) || new Set(value.runs.map(r => r.runId)).size !== value.runs.length || !strings(value.reported)) return fail();
   if (!object(value.prerequisites) || !object(value.prerequisites.files) || !object(value.prerequisites.cwd)
     || !Object.entries(value.prerequisites.files).every(([path, hash]) => isAbsolute(path) && typeof hash === "string" && /^[a-f0-9]{64}$/.test(hash))

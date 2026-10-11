@@ -9,7 +9,12 @@ function brief({ output, toolOutput: _, questions, result, ...view }: Snapshot):
 }
 export function modelView(action: string, result: unknown): unknown {
   if (action === "status") return (result as Snapshot[]).map(brief);
-  if (action === "wait") return { ...(result as WaitResult), workers: (result as WaitResult).workers.map(brief) };
+  if (action === "wait") {
+    const wait = result as WaitResult;
+    return { ...wait, workers: wait.workers.map(brief), ...(wait.runs.some(run => run.result?.truncated) ? {
+      warning: "Result text is truncated. Read each truncated result's outputFile before evaluating or relaying it. If unavailable, inspect the worker sessionFile; the preview is not the complete response.",
+    } : {}) };
+  }
   if (action === "reply") return result;
   return brief(result as Snapshot);
 }

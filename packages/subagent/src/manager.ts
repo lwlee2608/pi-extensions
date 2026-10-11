@@ -9,7 +9,7 @@ import { loadConfig } from "./profiles.ts";
 import { Store, prerequisites, verifyPrerequisites, type Prerequisites } from "./store.ts";
 
 export type Outcome = "completed" | "failed" | "interrupted";
-export interface Result { outcome: Outcome; text: string; error?: string; endedAt: number; usage: Usage }
+export interface Result { outcome: Outcome; text: string; truncated?: boolean; outputFile?: string; error?: string; endedAt: number; usage: Usage }
 export interface Run { runId: string; workerId: string; label: string; startedAt: number; result?: Result }
 export interface Question { questionId: string; workerId: string; runId: string; generation: string; requestId: string; question: string; state: "pending" | "answered" | "cancelled" }
 export interface Snapshot {
@@ -19,7 +19,7 @@ export interface Snapshot {
 }
 interface Worker {
   view: Snapshot; launch: Launch; directory: string; child?: Child; run: Run; lock: Promise<unknown>;
-  accepted: boolean; settled: boolean; last?: Pick<AssistantMessage, "stopReason" | "errorMessage">;
+  accepted: boolean; settled: boolean; finalText?: string; last?: Pick<AssistantMessage, "stopReason" | "errorMessage">;
   usage: Usage; stopping: boolean; reservation: boolean; recoveryError?: string;
   task: string; slot: boolean; generation: string; activeTools: Map<string, string>; ready: boolean; prerequisites: Prerequisites; uncertain: boolean;
 }
@@ -201,7 +201,7 @@ export class Manager {
     worker.run = this.newRun(id, label ?? worker.view.label);
     Object.assign(worker.view, { runId: worker.run.runId, label: worker.run.label, state: "queued", startedAt: worker.run.startedAt,
       result: undefined, error: undefined, output: "", toolOutput: "", usage: undefined, activity: "dispatching" });
-    worker.accepted = false; worker.settled = false; worker.last = undefined; worker.recoveryError = undefined; worker.usage = zeroUsage();
+    worker.accepted = false; worker.settled = false; worker.finalText = undefined; worker.last = undefined; worker.recoveryError = undefined; worker.usage = zeroUsage();
     worker.task = message;
     worker.view.activity = "queued";
     try { this.save(worker); }
@@ -241,7 +241,8 @@ export class Manager {
         if (event.message.role === "assistant") {
           worker.last = { stopReason: event.message.stopReason, errorMessage: event.message.errorMessage };
           if (event.message.stopReason === "stop") worker.recoveryError = undefined;
-          worker.view.output = event.message.content.filter(c => c.type === "text").map(c => c.text).join("\n").slice(-8192);
+          worker.finalText = event.message.content.filter(c => c.type === "text").map(c => c.text).join("\n");
+          worker.view.output = worker.finalText.slice(-8192);
           addUsage(worker.usage, event.message.usage);
           if (event.message.usage.totalTokens) worker.view.context = event.message.usage.totalTokens;
         } else if (event.message.role === "toolResult") addUsage(worker.usage, event.message.usage);
@@ -307,9 +308,16 @@ export class Manager {
   }
   private async finish(worker: Worker, outcome: Outcome, error?: string): Promise<void> {
     if (worker.run.result) return;
-    const result: Result = { outcome, ...(error === undefined ? {} : { error }), text: worker.view.output.slice(-4096), endedAt: Date.now(), usage: structuredClone(worker.usage) };
+    const text = worker.finalText ?? worker.view.output;
+    const result: Result = { outcome, ...(error === undefined ? {} : { error }), text: text.slice(0, 4096), truncated: text.length > 4096, endedAt: Date.now(), usage: structuredClone(worker.usage) };
     try {
       await mkdir(worker.directory, { recursive: true, mode: 0o700 });
+      if (worker.finalText !== undefined) {
+        const outputFile = join(worker.directory, `${worker.run.runId}.txt`);
+        await writeFile(`${outputFile}.tmp`, worker.finalText, { mode: 0o600 });
+        await rename(`${outputFile}.tmp`, outputFile);
+        result.outputFile = outputFile;
+      }
       const path = join(worker.directory, `${worker.run.runId}.json`), temp = `${path}.tmp`;
       await writeFile(temp, JSON.stringify({ ...worker.run, result, sessionFile: worker.view.sessionFile }), { mode: 0o600 });
       await rename(temp, path);
@@ -318,6 +326,7 @@ export class Manager {
       result.error = `Could not persist result: ${errorText(error)}`;
       worker.view.error = result.error;
     }
+    worker.finalText = undefined;
     worker.run.result = result;
     worker.view.result = result;
     worker.view.state = worker.view.lifetime === "retained" && !worker.stopping && !worker.child?.exited ? "idle" : "closed";
