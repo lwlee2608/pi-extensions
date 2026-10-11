@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { getPackageDir, type JsonAgentSessionEvent, type RpcCommand, type RpcResponse, type RpcExtensionUIRequest } from "@earendil-works/pi-coding-agent";
 import type { Launch } from "./profiles.ts";
@@ -17,6 +17,11 @@ export interface Child {
   request<T extends RpcCommand["type"]>(command: Extract<RpcCommand, { type: T }>, timeoutMs?: number): Promise<Response<T>>;
   reply(requestId: string, message: string): Promise<void>;
   close(): Promise<void>;
+}
+export interface Invocation { command: string; args: string[] }
+export function piInvocation(args: string[], runtime = { execPath: process.execPath, script: process.argv[1], bun: !!process.versions.bun, packageDir: getPackageDir() }): Invocation {
+  const compiled = runtime.bun && (/(?:\$bunfs|~BUN)/.test(runtime.script ?? "") || !/^bun(?:\.exe)?$/i.test(basename(runtime.execPath)));
+  return { command: runtime.execPath, args: compiled ? args : [join(runtime.packageDir, "dist/cli.js"), ...args] };
 }
 const limit = 4 * 1024 * 1024;
 export class RpcProcess implements Child {
@@ -37,12 +42,12 @@ export class RpcProcess implements Child {
   private rejectReady!: (error: Error) => void;
   exited = false;
   get pid(): number | undefined { return this.child.pid; }
-  constructor(cli: string, args: string[], cwd: string, env: NodeJS.ProcessEnv, token: string) {
+  constructor(invocation: Invocation, cwd: string, env: NodeJS.ProcessEnv, token: string) {
     this.token = token;
     this.exitPromise = new Promise(resolve => { this.resolveExit = resolve; });
     this.ready = new Promise((resolve, reject) => { this.resolveReady = resolve; this.rejectReady = reject; });
     void this.ready.catch(() => {});
-    this.child = spawn(process.execPath, [cli, ...args], { cwd, env, stdio: ["pipe", "pipe", "pipe", "ipc"] });
+    this.child = spawn(invocation.command, invocation.args, { cwd, env, serialization: "json", stdio: ["pipe", "pipe", "pipe", "ipc"] });
     this.child.stdout!.setEncoding("utf8");
     this.child.stderr!.setEncoding("utf8");
     this.child.stdout!.on("data", (chunk: string) => this.read(chunk));
@@ -165,8 +170,11 @@ export class RpcProcess implements Child {
     throw new Error(`Cleanup failed: child ${this.pid} has not confirmed exit`);
   }
 }
+export function assertSupportedPlatform(platform: NodeJS.Platform = process.platform): void {
+  if (platform !== "linux" && platform !== "darwin") throw new Error("Subagent owned cleanup is currently supported on Linux and macOS only");
+}
 export async function launchChild(launch: Launch, directory: string, sessionId: string, onSpawn?: (child: Child) => void, sessionFile?: string): Promise<Child> {
-  if (process.platform !== "linux" && process.platform !== "darwin") throw new Error("Subagent owned cleanup is currently supported on Linux and macOS only");
+  assertSupportedPlatform();
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const promptPath = join(directory, "profile.md");
   await writeFile(promptPath, launch.profile.prompt, { mode: 0o600 });
@@ -179,7 +187,7 @@ export async function launchChild(launch: Launch, directory: string, sessionId: 
     "--extension", fileURLToPath(new URL("./child.ts", import.meta.url)),
     "--extension", fileURLToPath(new URL("./bootstrap.ts", import.meta.url)),
     ...launch.skills.flatMap(path => ["--skill", path])];
-  const child = new RpcProcess(join(getPackageDir(), "dist/cli.js"), args, launch.cwd, {
+  const child = new RpcProcess(piInvocation(args), launch.cwd, {
     ...process.env, PI_CODING_AGENT_DIR: launch.agentDir, PI_SKIP_VERSION_CHECK: "1", PI_TELEMETRY: "0",
     PI_SUBAGENT_TOKEN: token, PI_SUBAGENT_TOOLS: JSON.stringify([...new Set([...launch.profile.tools, "ask_parent"])]),
     PI_SESSION_ID: undefined, PI_SESSION_FILE: undefined, PI_PROVIDER: undefined, PI_MODEL: undefined, PI_REASONING_LEVEL: undefined,

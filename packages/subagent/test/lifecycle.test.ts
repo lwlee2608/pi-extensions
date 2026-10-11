@@ -7,6 +7,7 @@ import { RpcClient, getPackageDir } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
 import { Manager } from "../src/manager.ts";
 import { fixture, changedUntil } from "./helpers.ts";
+import { modelView } from "../src/result.ts";
 
 for (const source of ["CLI", "npm", "settings"] as const) test(`parent inherits ${source} provider without child config and completes offline RPC start/wait/stop`, { timeout: 30_000 }, async () => {
   const f = await fixture();
@@ -42,6 +43,33 @@ for (const source of ["CLI", "npm", "settings"] as const) test(`parent inherits 
     const saved = JSON.parse(await readFile(join(f.launch.agentDir, "pi-subagent", (await client.getState()).sessionId, stop.workerId, "worker.json"), "utf8"));
     assert.deepEqual(saved.launch.extensions, f.launch.extensions);
   } finally { await client.stop(); await f.cleanup(); }
+});
+
+test("long results keep their leading finding and immutable full response across tasks and reload", { timeout: 30_000 }, async () => {
+  const f = await fixture();
+  let restored: Manager | undefined;
+  try {
+    const task = `CRITICAL: unsafe migration deletes records.\n${"Minor notes.\n".repeat(800)}END_OF_REPORT`;
+    const first = f.manager.start(f.launch, task, "retained");
+    const wait = await f.manager.wait([first.runId]);
+    const result = wait.runs[0].result!;
+    assert.equal(result.outcome, "completed");
+    assert.equal(result.truncated, true);
+    assert.equal(result.text.length, 4096);
+    assert.match(result.text, /CRITICAL/);
+    assert.match(JSON.stringify(modelView("wait", wait)), /Read each truncated result/);
+    const full = await readFile(result.outputFile!, "utf8");
+    assert.ok(full.includes(task));
+    assert.equal((await stat(result.outputFile!)).mode & 0o777, 0o600);
+    const next = await f.manager.message(first.workerId, "follow-up task");
+    const nextResult = (await f.manager.wait([next.runId])).runs[0].result!;
+    assert.notEqual(nextResult.outputFile, result.outputFile);
+    assert.equal(await readFile(result.outputFile!, "utf8"), full);
+    await f.manager.shutdown();
+    restored = new Manager({ root: join(f.launch.agentDir, "pi-subagent"), parentId: "fixture-parent" });
+    assert.deepEqual((await restored.wait([first.runId])).runs, wait.runs);
+    assert.equal(await readFile(result.outputFile!, "utf8"), full);
+  } finally { await restored?.shutdown(); await f.cleanup(); }
 });
 
 // These tests use real Pi CLI/RPC children and real tools, without network/auth.
@@ -92,6 +120,26 @@ test("wait cancellation leaves real work alive, steer stays on the run, stop pre
     assert.equal(await readFile(join(f.launch.cwd, "fixture-edit.txt"), "utf8"), "keep this edit");
     assert.throws(() => process.kill(stopped.pid!, 0), /ESRCH/);
     assert.equal((await f.manager.stop(run.workerId)).result?.outcome, "interrupted");
+  } finally { await f.cleanup(); }
+});
+
+for (const abrupt of [false, true]) test(`multi-turn interruption saves latest text after ${abrupt ? "process exit" : "orderly stop"}`, { timeout: 20_000 }, async () => {
+  const f = await fixture();
+  try {
+    const run = f.manager.start(f.launch, "WRITE_AND_HOLD SLOW_BILLABLE", "retained");
+    await changedUntil(f.manager, () => f.manager.status(run.workerId)[0].output.includes("BILLABLE_RESPONSE"));
+    if (abrupt) process.kill(f.manager.status(run.workerId)[0].pid!, "SIGKILL");
+    else await f.manager.stop(run.workerId);
+    const result = (await f.manager.wait([run.runId])).runs[0].result!;
+    assert.equal(result.outcome, abrupt ? "failed" : "interrupted");
+    assert.equal(result.incomplete, true);
+    assert.equal(result.truncated, false);
+    assert.match(result.text, /BILLABLE_RESPONSE/);
+    if (!abrupt) {
+      assert.match(result.text, /FINAL_ABORT_TEXT/);
+      assert.equal(result.usage.totalTokens, 22);
+    }
+    assert.equal(await readFile(result.outputFile!, "utf8"), result.text);
   } finally { await f.cleanup(); }
 });
 

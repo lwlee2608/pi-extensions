@@ -3,9 +3,34 @@ import { test } from "node:test";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { writeFile } from "node:fs/promises";
-import { RpcProcess, launchChild, literalInput, type Child, type ChildEvent } from "../src/rpc.ts";
+import { assertSupportedPlatform, piInvocation, RpcProcess, launchChild, literalInput, type Child, type ChildEvent } from "../src/rpc.ts";
 import { Manager } from "../src/manager.ts";
 import { fixture } from "./helpers.ts";
+
+test("Pi invocation distinguishes script runtimes from compiled executables", () => {
+  const args = ["--mode", "rpc"];
+  for (const [execPath, bun] of [["/usr/bin/node", false], ["/opt/bin/bun", true], ["/pi/runtime/node", false]] as const) {
+    assert.deepEqual(piInvocation(args, { execPath, bun, script: "/sdk/app.js", packageDir: "/pi" }),
+      { command: execPath, args: ["/pi/dist/cli.js", ...args] });
+  }
+  for (const execPath of ["/opt/bin/pi", "/opt/bin/bun"]) {
+    assert.deepEqual(piInvocation(args, { execPath, bun: true, script: "/$bunfs/root/pi", packageDir: "/opt/bin" }),
+      { command: execPath, args });
+  }
+});
+
+test("unsupported platforms reject admission without recording a run", async () => {
+  assert.doesNotThrow(() => assertSupportedPlatform("linux"));
+  assert.doesNotThrow(() => assertSupportedPlatform("darwin"));
+  const f = await fixture();
+  const platform = Object.getOwnPropertyDescriptor(process, "platform")!;
+  try {
+    Object.defineProperty(process, "platform", { ...platform, value: "win32" });
+    assert.throws(() => f.manager.start(f.launch, "must not admit"), /Linux and macOS only/);
+    assert.equal(f.manager.status().length, 0);
+    await assert.rejects(f.manager.recover("unknown"), /Linux and macOS only/);
+  } finally { Object.defineProperty(process, "platform", platform); await f.cleanup(); }
+});
 
 test("real RPC validates provider, tool loadout and confirmed process exit", { timeout: 40_000 }, async () => {
   const f = await fixture();
@@ -71,7 +96,7 @@ for (const ignoreTerm of [false, true]) test(`owned cleanup confirms exit after 
       process.stdout.write(JSON.stringify({ type: "response", id, command: type, success: true, data: {} }) + "\\n");
     });
     setInterval(() => {}, 1000);`;
-  const child = new RpcProcess("-e", [script], process.cwd(), process.env, randomUUID());
+  const child = new RpcProcess({ command: process.execPath, args: ["-e", script] }, process.cwd(), process.env, randomUUID());
   try {
     await child.request({ type: "get_state" });
     await Promise.all([child.close(), child.close()]);
@@ -89,7 +114,7 @@ test("oversized records are dropped without killing the child", { timeout: 10_00
       process.stdout.write(JSON.stringify({ type: "response", id, command: type, success: true, data: {} }) + "\\n");
     });
     rl.on("close", () => process.exit(0));`;
-  const child = new RpcProcess("-e", [script], process.cwd(), process.env, randomUUID());
+  const child = new RpcProcess({ command: process.execPath, args: ["-e", script] }, process.cwd(), process.env, randomUUID());
   try {
     assert.equal((await child.request({ type: "get_state" })).command, "get_state");
     assert.equal(child.exited, false);

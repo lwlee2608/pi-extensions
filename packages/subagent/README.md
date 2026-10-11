@@ -8,7 +8,7 @@ Delegate tasks to isolated Pi child processes. Run one-shot reviewers, keep long
 pi install npm:@lwlee2608/pi-subagent
 ```
 
-Run `/reload` afterward. Requires Node.js 22.19+ and Pi 1.x on Linux or macOS. Only one `subagent` tool can load at a time.
+Run `/reload` afterward. Requires Node.js 22.19+ and Pi 1.x on Linux or macOS. The child launcher uses Pi's package CLI under Node/Bun, or invokes the compiled Pi executable directly. Windows is not supported; unsupported starts are rejected before task admission. Only one `subagent` tool can load at a time.
 
 ## Tool actions
 
@@ -39,6 +39,7 @@ Retained worker with a follow-up task:
 {"action":"stop","workerId":"w-WORKER-ID"}
 ```
 
+- Result text is a preview of the first 4,096 characters. When `result.truncated` is true, read `result.outputFile` before evaluating or relaying the response. Each run keeps its response in a private, separate file. `result.incomplete: true` means the latest response did not finish successfully; the file contains only the available text (a bounded tail if the child exited before finalizing). If that file is unavailable, inspect the worker's `sessionFile`; do not treat the preview as complete.
 - `wait` returns early with `reason: "attention"` when any child has a pending question. Answer with `{"action":"reply","questionId":"q-ID","message":"..."}`.
 - Pass `parentWorkerId` on `start` to group a worker under another in the panel. Display only.
 - Each `start` gets fresh context, not a fork of the parent conversation.
@@ -107,4 +108,4 @@ PI_OFFLINE=1 npm test --workspace=@lwlee2608/pi-subagent
 node packages/subagent/test/ui.ts regular
 ```
 
-Tests use an offline provider and temporary directories. No credentials needed.
+Tests use an offline provider and temporary directories. No credentials needed. The compiled-executable RPC/IPC test requires Bun (`BUN_BIN` can select its path); it skips when Bun is unavailable. CI installs Bun on Linux and macOS.
