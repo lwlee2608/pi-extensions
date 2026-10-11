@@ -45,15 +45,16 @@ export default function (pi: ExtensionAPI): void {
       queueMicrotask(async () => {
         const users = context.messages.filter(m => m.role === "user").map(m => typeof m.content === "string" ? m.content : m.content.filter(c => c.type === "text").map(c => c.text).join(" "));
         const text = users.at(-1) ?? "";
-        if (text.includes("SLOW_BILLABLE")) {
+        if (text.includes("SLOW_BILLABLE") && (!text.includes("WRITE_AND_HOLD") || context.messages.at(-1)?.role !== "user")) {
           stream.push({ type: "start", partial: message });
           message.content.push({ type: "text", text: "BILLABLE_RESPONSE" });
           stream.push({ type: "text_start", contentIndex: 0, partial: message });
           stream.push({ type: "text_delta", contentIndex: 0, delta: "BILLABLE_RESPONSE", partial: message });
-          try { await delay(1500, undefined, { signal: options?.signal }); } catch { /* Emit authoritative aborted usage below. */ }
+          try { await delay(text.includes("WRITE_AND_HOLD") ? 30_000 : 1500, undefined, { signal: options?.signal }); } catch { /* Emit authoritative aborted usage below. */ }
           message.stopReason = options?.signal?.aborted ? "aborted" : "stop";
           if (message.stopReason === "aborted") {
             message.errorMessage = "Offline cancellation";
+            if (text.includes("WRITE_AND_HOLD")) message.content.push({ type: "text", text: "FINAL_ABORT_TEXT" });
             stream.push({ type: "error", reason: "aborted", error: message });
           } else {
             stream.push({ type: "text_end", contentIndex: 0, content: "BILLABLE_RESPONSE", partial: message });

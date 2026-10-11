@@ -123,6 +123,26 @@ test("wait cancellation leaves real work alive, steer stays on the run, stop pre
   } finally { await f.cleanup(); }
 });
 
+for (const abrupt of [false, true]) test(`multi-turn interruption saves latest text after ${abrupt ? "process exit" : "orderly stop"}`, { timeout: 20_000 }, async () => {
+  const f = await fixture();
+  try {
+    const run = f.manager.start(f.launch, "WRITE_AND_HOLD SLOW_BILLABLE", "retained");
+    await changedUntil(f.manager, () => f.manager.status(run.workerId)[0].output.includes("BILLABLE_RESPONSE"));
+    if (abrupt) process.kill(f.manager.status(run.workerId)[0].pid!, "SIGKILL");
+    else await f.manager.stop(run.workerId);
+    const result = (await f.manager.wait([run.runId])).runs[0].result!;
+    assert.equal(result.outcome, abrupt ? "failed" : "interrupted");
+    assert.equal(result.incomplete, true);
+    assert.equal(result.truncated, false);
+    assert.match(result.text, /BILLABLE_RESPONSE/);
+    if (!abrupt) {
+      assert.match(result.text, /FINAL_ABORT_TEXT/);
+      assert.equal(result.usage.totalTokens, 22);
+    }
+    assert.equal(await readFile(result.outputFile!, "utf8"), result.text);
+  } finally { await f.cleanup(); }
+});
+
 test("late steering is cleared before another task and stop preserves final provider usage", { timeout: 30_000 }, async () => {
   const f = await fixture();
   try {

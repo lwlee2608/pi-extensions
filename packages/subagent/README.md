@@ -39,7 +39,7 @@ Retained worker with a follow-up task:
 {"action":"stop","workerId":"w-WORKER-ID"}
 ```
 
-- Result text is a preview of the first 4,096 characters. When `result.truncated` is true, read `result.outputFile` before evaluating or relaying the response. Each run keeps its complete final response in a private, separate file. If that file is unavailable, inspect the worker's `sessionFile`; do not treat the preview as complete.
+- Result text is a preview of the first 4,096 characters. When `result.truncated` is true, read `result.outputFile` before evaluating or relaying the response. Each run keeps its response in a private, separate file. `result.incomplete: true` means the latest response did not finish successfully; the file contains only the available text (a bounded tail if the child exited before finalizing). If that file is unavailable, inspect the worker's `sessionFile`; do not treat the preview as complete.
 - `wait` returns early with `reason: "attention"` when any child has a pending question. Answer with `{"action":"reply","questionId":"q-ID","message":"..."}`.
 - Pass `parentWorkerId` on `start` to group a worker under another in the panel. Display only.
 - Each `start` gets fresh context, not a fork of the parent conversation.

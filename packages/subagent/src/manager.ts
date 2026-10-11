@@ -9,7 +9,7 @@ import { loadConfig } from "./profiles.ts";
 import { Store, prerequisites, verifyPrerequisites, type Prerequisites } from "./store.ts";
 
 export type Outcome = "completed" | "failed" | "interrupted";
-export interface Result { outcome: Outcome; text: string; truncated?: boolean; outputFile?: string; error?: string; endedAt: number; usage: Usage }
+export interface Result { outcome: Outcome; text: string; truncated?: boolean; incomplete?: boolean; outputFile?: string; error?: string; endedAt: number; usage: Usage }
 export interface Run { runId: string; workerId: string; label: string; startedAt: number; result?: Result }
 export interface Question { questionId: string; workerId: string; runId: string; generation: string; requestId: string; question: string; state: "pending" | "answered" | "cancelled" }
 export interface Snapshot {
@@ -64,7 +64,7 @@ export class Manager {
         for (const id of saved.reported) this.reported.add(id);
         const view = saved.view;
         for (const question of view.questions ?? []) { if (question.state === "pending") question.state = "cancelled"; this.questions.set(question.questionId, question); }
-        if (!run.result) run.result = { outcome: "interrupted", text: view.output.slice(-4096), error: "Parent stopped before this run completed; never replayed", endedAt: Date.now(), usage: zeroUsage() };
+        if (!run.result) run.result = { outcome: "interrupted", text: view.output.slice(-4096), incomplete: true, error: "Parent stopped before this run completed; never replayed", endedAt: Date.now(), usage: zeroUsage() };
         view.result = run.result; view.state = "closed";
         const uncertain = saved.ownership !== "closed";
         view.recoverable = !uncertain && view.lifetime === "retained" && !!view.sessionFile;
@@ -213,11 +213,7 @@ export class Manager {
   }
   private event(worker: Worker, event: ChildEvent): void {
     if (worker.run.result) return;
-    if (worker.stopping) {
-      if (event.type === "message_end" && (event.message.role === "assistant" || event.message.role === "toolResult")) addUsage(worker.usage, event.message.usage);
-      if (event.type === "compaction_end") addUsage(worker.usage, event.result?.usage);
-      return;
-    }
+    if (worker.stopping && !["message_start", "message_update", "message_end", "compaction_end"].includes(event.type)) return;
     switch (event.type) {
       case "subagent_question": {
         if (!worker.ready || worker.view.questions!.length >= 128 || worker.view.questions!.some(q => q.requestId === event.requestId)) {
@@ -232,6 +228,13 @@ export class Manager {
         catch (error) { this.recordError(worker, error); void this.stop(worker.view.workerId, false).catch(error => this.recordError(worker, error)); }
         break;
       }
+      case "message_start":
+        if (event.message.role === "assistant") {
+          worker.finalText = undefined;
+          worker.last = undefined;
+          worker.view.output = "";
+        }
+        break;
       case "message_update":
         worker.view.usage = structuredClone(worker.usage);
         addUsage(worker.view.usage, event.usage);
@@ -310,15 +313,13 @@ export class Manager {
   private async finish(worker: Worker, outcome: Outcome, error?: string): Promise<void> {
     if (worker.run.result) return;
     const text = worker.finalText ?? worker.view.output;
-    const result: Result = { outcome, ...(error === undefined ? {} : { error }), text: text.slice(0, 4096), truncated: text.length > 4096, endedAt: Date.now(), usage: structuredClone(worker.usage) };
+    const result: Result = { outcome, ...(error === undefined ? {} : { error }), text: text.slice(0, 4096), truncated: text.length > 4096, incomplete: worker.finalText === undefined || worker.last?.stopReason !== "stop", endedAt: Date.now(), usage: structuredClone(worker.usage) };
     try {
       await mkdir(worker.directory, { recursive: true, mode: 0o700 });
-      if (worker.finalText !== undefined) {
-        const outputFile = join(worker.directory, `${worker.run.runId}.txt`);
-        await writeFile(`${outputFile}.tmp`, worker.finalText, { mode: 0o600 });
-        await rename(`${outputFile}.tmp`, outputFile);
-        result.outputFile = outputFile;
-      }
+      const outputFile = join(worker.directory, `${worker.run.runId}.txt`);
+      await writeFile(`${outputFile}.tmp`, text, { mode: 0o600 });
+      await rename(`${outputFile}.tmp`, outputFile);
+      result.outputFile = outputFile;
       const path = join(worker.directory, `${worker.run.runId}.json`), temp = `${path}.tmp`;
       await writeFile(temp, JSON.stringify({ ...worker.run, result, sessionFile: worker.view.sessionFile }), { mode: 0o600 });
       await rename(temp, path);

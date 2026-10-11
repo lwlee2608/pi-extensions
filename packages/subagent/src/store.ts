@@ -48,6 +48,7 @@ function strings(value: unknown): value is string[] { return Array.isArray(value
 function validResult(value: unknown): boolean {
   if (!object(value) || !["completed", "failed", "interrupted"].includes(value.outcome) || typeof value.text !== "string" || !Number.isFinite(value.endedAt)) return false;
   if (value.truncated !== undefined && typeof value.truncated !== "boolean") return false;
+  if (value.incomplete !== undefined && typeof value.incomplete !== "boolean") return false;
   if (value.outputFile !== undefined && typeof value.outputFile !== "string") return false;
   const usage = value.usage;
   return object(usage) && object(usage.cost) && ["input", "output", "cacheRead", "cacheWrite", "totalTokens"].every(k => Number.isFinite(usage[k]) && usage[k] >= 0)
