@@ -8,7 +8,7 @@ Delegate tasks to isolated Pi child processes. Run one-shot reviewers, keep long
 pi install npm:@lwlee2608/pi-subagent
 ```
 
-Run `/reload` afterward. Requires Node.js 22.19+ and Pi 1.x on Linux or macOS. Windows is not supported; unsupported starts are rejected before task admission. Only one `subagent` tool can load at a time.
+Run `/reload` afterward. Requires Node.js 22.19+ and Pi 1.x on Linux or macOS. The child launcher uses Pi's package CLI under Node/Bun, or invokes the compiled Pi executable directly. Windows is not supported; unsupported starts are rejected before task admission. Only one `subagent` tool can load at a time.
 
 ## Tool actions
 
@@ -108,4 +108,4 @@ PI_OFFLINE=1 npm test --workspace=@lwlee2608/pi-subagent
 node packages/subagent/test/ui.ts regular
 ```
 
-Tests use an offline provider and temporary directories. No credentials needed.
+Tests use an offline provider and temporary directories. No credentials needed. The compiled-executable RPC/IPC test requires Bun (`BUN_BIN` can select its path); it skips when Bun is unavailable. CI installs Bun on Linux and macOS.

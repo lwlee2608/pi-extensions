@@ -22,6 +22,9 @@ jobs:
           node-version: 22
           cache: npm
 
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
       - run: npm ci --ignore-scripts
       - run: npm run check
       - run: npm test
@@ -35,6 +38,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.0"
       - run: npm ci --ignore-scripts
       - run: npm run check --workspace=@lwlee2608/pi-subagent
       - run: npm test --workspace=@lwlee2608/pi-subagent
