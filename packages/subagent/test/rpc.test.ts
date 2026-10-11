@@ -62,6 +62,25 @@ test("early settlement before prompt response does not get lost", { timeout: 500
   } finally { await manager.shutdown(); await f.cleanup(); }
 });
 
+for (const ignoreTerm of [false, true]) test(`owned cleanup confirms exit after ${ignoreTerm ? "SIGKILL" : "SIGTERM"}`, { timeout: 10_000 }, async () => {
+  const script = `
+    ${ignoreTerm ? 'process.on("SIGTERM", () => {});' : ""}
+    const rl = require("node:readline").createInterface({ input: process.stdin });
+    rl.on("line", line => {
+      const { id, type } = JSON.parse(line);
+      process.stdout.write(JSON.stringify({ type: "response", id, command: type, success: true, data: {} }) + "\\n");
+    });
+    setInterval(() => {}, 1000);`;
+  const child = new RpcProcess("-e", [script], process.cwd(), process.env, randomUUID());
+  try {
+    await child.request({ type: "get_state" });
+    await Promise.all([child.close(), child.close()]);
+    assert.equal(child.exited, true);
+    assert.throws(() => process.kill(child.pid!, 0), /ESRCH/);
+    await child.close();
+  } finally { await child.close(); }
+});
+
 test("oversized records are dropped without killing the child", { timeout: 10_000 }, async () => {
   const script = `const rl = require("node:readline").createInterface({ input: process.stdin });
     rl.on("line", line => {

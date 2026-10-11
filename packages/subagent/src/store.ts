@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import type { Launch } from "./profiles.ts";
 import type { Run, Snapshot } from "./manager.ts";
@@ -41,7 +41,7 @@ export function verifyPrerequisites(saved: SavedWorker, approvedExtensions: stri
     header = prefix.subarray(0, newline).toString("utf8");
   } finally { closeSync(fd); }
   const first = JSON.parse(header);
-  if (first.type !== "session" || first.id !== saved.view.sessionId || first.cwd !== saved.view.cwd) throw new Error("Recovery session identity changed");
+  if (first.type !== "session" || first.id !== saved.view.sessionId || typeof first.cwd !== "string" || !isAbsolute(first.cwd) || realpathSync(first.cwd) !== realpathSync(saved.view.cwd)) throw new Error("Recovery session identity changed");
 }
 function object(value: unknown): value is Record<string, any> { return !!value && typeof value === "object" && !Array.isArray(value); }
 function strings(value: unknown): value is string[] { return Array.isArray(value) && value.every(v => typeof v === "string"); }

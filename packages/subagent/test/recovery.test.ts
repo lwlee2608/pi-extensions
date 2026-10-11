@@ -3,7 +3,7 @@ import { test } from "node:test";
 import { fork } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
-import { readFile, rename, writeFile, mkdir, rm } from "node:fs/promises";
+import { readFile, rename, writeFile, mkdir, rm, symlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { Manager } from "../src/manager.ts";
 import { fixture, changedUntil } from "./helpers.ts";
@@ -24,6 +24,27 @@ async function parentProcess(root: string) {
   });
   return { child, call, exited };
 }
+
+test("recovery accepts a cwd alias but rejects a different session directory", { timeout: 20_000 }, async () => {
+  const f = await fixture();
+  try {
+    const alias = join(f.root, "work-alias");
+    await symlink(f.launch.cwd, alias);
+    const run = f.manager.start({ ...f.launch, cwd: alias }, "CWD_ALIAS", "retained");
+    const result = await f.manager.wait([run.runId]);
+    assert.equal(result.runs[0].result?.outcome, "completed");
+    await f.manager.stop(run.workerId);
+    const recovered = await f.manager.recover(run.workerId);
+    assert.equal(recovered.state, "idle");
+    await f.manager.stop(run.workerId);
+    const sessionFile = recovered.sessionFile!;
+    const lines = (await readFile(sessionFile, "utf8")).split("\n");
+    const header = JSON.parse(lines[0]);
+    lines[0] = JSON.stringify({ ...header, cwd: f.launch.agentDir });
+    await writeFile(sessionFile, lines.join("\n"));
+    await assert.rejects(f.manager.recover(run.workerId), /session identity changed/);
+  } finally { await f.cleanup(); }
+});
 
 test("a disposable parent process exits then recovers the original conversation", { timeout: 30_000 }, async () => {
   const f = await fixture(); let parent: Awaited<ReturnType<typeof parentProcess>> | undefined;
