@@ -55,7 +55,7 @@ No build step is required. Pi loads the TypeScript source. Shared dev dependenci
 
 ## Publishing
 
-GitHub Actions runs type checks, tests, and package dry runs on pull requests, pushes to `main`, and release tags. A tag named `<dir>-v<version>` (for example `session-board-v0.1.0`) publishes `packages/<dir>` to npm if its `package.json` version matches and the version is not already published, then creates a GitHub release with generated notes.
+GitHub Actions runs type checks, tests, and package dry runs on pull requests, pushes to `main`, and release tags. Only changed packages are checked; changes to root `package.json`, `tsconfig*.json`, workflows, or lockfile dependencies check every package, and a release tag checks only its package. A tag named `<dir>-v<version>` (for example `session-board-v0.1.0`) publishes `packages/<dir>` to npm if its `package.json` version matches and the version is not already published, then creates a GitHub release with generated notes.
 
 ### One-time setup per package
 
