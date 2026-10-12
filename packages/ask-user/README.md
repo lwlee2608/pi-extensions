@@ -1,6 +1,6 @@
 # Pi Ask User
 
-A lean terminal-only `ask_user_question` tool. Supports 1–8 questions with 2–8 options, single/multi-select, inline custom answers, Markdown previews, notes, review, "Chat about this", and safe cancellation. Like Claude Code, it renders inline in place of Pi's input editor, so the transcript stays visible, and restores your editor text when done.
+Lets the agent stop and ask you questions in the terminal, like Claude Code's AskUserQuestion. The questionnaire renders inline in place of Pi's editor, so the transcript stays visible, and your draft editor text comes back when you're done.
 
 ```
 ────────────────────────────────────────
@@ -18,61 +18,54 @@ Which features should we include?
 Space/Enter toggle · ↑/↓ navigate · Tab/←→ switch · n note · Esc cancel
 ```
 
-- Tab / Shift+Tab or ← / →: change question or open review. Tabs appear only with more than one question.
-- Up / Down: move through options or the review's Submit/Cancel choices.
-- 1–9: pick an option directly. In multi-select this toggles it. The number after the options moves to the custom row; the next one chooses Chat about this. With 8 options the Chat row is unnumbered; use ↑/↓ and Enter.
-- Ctrl+Up / Ctrl+Down: scroll question and option text without changing the focused option.
-- Space / Enter: toggle a multi-select option. Only multi-select questions show checkboxes. Like Claude Code, they end with a **Submit** row (**Next** in a batch) that confirms the question; it is dimmed until something is chosen.
-- Enter: choose a single option or the typed custom answer. In multi-select, Enter toggles; on the custom row it moves to Submit. A one-question batch submits on choice; larger batches submit from review once every question is answered.
-- Custom row: type directly on `Type something.`, like Claude Code. There, digits, Space, and `n` are text and ←/→ move the text cursor; use Tab/Shift+Tab to switch questions. In multi-select, nonblank text checks the row as you type, so you can still toggle other options before confirming. In single-select, press Enter to activate a custom answer; until then, text remains a draft. While that custom answer is active, later edits save as you type and are included when you submit from review, even if you leave the row without pressing Enter. Selecting an authored option or clearing the custom text deactivates it; press Enter to activate custom text again.
-- In the note editor: Enter applies, Shift+Enter adds a newline, Esc leaves without applying. Uncommitted text remains available when reopened. Ctrl+] remains the editor's jump-forward action.
-- Chat about this: below a separator on every question, like Claude Code. Choosing it (Enter or its number) ends the questionnaire with `chat: true` and any answered questions, so the model asks what you want to clarify instead of assuming answers.
-- `n`: edit a question note, or the global note from review. Saving an empty note clears it; Esc retains the draft without replacing a saved note.
-- PageUp / PageDown: scroll the focused option's preview. Previews sit beside options on wide terminals and below them on narrow terminals; stacked previews appear only when the terminal is tall enough. Editing always uses the full width.
-- Type-ahead guard: if you are still typing when the questionnaire opens, Enter, 1–9, Space, and `n` are ignored until you pause for 400 ms, so keystrokes meant for Pi's editor cannot answer a question. Esc and navigation work immediately.
-- Close other dialogs before opening a questionnaire. An existing overlay, even hidden, blocks opening so the questionnaire cannot take its input.
-- Esc outside the note editor requests cancellation. Existing answers or drafts require explicit **Discard answers** confirmation; **Keep editing** is the default.
-
-Pi's configured selection and editor bindings apply. Custom actions read `pi-ask-user.note`, `pi-ask-user.previewUp`, and `pi-ask-user.previewDown` from Pi's keybindings, accepting a key string, an array of keys, or `[]` to disable. Defaults are `n`, `pageUp`, and `pageDown`. These IDs do not receive automatic conflict detection; avoid editor/navigation conflicts. Custom text may accompany multi-select choices. Cancellation returns no drafts. RPC, JSON, and print runs do not expose the tool.
-
-## Local verification
-
-From the repository root:
+## Install
 
 ```sh
-npm run check -w packages/ask-user
-npm test -w packages/ask-user
-
-repo="$PWD"
-profile="$(mktemp -d)"
-PI_CODING_AGENT_DIR="$profile" pi --offline --no-session --no-extensions \
-  --no-skills --no-prompt-templates --no-context-files --no-approve \
-  --tui-mode regular \
-  -e "$repo/packages/ask-user/src/index.ts" \
-  -e "$repo/packages/ask-user/test/fixtures/demo.ts"
+pi install npm:@lwlee2608/pi-ask-user
 ```
 
-Run `/ask-user-demo core`, `/ask-user-demo single`, `/ask-user-demo cancel`, or `/ask-user-demo rich`. Use `rich` to compare previews at 120 and 60 columns, attach question/global notes, and verify Esc preserves saved notes when a changed draft is abandoned. These commands open the real questionnaire and display JSON without calling a model. No credentials are needed. Use a fresh temporary profile and `--tui-mode fullscreen` to check the other terminal mode.
+Start a new session afterward. Requires Node.js 22.19+ and Pi 1.0.0+. Don't load it alongside another extension that registers `ask_user_question`.
 
-Run `/ask-user-demo limits` for eight questions with eight options each, long text, and Unicode. At a short terminal height, use Ctrl+Up/Down to inspect text, then submit; then cancel a new fixture and verify another opens normally.
+## Features
 
-The full user-run walkthrough is in [the repository plan](https://github.com/lwlee2608/pi-extensions/blob/main/packages/ask-user/plans/ask-user.md#demo). Fixtures are not published. Do not load the old rpiv extension alongside this extension: both register `ask_user_question`. Do not install or switch global settings as part of verification.
+- 1–8 questions per call, each with 2–8 options. Single-select or multi-select (checkboxes).
+- **Type something.**: write your own answer inline, right after the options. In multi-select it can go along with checked options.
+- **Chat about this**: closes the questionnaire and tells the agent you want to talk it over first. Any answers and notes you've already given are sent along.
+- **Notes**: press `n` to attach a note to a question, or a global note from the review screen.
+- **Previews**: options can carry Markdown previews, shown beside the options on wide terminals and below them on tall ones.
+- **Review**: with several questions, a final tab shows all answers before you submit.
+- **Safe cancel**: Esc cancels. If you've entered anything, you're asked to confirm before it's discarded.
+- **Type-ahead guard**: keys you were typing when the questionnaire opened can't answer it by accident.
+- Small footprint: the tool declaration is about 1 KB of model context.
 
-## Context budget and output
+## Keys
 
-The description plus minified parameter schema is **1,079 characters** versus approximately 4,983 in rpiv 2.12.0: about 78% smaller. Prompt snippets and guidelines are omitted. The test caps the actual registered declaration at 1,800 characters. These are character counts, not exact tokenizer or provider-wire measurements.
+| Key | Action |
+|-----|--------|
+| ↑ / ↓ | Move between options |
+| Enter | Choose an option; in multi-select, toggle it |
+| Space | Toggle a multi-select option |
+| 1–9 | Pick an option by number |
+| Tab / Shift+Tab, ← / → | Switch question or go to review |
+| `n` | Add or edit a note |
+| PageUp / PageDown | Scroll the option's preview |
+| Ctrl+↑ / Ctrl+↓ | Scroll long question text |
+| Esc | Cancel (or close the note editor) |
 
-Results contain `cancelled`, `answers`, and optional `globalNote` and `chat`. A `chat` result lists only answered or noted questions. Each answer contains a 1-based `questionIndex`, selected option labels, and optional `custom` and `notes`. Previews, repeated question text, and inactive drafts are excluded. Explicit cancellation returns exactly `{"cancelled":true,"answers":[]}`. Failure/abort is an error, not a user cancellation.
+On the **Type something.** row, keys type text, ←/→ move the cursor, and Enter confirms. Use Tab to leave the row.
 
-## Replace rpiv (user action after verification)
+In the note editor, Enter saves and Shift+Enter adds a newline.
 
-1. Remove or disable `npm:@juicesharp/rpiv-ask-user-question`. Never load both registrations together.
-2. Install with `pi install npm:@lwlee2608/pi-ask-user`, or `pi install ./packages/ask-user` from a checkout.
-3. Start a fresh session. Review any separate user rules that still require rpiv's old question limits or schema; this package retains only the tool name, not exact API compatibility.
-4. To roll back, remove/disable this package, restore rpiv, and start another fresh session.
+## Custom keybindings
 
-The manifest advertises `pi-package` and a source extension entry point for Pi discovery. Publishing and switching packages are separate user actions, not part of verification. Releases follow the repository publishing instructions with an `ask-user-v<version>` tag.
+Pi's own selection and editor bindings apply. You can also remap these actions in Pi's keybindings file with a key, a list of keys, or `[]` to disable:
 
-## Host compatibility
+| Action | Default |
+|--------|---------|
+| `pi-ask-user.note` | `n` |
+| `pi-ask-user.previewUp` | `pageUp` |
+| `pi-ask-user.previewDown` | `pageDown` |
 
-Requires Node.js 22.19+ and Pi 1.0.0+.
+These aren't checked for conflicts, so avoid keys Pi already uses for editing or navigation.
+
+The tool works only in Pi's interactive terminal mode. It's hidden in print, JSON, and RPC runs.
