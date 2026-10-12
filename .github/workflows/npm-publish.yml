@@ -11,13 +11,62 @@ on:
 permissions:
   contents: read
 
-jobs:
-  check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
 
-      - uses: actions/setup-node@v4
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      workspaces: ${{ steps.diff.outputs.workspaces }}
+      subagent: ${{ steps.diff.outputs.subagent }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - id: diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          shared='^(package\.json|tsconfig[^/]*\.json|\.github/workflows/)'
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            dirs="${GITHUB_REF_NAME%-v*}"
+          elif [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] || ! git cat-file -e "$BASE^{commit}" 2>/dev/null \
+            || git diff --name-only "$BASE...HEAD" | grep -qE "$shared" \
+            || git diff -U0 "$BASE...HEAD" -- package-lock.json | grep -E '^[-+] ' | grep -qvE '^[-+] *"version":'; then
+            dirs=$(ls packages)
+          else
+            dirs=$(git diff --name-only "$BASE...HEAD" | sed -nE 's#^packages/([A-Za-z0-9._-]+)/.*#\1#p' | sort -u)
+          fi
+          workspaces="" subagent=false
+          for dir in $dirs; do
+            if [ -f "packages/$dir/package.json" ]; then workspaces="$workspaces --workspace=packages/$dir"; fi
+            if [ "$dir" = subagent ]; then subagent=true; fi
+          done
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ -z "$workspaces" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match any package under packages/."
+            exit 1
+          fi
+          echo "workspaces=$workspaces" >> "$GITHUB_OUTPUT"
+          echo "subagent=$subagent" >> "$GITHUB_OUTPUT"
+          echo "Packages:${workspaces:- none}"
+
+  check:
+    needs: changes
+    if: needs.changes.outputs.workspaces != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      WORKSPACES: ${{ needs.changes.outputs.workspaces }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -26,15 +75,20 @@ jobs:
         with:
           bun-version: "1.4.0"
       - run: npm ci --ignore-scripts
-      - run: npm run check
-      - run: npm test
-      - run: npm pack --dry-run --ignore-scripts --workspaces
+      - run: npm run check $WORKSPACES
+      - run: npm test $WORKSPACES
+      - run: npm pack --dry-run --ignore-scripts $WORKSPACES
 
   subagent-macos:
+    needs: changes
+    if: needs.changes.outputs.subagent == 'true'
     runs-on: macos-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -49,8 +103,12 @@ jobs:
 
   publish:
     needs: [check, subagent-macos]
-    if: startsWith(github.ref, 'refs/tags/') && contains(github.ref_name, '-v')
+    if: >-
+      !cancelled() && startsWith(github.ref, 'refs/tags/') && contains(github.ref_name, '-v')
+      && needs.check.result == 'success'
+      && (needs.subagent-macos.result == 'success' || needs.subagent-macos.result == 'skipped')
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
       id-token: write
@@ -58,9 +116,11 @@ jobs:
       group: npm-publish
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
