@@ -16,7 +16,7 @@ export const parameters = Type.Object({
 
 export type Params = Static<typeof parameters>;
 export type Question = Params["questions"][number];
-export const description = "Ask for blocking user decisions. Batch related questions; put recommended choices first. Custom answers are always available, including alongside multi-select choices. On cancellation, do not repeat the questions or assume answers; explain any blocking decision and wait.";
+export const description = "Ask for blocking user decisions. Batch related questions; put recommended choices first. Custom answers are always available, including alongside multi-select choices. On cancellation, do not repeat the questions or assume answers; explain any blocking decision and wait. If chat is true, the user wants to discuss first: ask what they want to clarify, then re-ask if needed.";
 
 export function validate(params: unknown): asserts params is Params {
   if (!Check(parameters, params)) throw new Error("Invalid questionnaire: expected 1–8 questions with 2–8 nonblank options each.");

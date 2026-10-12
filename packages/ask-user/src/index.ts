@@ -45,6 +45,7 @@ export default function (pi: ExtensionAPI): void {
         return `${theme.fg("muted", "·")} ${label} ${value}${answer.notes ? `\n  ${theme.fg("muted", `Note: ${display(answer.notes)}`)}` : ""}`;
       });
       if (details.globalNote) lines.push(`Global note: ${display(details.globalNote)}`);
+      if (details.chat) lines.unshift(theme.fg("warning", "User wants to chat about this"));
       return new Text(lines.join("\n"), 0, 0);
     },
   });

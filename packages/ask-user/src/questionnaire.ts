@@ -191,15 +191,17 @@ export class Questionnaire implements Component, Focusable {
     } else {
       const question = this.state.questions[this.state.tab];
       const answer = this.state.answers[this.state.tab];
-      const lastRow = question.options.length + (question.multiSelect ? 1 : 0);
+      const chatRow = question.options.length + (question.multiSelect ? 2 : 1);
       if (up || down) {
-        answer.cursor = Math.max(0, Math.min(lastRow, answer.cursor + (up ? -1 : 1)));
+        answer.cursor = Math.max(0, Math.min(chatRow, answer.cursor + (up ? -1 : 1)));
         this.followFocus = true;
       } else if (digit >= 0 && digit <= question.options.length) {
         answer.cursor = digit;
         this.followFocus = true;
         if (digit < question.options.length) this.state.select(this.state.tab, digit);
         if (digit < question.options.length && !question.multiSelect) this.confirmAnswer();
+      } else if (digit === question.options.length + 1 || (confirm && answer.cursor === chatRow)) {
+        this.done(result(this.state, false, true));
       } else if (question.multiSelect && answer.cursor < question.options.length && (confirm || matchesKey(data, Key.space))) {
         this.state.select(this.state.tab, answer.cursor);
       } else if (confirm) {
@@ -304,6 +306,8 @@ export class Questionnaire implements Component, Focusable {
         add(onSubmit ? theme.fg("accent", label) : state.answered(state.tab) ? label : theme.fg("muted", label), (onSubmit ? `${theme.fg("accent", "❯")} ` : "  ") + indent);
       }
       if (answer.notes) { body.push(""); add(theme.fg("muted", `Note: ${display(answer.notes)}`)); }
+      body.push(theme.fg("border", "─".repeat(bodyWidth)));
+      choice(question.options.length + 1, "Chat about this", answer.cursor === rows.length + (question.multiSelect ? 1 : 0));
       if (!question.multiSelect) hint(confirmKey, "select");
       else if (typing) hint(confirmKey, "done");
       else if (onSubmit) hint(confirmKey, this.single ? "submit" : "next");

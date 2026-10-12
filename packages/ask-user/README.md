@@ -1,6 +1,6 @@
 # Pi Ask User
 
-A lean terminal-only `ask_user_question` tool. Supports 1–8 questions with 2–8 options, single/multi-select, inline custom answers, Markdown previews, notes, review, and safe cancellation. Like Claude Code, it renders inline in place of Pi's input editor, so the transcript stays visible, and restores your editor text when done.
+A lean terminal-only `ask_user_question` tool. Supports 1–8 questions with 2–8 options, single/multi-select, inline custom answers, Markdown previews, notes, review, "Chat about this", and safe cancellation. Like Claude Code, it renders inline in place of Pi's input editor, so the transcript stays visible, and restores your editor text when done.
 
 ```
 ────────────────────────────────────────
@@ -12,6 +12,8 @@ Which features should we include?
   2. [ ] Export
   3. [ ] Type something.
      Next
+────────────────────────────────────────
+  4. Chat about this
 
 Space/Enter toggle · ↑/↓ navigate · Tab/←→ switch · n note · Esc cancel
 ```
@@ -24,6 +26,7 @@ Space/Enter toggle · ↑/↓ navigate · Tab/←→ switch · n note · Esc can
 - Enter: choose a single option or the typed custom answer. In multi-select, Enter toggles; on the custom row it moves to Submit. A one-question batch submits on choice; larger batches submit from review once every question is answered.
 - Custom row: type directly on `Type something.`, like Claude Code. There, digits, Space, and `n` are text and ←/→ move the text cursor; use Tab/Shift+Tab to switch questions. In multi-select, nonblank text checks the row as you type, so you can still toggle other options before confirming. In single-select, press Enter to activate a custom answer; until then, text remains a draft. While that custom answer is active, later edits save as you type and are included when you submit from review, even if you leave the row without pressing Enter. Selecting an authored option or clearing the custom text deactivates it; press Enter to activate custom text again.
 - In the note editor: Enter applies, Shift+Enter adds a newline, Esc leaves without applying. Uncommitted text remains available when reopened. Ctrl+] remains the editor's jump-forward action.
+- Chat about this: below a separator on every question, like Claude Code. Choosing it (Enter or its number) ends the questionnaire with `chat: true` and any answered questions, so the model asks what you want to clarify instead of assuming answers.
 - `n`: edit a question note, or the global note from review. Saving an empty note clears it; Esc retains the draft without replacing a saved note.
 - PageUp / PageDown: scroll the focused option's preview. Previews sit beside options on wide terminals and below them on narrow terminals; stacked previews appear only when the terminal is tall enough. Editing always uses the full width.
 - Type-ahead guard: if you are still typing when the questionnaire opens, Enter, 1–9, Space, and `n` are ignored until you pause for 400 ms, so keystrokes meant for Pi's editor cannot answer a question. Esc and navigation work immediately.
@@ -57,9 +60,9 @@ The full user-run walkthrough is in [the repository plan](https://github.com/lwl
 
 ## Context budget and output
 
-The description plus minified parameter schema is **975 characters** versus approximately 4,983 in rpiv 2.12.0: about 80% smaller. Prompt snippets and guidelines are omitted. The test caps the actual registered declaration at 1,800 characters. These are character counts, not exact tokenizer or provider-wire measurements.
+The description plus minified parameter schema is **1,079 characters** versus approximately 4,983 in rpiv 2.12.0: about 78% smaller. Prompt snippets and guidelines are omitted. The test caps the actual registered declaration at 1,800 characters. These are character counts, not exact tokenizer or provider-wire measurements.
 
-Results contain `cancelled`, `answers`, and optional `globalNote`. Each answer contains a 1-based `questionIndex`, selected option labels, and optional `custom` and `notes`. Previews, repeated question text, and inactive drafts are excluded. Explicit cancellation returns exactly `{"cancelled":true,"answers":[]}`. Failure/abort is an error, not a user cancellation.
+Results contain `cancelled`, `answers`, and optional `globalNote` and `chat`. A `chat` result lists only answered questions. Each answer contains a 1-based `questionIndex`, selected option labels, and optional `custom` and `notes`. Previews, repeated question text, and inactive drafts are excluded. Explicit cancellation returns exactly `{"cancelled":true,"answers":[]}`. Failure/abort is an error, not a user cancellation.
 
 ## Replace rpiv (user action after verification)
 

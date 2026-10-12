@@ -142,7 +142,7 @@ test("number shortcuts support terminal protocols without consuming modified key
 test("inline layout uses natural height instead of filling the terminal", () => {
   const h = harness({ questions: core.questions.slice(0, 1) }, 60);
   const lines = h.questionnaire.render(80);
-  assert.equal(lines.length, 8);
+  assert.equal(lines.length, 10);
   assert.match(lines.at(-1)!, /^Enter select · ↑\/↓ navigate · n note · Esc cancel$/);
 });
 
@@ -184,6 +184,20 @@ test("untouched cancel is immediate; work requires explicit discard and keep pre
   assert.equal(h.questionnaire.state.answers[0].custom, "draft");
   h.input(esc, down, enter);
   assert.deepEqual(h.output(), { cancelled: true, answers: [] });
+});
+
+test("Chat about this sits below a separator and returns answered questions without requiring completion", () => {
+  const single = harness({ questions: core.questions.slice(0, 1) });
+  assert.match(single.text(), /3\. Type something\.\n─+\n  4\. Chat about this/);
+  single.input(down, down, down, down);
+  assert.match(single.text(), /❯ 4\. Chat about this/);
+  single.input(enter);
+  assert.deepEqual(single.output(), { cancelled: false, chat: true, answers: [] });
+  const multi = harness();
+  multi.input("2", down, down, down, down, down);
+  assert.match(multi.text(), /Next\n─+\n❯ 5\. Chat about this/);
+  multi.input("5");
+  assert.deepEqual(multi.output(), { cancelled: false, chat: true, answers: [{ questionIndex: 1, selected: ["PostgreSQL"] }] });
 });
 
 test("single-select inactive custom text is retained but never returned", () => {
