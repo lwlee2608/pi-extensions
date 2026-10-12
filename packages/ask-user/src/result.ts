@@ -15,7 +15,7 @@ export function result(state: QuestionnaireState, cancelled = false, chat = fals
     cancelled: false,
     ...(chat ? { chat: true as const } : {}),
     ...(state.globalNote ? { globalNote: state.globalNote } : {}),
-    answers: state.answers.flatMap((answer, index) => state.answered(index) ? [{
+    answers: state.answers.flatMap((answer, index) => state.answered(index) || answer.notes ? [{
       questionIndex: index + 1,
       selected: state.questions[index].options.filter((_, i) => answer.selected.has(i)).map(option => option.label),
       ...(answer.notes ? { notes: answer.notes } : {}),

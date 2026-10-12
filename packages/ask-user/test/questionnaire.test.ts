@@ -186,7 +186,7 @@ test("untouched cancel is immediate; work requires explicit discard and keep pre
   assert.deepEqual(h.output(), { cancelled: true, answers: [] });
 });
 
-test("Chat about this sits below a separator and returns answered questions without requiring completion", () => {
+test("Chat about this sits below a separator and returns answered or noted questions without requiring completion", () => {
   const single = harness({ questions: core.questions.slice(0, 1) });
   assert.match(single.text(), /3\. Type something\.\n─+\n  4\. Chat about this/);
   single.input(down, down, down, down);
@@ -196,8 +196,12 @@ test("Chat about this sits below a separator and returns answered questions with
   const multi = harness();
   multi.input("2", down, down, down, down, down);
   assert.match(multi.text(), /Next\n─+\n❯ 5\. Chat about this/);
+  multi.questionnaire.state.saveNote(1, "Unsure about audit");
   multi.input("5");
-  assert.deepEqual(multi.output(), { cancelled: false, chat: true, answers: [{ questionIndex: 1, selected: ["PostgreSQL"] }] });
+  assert.deepEqual(multi.output(), { cancelled: false, chat: true, answers: [
+    { questionIndex: 1, selected: ["PostgreSQL"] },
+    { questionIndex: 2, selected: [], notes: "Unsure about audit" },
+  ] });
 });
 
 test("single-select inactive custom text is retained but never returned", () => {

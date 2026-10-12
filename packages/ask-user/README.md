@@ -62,7 +62,7 @@ The full user-run walkthrough is in [the repository plan](https://github.com/lwl
 
 The description plus minified parameter schema is **1,079 characters** versus approximately 4,983 in rpiv 2.12.0: about 78% smaller. Prompt snippets and guidelines are omitted. The test caps the actual registered declaration at 1,800 characters. These are character counts, not exact tokenizer or provider-wire measurements.
 
-Results contain `cancelled`, `answers`, and optional `globalNote` and `chat`. A `chat` result lists only answered questions. Each answer contains a 1-based `questionIndex`, selected option labels, and optional `custom` and `notes`. Previews, repeated question text, and inactive drafts are excluded. Explicit cancellation returns exactly `{"cancelled":true,"answers":[]}`. Failure/abort is an error, not a user cancellation.
+Results contain `cancelled`, `answers`, and optional `globalNote` and `chat`. A `chat` result lists only answered or noted questions. Each answer contains a 1-based `questionIndex`, selected option labels, and optional `custom` and `notes`. Previews, repeated question text, and inactive drafts are excluded. Explicit cancellation returns exactly `{"cancelled":true,"answers":[]}`. Failure/abort is an error, not a user cancellation.
 
 ## Replace rpiv (user action after verification)
 
