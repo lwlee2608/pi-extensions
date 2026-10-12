@@ -227,7 +227,7 @@ export class Questionnaire implements Component, Focusable {
     let focusLine = 0;
     const choice = (index: number, text: string, focused: boolean) => {
       if (focused) focusLine = body.length;
-      const prefix = `${focused ? "❯ " : "  "}${index + 1}. `;
+      const prefix = `${focused ? "❯ " : "  "}${index < 9 ? `${index + 1}. ` : "   "}`;
       add(focused ? theme.fg("accent", text) : text, focused ? theme.fg("accent", prefix) : prefix);
     };
     const hints: string[] = [];

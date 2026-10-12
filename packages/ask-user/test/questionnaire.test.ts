@@ -202,6 +202,12 @@ test("Chat about this sits below a separator and returns answered or noted quest
     { questionIndex: 1, selected: ["PostgreSQL"] },
     { questionIndex: 2, selected: [], notes: "Unsure about audit" },
   ] });
+  const eight = harness({ questions: [{ question: "Q", options: Array.from({ length: 8 }, (_, i) => ({ label: `O${i + 1}` })) }] });
+  assert.match(eight.text(), /9\. Type something\.\n─+\n {5}Chat about this/);
+  eight.input(...Array(9).fill(down));
+  assert.match(eight.text(), /❯ {4}Chat about this/);
+  eight.input(enter);
+  assert.deepEqual(eight.output(), { cancelled: false, chat: true, answers: [] });
 });
 
 test("single-select inactive custom text is retained but never returned", () => {
