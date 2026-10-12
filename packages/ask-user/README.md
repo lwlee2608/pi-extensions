@@ -20,7 +20,7 @@ Space/Enter toggle · ↑/↓ navigate · Tab/←→ switch · n note · Esc can
 
 - Tab / Shift+Tab or ← / →: change question or open review. Tabs appear only with more than one question.
 - Up / Down: move through options or the review's Submit/Cancel choices.
-- 1–9: pick an option directly. In multi-select this toggles it; the last number moves to the custom row.
+- 1–9: pick an option directly. In multi-select this toggles it. The number after the options moves to the custom row; the next one chooses Chat about this (no key with 8 options).
 - Ctrl+Up / Ctrl+Down: scroll question and option text without changing the focused option.
 - Space / Enter: toggle a multi-select option. Only multi-select questions show checkboxes. Like Claude Code, they end with a **Submit** row (**Next** in a batch) that confirms the question; it is dimmed until something is chosen.
 - Enter: choose a single option or the typed custom answer. In multi-select, Enter toggles; on the custom row it moves to Submit. A one-question batch submits on choice; larger batches submit from review once every question is answered.
