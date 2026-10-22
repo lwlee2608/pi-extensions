@@ -39,6 +39,7 @@
 - **Local e2e harness** — Chrome for Testing launched with `--load-extension` against a local fixture page server, driving the pi tool through a fake `ExtensionAPI`; local only, not in CI. Stable Chrome no longer honors `--load-extension` `agent`
 - **Integration branch** — `integrate/browser` holds the plan and package skeleton. Each phase branches from it and PRs back into it; one final PR to `main`, as notify did `agent`
 - **Phase count** — 4; phase 1 ships without the approval gate, acceptable because it only lands on `integrate/browser`
+- **README first** — `README.md` is written up front as the v1 spec; each phase keeps it true and amends it where the build proves it wrong `agent`
 - **Verification budget** — Past builds stalled on wasteful verification; the rules below bind every phase, review round, and merge. Slow is acceptable, waste is not
 
 ## Verification budget
@@ -66,7 +67,7 @@ The agent can open a URL in your real Chrome and get its text and numbered eleme
 - [ ] Add bridge unit tests: foreign origin rejected, second connection refused, round trip, port in use, take with and without the secret, disconnect fails pending calls (`test/bridge.test.ts`)
 - [ ] Let tests set the port, timeouts, and alarm period on both sides (`src/bridge.ts`, `chrome/background.js`)
 - [ ] Add the e2e harness and fixture pages, with Chrome cached outside the repo (`test/e2e/`, `package.json` `e2e` script)
-- [ ] Register the package and write install steps (root `package.json`, root `README.md`, `README.md`)
+- [ ] Register the package and bring the README's install steps in line with what shipped (root `package.json`, root `README.md`, `README.md`)
 **Verify:** `npm test -w packages/browser` passes the bridge tests: a second extension connection is refused, a take without the secret is refused, and a take with it frees the port for the taker. `npm run e2e -w packages/browser` opens Chrome for Testing, the extension reaches the bridge on `127.0.0.1`, the tool navigates to the fixture page, a "pi" tab group holds that tab, and `read` returns the fixture's heading text and a ref for its button; a `read` on a tab outside the group fails; `tabs` shows the pi tab and only a count for the others; `navigate` to a `javascript:` URL fails; closing the bridge detaches the debugger from the tab; after the test stops the service worker, it reconnects on its own within the test alarm period. The phase report states the full-run time and flags it if over budget.
 
 ### Phase 2 — You approve each new site
@@ -94,7 +95,7 @@ The agent can see page errors and requests and run JS you approve.
 - [ ] Implement `console`, `network`, and `eval` (`chrome/background.js`)
 - [ ] Confirm every eval with its code shown, outside domain approval (`src/approval.ts`, `src/index.ts`)
 - [ ] Add fixture errors and fetches, and e2e cases (`test/e2e/`)
-- [ ] Document actions, safety model, same-site prompt-injection risk, and limits (`README.md`)
+- [ ] Bring the README in line with what shipped and drop its "In development" note (`README.md`)
 **Verify:** `npm run e2e -w packages/browser`: `console` returns the fixture's logged error; `network` lists the fixture's fetch with its status code and no header or body content, even though the fixture sends an `Authorization` header; `eval` of `document.title` calls the stubbed confirm with that code and returns the title; a declined confirm makes the tool fail, even on an "always" host.
 
 ## Demo
