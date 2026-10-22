@@ -6,7 +6,7 @@ import test from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Approvals, confirmEval, type Choice } from "../src/approval.ts";
 import { loadHosts } from "../src/config.ts";
-import { browserExtension, listTabs, truncate } from "../src/index.ts";
+import { browserExtension, given, listTabs, truncate } from "../src/index.ts";
 
 const dir = await mkdtemp(join(tmpdir(), "pi-browser-approval-"));
 test.after(() => rm(dir, { recursive: true, force: true }));
@@ -177,4 +177,9 @@ test("without a UI the tool is hidden and never reaches the bridge", async () =>
   handlers.get("before_agent_start")!({}, ctx);
   assert.deepEqual(active, ["read"]);
   await assert.rejects(tool.execute("call", { action: "tabs" }, undefined, () => {}, ctx), /needs an interactive pi session/);
+});
+
+test("zero and empty params count as not given, other values pass through", () => {
+  assert.deepEqual(given({ tabId: 0, ref: 0, url: "", text: "", code: "", keys: "", newTab: false }), { newTab: false });
+  assert.deepEqual(given({ tabId: -1, ref: -2, text: " ", keys: "Enter" }), { tabId: -1, ref: -2, text: " ", keys: "Enter" });
 });
