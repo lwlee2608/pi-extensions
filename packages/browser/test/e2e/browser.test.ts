@@ -279,6 +279,9 @@ test("screenshot brings a pi tab behind another tab to the front and returns a C
   assert.equal(ratio, 2, "Chrome runs at 2x like a high-density screen");
   assert.ok(width > 500 && width <= cssWidth && height > 100, `${width}x${height} is captured at CSS size, not ${ratio}x`);
   assert.ok(Math.abs(r - 0x20) < 16 && Math.abs(g - 0x50) < 16 && Math.abs(b - 0xc0) < 16, `pixel ${r},${g},${b} is the fixture's background`);
+  await browser({ action: "scroll", tabId, ref: ref(await browser({ action: "read", tabId }), 'button "Below the fold"') });
+  const [, , red, green, blue] = await decode((await call({ action: "screenshot", tabId })).content[1]);
+  assert.ok(Math.abs(red - 0xc0) < 16 && Math.abs(green - 0x20) < 16 && Math.abs(blue - 0x20) < 16, `pixel ${red},${green},${blue} is the scrolled-to footer`);
 });
 
 test("a pi tab on a non-web page, like about:blank, is refused and listed by its scheme only", async () => {
