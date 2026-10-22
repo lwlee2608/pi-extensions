@@ -52,7 +52,7 @@
 - **One CI wait per phase** — Push fixes freely; block on CI once, right before merge
 
 ## Progress
-Active: 3 · 16/25 tasks
+Active: 3 · 20/25 tasks
 
 ### Phase 1 — Agent opens and reads a page in a "pi" tab group
 The agent can open a URL in your real Chrome and get its text and numbered elements back.
@@ -87,11 +87,14 @@ The first action on any new host asks you in pi: allow once, this session, or al
 ### Phase 3 — Agent clicks, types, scrolls, and screenshots
 The agent can fill and submit forms and see the page.
 **Blocked by:** 2
-- [ ] Implement `click`, `type`, `keys`, and `scroll` by ref with real CDP input events (`chrome/background.js`)
-- [ ] Implement `screenshot` as JPEG, bringing the pi tab to the front of its window first (`chrome/background.js`)
-- [ ] Expose the actions and return screenshots as image content (`src/index.ts`)
-- [ ] Add a fixture form and e2e cases for each action (`test/e2e/`)
+- [x] Implement `click`, `type`, `keys`, and `scroll` by ref with real CDP input events (`chrome/background.js`)
+- [x] Implement `screenshot` as JPEG, bringing the pi tab to the front of its window first (`chrome/background.js`)
+- [x] Expose the actions and return screenshots as image content (`src/index.ts`)
+- [x] Add a fixture form and e2e cases for each action (`test/e2e/`)
 - Note: tabs whose URL has no host (`about:blank`, `data:`, `file:`, `chrome:`) skip approval, and `tabs`/`read` show them in full. Once clicks give an unapproved page B (left loaded after a denied post-check) a user gesture, B can `window.open` an about:blank tab into the pi group and write into it. Phase 3 must close this before clicks ship: exempt only an empty about:blank or refuse non-http(s) tabs for read, and optionally blank the tab after a post-check deny
+- Note: closed by refusing every action on a pi tab whose URL is not http/https (pi side, in `Approvals.approve`); `tabs` shows only its scheme. Tabs are not blanked after a post-check deny
+- Note: in a tab that is not in front, Chrome never acks `mouseMoved` or `mouseWheel` (CDP waits ~5s or hangs), so `click` sends only press/release and `scroll` is ref-only via `DOM.scrollIntoViewIfNeeded`; no hover or wheel in v1
+- Note: refs are tracked per tab from the last `read` and dropped on any `Page.frameNavigated` or detach, since Chrome still resolves old backend node ids after a navigation; a service worker restart also drops them
 **Verify:** `npm run e2e -w packages/browser`: the tool types into the fixture form, presses Enter, and the next `read` shows the fixture's "submitted: <text>" result; `scroll` reveals an element below the fold; `screenshot` of a pi tab that was behind another tab in its window returns a decodable JPEG of the fixture page.
 
 ### Phase 4 — Agent debugs apps: console, network, eval

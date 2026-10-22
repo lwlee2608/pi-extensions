@@ -63,13 +63,16 @@ The agent gets one `browser` tool:
 | `tabs` | List tabs in the pi group. Other tabs are only counted, never listed. |
 | `navigate` | Load an `http`/`https` URL in the current pi tab, or a new one. Other schemes are refused. |
 | `read` | Page text plus numbered element refs from the accessibility tree. |
-| `click`, `type`, `keys`, `scroll` | Act on a ref with real input events. |
+| `click` | Click a ref with real mouse events. |
+| `type` | Focus a ref and insert text at its cursor. |
+| `keys` | Press keys or combos, like `Enter`, `Shift+Tab`, or `Control+a`, after focusing a ref if given. |
+| `scroll` | Scroll a ref into view. |
 | `screenshot` | JPEG of a pi tab. Brings that tab to the front of its window first. |
 | `console` | Recent console messages from a pi tab. |
 | `network` | Recent requests: method, URL, status, and type. Never headers or bodies. |
 | `eval` | Run JavaScript in the page. You confirm the code every time. |
 
-Page actions take an optional tab id and default to the current pi tab. Refs go stale after the page navigates; the agent reads again to get fresh ones.
+Page actions take an optional tab id and default to the current pi tab. Refs come from the tab's last `read` and go stale when the page or a frame in it navigates; the agent reads again to get fresh ones. `click`, `type`, and `keys` don't wait for a page they trigger to load; the agent reads to see the result.
 
 | Command | Result |
 | --- | --- |
@@ -85,7 +88,9 @@ The first action on a new host, reads included, asks you in Pi:
 - **Always:** saved to `~/.pi/agent/pi-browser/config.json` (under `PI_CODING_AGENT_DIR` when set) as `{ "allowedHosts": ["example.com"] }`. Remove a host there to revoke it; the file is read on every action.
 - **Deny:** the action fails. The next action on that host asks again.
 
-Approval matches the exact hostname, so `github.com` doesn't cover `gist.github.com`. It covers the tab's page and the same-site frames inside it, so a `github.com` page that embeds a `gist.github.com` frame shows that frame's text too. It is checked against the tab's page before every action, against the target before every navigation, and against where the page ended up after it, so a redirect or link to a new host asks again. `tabs` asks nothing; a pi tab on a host you haven't approved shows only its host, never its title or full URL. `eval` always asks, even on an "always" host.
+Approval matches the exact hostname, so `github.com` doesn't cover `gist.github.com`. It covers the tab's page and the same-site frames inside it, so a `github.com` page that embeds a `gist.github.com` frame shows that frame's text too. It is checked against the tab's page before every action, against the target before every navigation, and against where the page ended up after it, so a redirect or link to a new host asks again. `tabs` asks nothing; a pi tab on a host you haven't approved shows only its host, never its title or full URL.
+
+A pi tab showing anything other than an `http`/`https` page, such as `about:blank`, `data:`, or `chrome:`, has no host to approve, so every action on it is refused and `tabs` shows only its scheme. That stops a page from writing into a blank tab it opened and having the agent read it unasked. Navigate the tab to use it again. `eval` always asks, even on an "always" host.
 
 ### One session at a time
 
@@ -111,6 +116,7 @@ Chrome shows a "Pi Browser started debugging this browser" bar while the agent i
 
 - One Chrome profile at a time. A second connected Chrome is refused.
 - Cross-origin iframes, native dialogs, file pickers, password-manager popups, passkeys, and CAPTCHAs are out of reach.
+- No hover and no wheel scrolling: Chrome doesn't answer those events in a tab that isn't in front. `scroll` brings a ref into view instead.
 - Chrome can't load this extension with `--load-extension` anymore; load it unpacked.
 - After updating the package, reload Pi Browser in `chrome://extensions`.
 
@@ -120,7 +126,7 @@ Chrome shows a "Pi Browser started debugging this browser" bar while the agent i
 | --- | --- |
 | "Chrome not connected" | Check that Pi Browser is enabled in `chrome://extensions`, then click its toolbar icon. |
 | "in use" | Another Pi session owns the browser. Run `/browser take`. |
-| Agent says a ref is gone | The page changed. It should `read` again. |
+| Agent says a ref is gone | The page changed, or Chrome restarted the extension. It should `read` again. |
 
 ## Development
 

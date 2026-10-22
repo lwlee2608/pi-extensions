@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><title>Pi form</title>
+  <style>body { margin: 0; background: #2050c0; color: white; } main { height: 3000px; padding: 8px; }</style>
+</head>
+<body>
+  <main>
+    <form id="form"><label>Name <input id="field"></label></form>
+    <p id="result">not submitted</p>
+    <button id="count">Clicked 0 times</button>
+  </main>
+  <button id="below">Below the fold</button>
+  <script>
+    form.onsubmit = event => { event.preventDefault(); result.textContent = `submitted: ${field.value}`; };
+    let clicks = 0;
+    count.onclick = event => { if (event.isTrusted) count.textContent = `Clicked ${++clicks} times`; };
+  </script>
+</body>
+</html>
