@@ -52,7 +52,7 @@
 - **One CI wait per phase** — Push fixes freely; block on CI once, right before merge
 
 ## Progress
-Active: none (demo pending) · 25/25 tasks
+Active: none (demo passed, final PR open) · 25/25 tasks
 
 ### Phase 1 — Agent opens and reads a page in a "pi" tab group
 The agent can open a URL in your real Chrome and get its text and numbered elements back.
@@ -118,3 +118,4 @@ The agent can see page errors and requests and run JS you approve.
 ## Demo
 Steps the user runs: load `chrome/` unpacked, start pi, ask it to open a localhost app and a signed-in site. Expect: a "pi" tab group appears, a domain approval prompt per new host, the agent reads the page, fills and submits a form, reports console errors, and returns a screenshot; an eval asks with its code shown; quitting pi clears the debugging bar; `/browser take` in a second pi session moves the browser to it.
 - Note: gpt-6-astra fills unused params with `0`/`""`, so `navigate` with `tabId: 0` and `keys` with `ref: 0` failed; the pi side now drops `0` and `""` params before calling the extension (refs and tab ids never legitimately use 0). With LastPass enabled, form pages fail with "Cannot access a chrome-extension:// URL of different extension"; known issue, noted in the README, fix tracked in #34
+- Note: demo passed on 2026-10-22 in headed stable Chrome on Linux: no Local Network Access prompt; pi group, per-host prompts, form fill and submit with screenshot, console and network on a localhost fixture, eval with its code shown, a signed-in GitHub read, debugging bar cleared on quit, and `/browser take` between two sessions. macOS shortcuts (`Meta+a/c/v`) remain unverified
