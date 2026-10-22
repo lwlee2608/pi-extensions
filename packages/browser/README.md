@@ -30,7 +30,7 @@ The Pi extension runs a small WebSocket server on `127.0.0.1`. The companion Chr
 
 ## Install
 
-**Requirements:** desktop Google Chrome, Node.js 22.19+, Pi 1.0.0.
+**Requirements:** desktop Google Chrome 120+, Node.js 22.19+, Pi 1.0.0.
 
 1. Install the Pi package:
 
@@ -40,11 +40,11 @@ The Pi extension runs a small WebSocket server on `127.0.0.1`. The companion Chr
 
    Run `/reload` if Pi is already open.
 
-2. Run `/browser` in Pi. It prints the path to the bundled Chrome extension.
+2. Run `/browser` in Pi. It prints the path to the bundled Chrome extension and claims the browser for this session.
 
 3. In Chrome, open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and select that path. On macOS, press **Cmd+Shift+G** in the folder picker to paste it.
 
-4. Run `/browser` again. It should report Chrome as connected.
+4. Run `/browser` again. It should report Chrome as connected. If not, click the Pi Browser toolbar icon to reconnect.
 
 Then try a read-only first task:
 
@@ -61,7 +61,7 @@ The agent gets one `browser` tool:
 | Action | What it does |
 | --- | --- |
 | `tabs` | List tabs in the pi group. Other tabs are only counted, never listed. |
-| `navigate` | Open or load an `http`/`https` URL in a pi tab. Other schemes are refused. |
+| `navigate` | Load an `http`/`https` URL in the current pi tab, or a new one. Other schemes are refused. |
 | `read` | Page text plus numbered element refs from the accessibility tree. |
 | `click`, `type`, `keys`, `scroll` | Act on a ref with real input events. |
 | `screenshot` | JPEG of a pi tab. Brings that tab to the front of its window first. |
@@ -69,7 +69,7 @@ The agent gets one `browser` tool:
 | `network` | Recent requests: method, URL, status, and type. Never headers or bodies. |
 | `eval` | Run JavaScript in the page. You confirm the code every time. |
 
-Refs go stale after the page navigates; the agent reads again to get fresh ones.
+Page actions take an optional tab id and default to the current pi tab. Refs go stale after the page navigates; the agent reads again to get fresh ones.
 
 | Command | Result |
 | --- | --- |
@@ -94,14 +94,16 @@ The tool only exists in interactive sessions. Print mode, JSON/RPC mode, and sub
 
 ### While the agent works
 
-Chrome shows a "Pi Browser started debugging this browser" bar while the agent is attached. It goes away when Pi exits. Clicking **Cancel** on the bar takes control away from the agent.
+Chrome shows a "Pi Browser started debugging this browser" bar while the agent is attached. It goes away when Pi exits. Clicking **Cancel** on the bar takes control away from the agent: Pi Browser refuses every action until you click its toolbar icon.
 
 ## Safety
 
-- **Only this extension can connect.** The bridge listens on loopback and accepts only the companion's pinned extension ID, so web pages and other extensions can't reach it. A local program running as you could forge that, but such a program can already read your Chrome profile.
+- **Pi accepts only this extension.** The bridge listens on loopback and accepts only the companion's pinned extension ID, so web pages and other extensions can't reach it. A local program running as you could forge that, but such a program can already read your Chrome profile.
+- **The extension does not authenticate Pi.** While no Pi session holds the port, any local process that listens on `127.0.0.1:47823` can drive the extension, skipping Pi's site approval and eval confirmation. The extension still refuses anything but `http`/`https` on its own. This matters most on machines shared with other OS users or running untrusted local apps.
 - **Approved sites can steer the agent.** Approval is about where the agent may go, not what it reads there. Text on an approved site, such as an issue comment, an email, or a review, can contain instructions the agent may follow on that site. Use "always" only for sites whose content you trust, and watch the agent on sites with user-written content.
 - **Page content goes to your model provider**, like any other tool output.
 - **Network logs skip headers and bodies**, so tokens and cookies don't land in the transcript. Page text, console output, and eval results are returned as-is.
+- **Only you can move the browser.** `/browser take` proves itself with a secret in `~/.pi/agent/pi-browser/secret`, readable only by you, so a web page can't make the owning session let go.
 - **The bridge exists only while a Pi session uses the browser.** It closes when Pi exits.
 
 ## Limits
@@ -118,3 +120,7 @@ Chrome shows a "Pi Browser started debugging this browser" bar while the agent i
 | "Chrome not connected" | Check that Pi Browser is enabled in `chrome://extensions`, then click its toolbar icon. |
 | "in use" | Another Pi session owns the browser. Run `/browser take`. |
 | Agent says a ref is gone | The page changed. It should `read` again. |
+
+## Development
+
+`npm run e2e -w packages/browser` loads `chrome/` into Chrome for Testing, headless with a temporary profile, and drives the tool against local fixture pages on its own port. The first run downloads Chrome for Testing to `~/.cache/pi-browser/` (or `$XDG_CACHE_HOME`). It runs locally only, not in CI.

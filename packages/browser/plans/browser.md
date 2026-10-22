@@ -9,7 +9,7 @@
 - **Scope of use** — All of: localhost app verification, signed-in site automation, reading JS/login-gated pages
 - **Who acts** — Agent controls the browser through pi tools; no user-initiated "send to pi" in v1
 - **Transport** — Localhost WebSocket: pi extension runs the server on 127.0.0.1, Chrome extension service worker connects as client
-- **Bridge auth** — Server accepts only `Origin: chrome-extension://<id>` where the id is pinned by the manifest `key`; no pairing token `agent`
+- **Bridge auth** — Server accepts only `Origin: chrome-extension://<id>` where the id is pinned by the manifest `key`; no pairing token `agent`. Amended after phase 1 review: the extension does not authenticate the bridge; a local process squatting the free port can drive it, bypassing pi's gates. Accepted and disclosed in the README; the extension enforces http/https itself `user`
 - **Session ownership** — Amended after plan review. One UI session owns the browser at a time: the first to use it (a browser tool call or `/browser`) binds the port; nothing binds at startup. `/browser take` in another session makes the owner release it. Others get an "in use" error naming `/browser take`. Accepted cost: first use after a handover waits up to ~30s for Chrome to reconnect
 - **Takeover auth** — A take request is authenticated by a user-only secret on disk, never by origin, so web pages and other extensions cannot force a release `agent`
 - **One Chrome at a time** — While one extension connection is live, later ones are refused with a clear error; no replacing, so two profiles cannot flap `agent`
@@ -52,23 +52,25 @@
 - **One CI wait per phase** — Push fixes freely; block on CI once, right before merge
 
 ## Progress
-Active: 1 · 0/25 tasks
+Active: 1 · 12/25 tasks
 
 ### Phase 1 — Agent opens and reads a page in a "pi" tab group
 The agent can open a URL in your real Chrome and get its text and numbered elements back.
 **Blocked by:** none
-- [ ] Finish the WebSocket bridge: origin pinning, one live connection, connect wait, bind on first use in UI sessions only (`src/bridge.ts`, `src/index.ts`)
-- [ ] Add `/browser take` with secret-authenticated release of the current owner (`src/bridge.ts`, `src/index.ts`)
-- [ ] Add the MV3 manifest with pinned `key`, debugger/tabs/tabGroups/alarms permissions, and `127.0.0.1` host permission (`chrome/manifest.json`)
-- [ ] Connect, keep alive, and reconnect on alarm or toolbar click; detach debugger on disconnect (`chrome/background.js`)
-- [ ] Open tabs into a "pi" tab group and refuse actions on tabs outside it (`chrome/background.js`)
-- [ ] Implement `tabs` (pi group plus count of others), `navigate` (http/https only), and `read` with accessibility-tree refs (`chrome/background.js`)
-- [ ] Register the `browser` tool with those actions and truncated output (`src/index.ts`)
-- [ ] Add `/browser` to print the `chrome/` path, connection state, and owner (`src/index.ts`)
-- [ ] Add bridge unit tests: foreign origin rejected, second connection refused, round trip, port in use, take with and without the secret, disconnect fails pending calls (`test/bridge.test.ts`)
-- [ ] Let tests set the port, timeouts, and alarm period on both sides (`src/bridge.ts`, `chrome/background.js`)
-- [ ] Add the e2e harness and fixture pages, with Chrome cached outside the repo (`test/e2e/`, `package.json` `e2e` script)
-- [ ] Register the package and bring the README's install steps in line with what shipped (root `package.json`, root `README.md`, `README.md`)
+- [x] Finish the WebSocket bridge: origin pinning, one live connection, connect wait, bind on first use in UI sessions only (`src/bridge.ts`, `src/index.ts`)
+- [x] Add `/browser take` with secret-authenticated release of the current owner (`src/bridge.ts`, `src/index.ts`)
+- [x] Add the MV3 manifest with pinned `key`, debugger/tabs/tabGroups/alarms permissions, and `127.0.0.1` host permission (`chrome/manifest.json`)
+- [x] Connect, keep alive, and reconnect on alarm or toolbar click; detach debugger on disconnect (`chrome/background.js`)
+- [x] Open tabs into a "pi" tab group and refuse actions on tabs outside it (`chrome/background.js`)
+- [x] Implement `tabs` (pi group plus count of others), `navigate` (http/https only), and `read` with accessibility-tree refs (`chrome/background.js`)
+- [x] Register the `browser` tool with those actions and truncated output (`src/index.ts`)
+- [x] Add `/browser` to print the `chrome/` path, connection state, and owner (`src/index.ts`)
+- [x] Add bridge unit tests: foreign origin rejected, second connection refused, round trip, port in use, take with and without the secret, disconnect fails pending calls (`test/bridge.test.ts`)
+- [x] Let tests set the port, timeouts, and alarm period on both sides (`src/bridge.ts`, `chrome/background.js`)
+- [x] Add the e2e harness and fixture pages, with Chrome cached outside the repo (`test/e2e/`, `package.json` `e2e` script)
+- [x] Register the package and bring the README's install steps in line with what shipped (root `package.json`, root `README.md`, `README.md`)
+- Note: e2e proves the extension reaches `127.0.0.1` in headless Chrome for Testing 156 with no Local Network Access prompt; headed stable Chrome is covered only by the Demo
+- Note: subagent's compiled test can leave `packages/subagent/*.bun-build` (~63 MB) behind; `*.bun-build` should be gitignored (repo hygiene, out of scope)
 **Verify:** `npm test -w packages/browser` passes the bridge tests: a second extension connection is refused, a take without the secret is refused, and a take with it frees the port for the taker. `npm run e2e -w packages/browser` opens Chrome for Testing, the extension reaches the bridge on `127.0.0.1`, the tool navigates to the fixture page, a "pi" tab group holds that tab, and `read` returns the fixture's heading text and a ref for its button; a `read` on a tab outside the group fails; `tabs` shows the pi tab and only a count for the others; `navigate` to a `javascript:` URL fails; closing the bridge detaches the debugger from the tab; after the test stops the service worker, it reconnects on its own within the test alarm period. The phase report states the full-run time and flags it if over budget.
 
 ### Phase 2 — You approve each new site
