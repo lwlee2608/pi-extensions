@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { ORIGIN, PORT } from "../src/bridge.ts";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 
@@ -19,9 +20,13 @@ test("package exposes its source and the Chrome extension, and excludes tests an
   assert.ok(paths.every(path => !/^(test|plans)\//.test(path)));
 });
 
-test("manifest key pins the extension id", () => {
+test("the extension connects to the bridge's port", () => {
+  assert.match(readFileSync(root + "chrome/background.js", "utf8"), new RegExp(`^const PORT = ${PORT};$`, "m"));
+});
+
+test("manifest key pins the extension id the bridge accepts", () => {
   const { key } = JSON.parse(readFileSync(root + "chrome/manifest.json", "utf8"));
   const id = createHash("sha256").update(Buffer.from(key, "base64")).digest("hex").slice(0, 32)
     .replace(/./g, c => String.fromCharCode(97 + parseInt(c, 16)));
-  assert.equal(id, "enidoebkpjligpdgedlellobooiiljib");
+  assert.equal(ORIGIN, `chrome-extension://${id}`);
 });
