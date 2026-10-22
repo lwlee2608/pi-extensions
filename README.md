@@ -10,7 +10,7 @@
 | [`@lwlee2608/pi-footer`](packages/footer) | Automatic | Context, cost, cache usage, and run timer in a compact footer. |
 | [`@lwlee2608/pi-ask-user`](packages/ask-user) | `ask_user_question` tool | Lean inline questionnaires with previews, notes, and review. |
 | [`@lwlee2608/pi-subagent`](packages/subagent) | `subagent` tool, `/subagents` | Persistent workers, parallel tasks, child questions, and explicit recovery. |
-| [`@lwlee2608/pi-browser`](packages/browser) | `browser` tool, `/browser` | Drive your signed-in Chrome through a companion extension. In development. |
+| [`@lwlee2608/pi-browser`](packages/browser) | `browser` tool, `/browser` | Drive your signed-in Chrome through a companion extension. |
 
 ## Install
 

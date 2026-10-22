@@ -1,19 +1,20 @@
-import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, getAgentDir, truncateHead, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, getAgentDir, truncateHead, truncateTail, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
-import { Approvals, hostOf, parse, type Choice } from "./approval.ts";
+import { Approvals, confirmEval, hostOf, parse, type Choice } from "./approval.ts";
 import { Bridge, ORIGIN, PORT, type BridgeOptions } from "./bridge.ts";
 
 const CHROME_DIR = fileURLToPath(new URL("../chrome/", import.meta.url));
 
 const parameters = Type.Object({
-  action: Type.Union(["tabs", "navigate", "read", "click", "type", "keys", "scroll", "screenshot"].map(action => Type.Literal(action))),
+  action: Type.Union(["tabs", "navigate", "read", "click", "type", "keys", "scroll", "screenshot", "console", "network", "eval"].map(action => Type.Literal(action))),
   url: Type.Optional(Type.String({ description: "navigate: http or https URL to load" })),
   tabId: Type.Optional(Type.Number({ description: "Pi tab to act on; defaults to the current pi tab" })),
   newTab: Type.Optional(Type.Boolean({ description: "navigate: open the URL in a new pi tab" })),
   ref: Type.Optional(Type.Number({ description: "click, type: element ref, the n in [n] from read. keys: focus this ref first. scroll: ref to bring into view" })),
   text: Type.Optional(Type.String({ description: "type: text to insert at the cursor of the ref" })),
+  code: Type.Optional(Type.String({ description: "eval: JavaScript to run in the page's main frame, like the DevTools console: statements, top-level await, and const or let that may repeat across calls are allowed; the last expression's value is returned and a promise is awaited. At most 20 lines and 1500 characters, no two blank lines in a row, and no invisible or control characters other than newline and tab" })),
   keys: Type.Optional(Type.String({ description: "keys: space-separated keys or combos, like \"Enter\" or \"Shift+Tab\"; editing shortcuts use Meta on macOS and Control elsewhere, like \"Meta+a\" or \"Control+a\" to select all" })),
 });
 
@@ -50,10 +51,16 @@ function loaded(url: string): string {
   return url;
 }
 
-function truncate(text: string): string {
-  const result = truncateHead(text, { maxLines: DEFAULT_MAX_LINES, maxBytes: DEFAULT_MAX_BYTES });
+export function truncate(text: string, tail = false): string {
+  const result = (tail ? truncateTail : truncateHead)(text, { maxLines: DEFAULT_MAX_LINES, maxBytes: DEFAULT_MAX_BYTES });
   if (!result.truncated) return text;
-  return `${result.content}\n\n[Output truncated: showing ${result.outputLines} of ${result.totalLines} lines (${formatSize(result.outputBytes)} of ${formatSize(result.totalBytes)}).]`;
+  if (result.firstLineExceedsLimit) {
+    const line = Buffer.from(text.split("\n", 1)[0]);
+    const content = line.subarray(0, DEFAULT_MAX_BYTES).toString().replace(/�$/, "");
+    return `${content}\n\n[Output truncated: showing the first ${formatSize(DEFAULT_MAX_BYTES)} of line 1 (${formatSize(line.length)}) of ${result.totalLines} lines.]`;
+  }
+  const note = `[Output truncated: showing the ${tail ? "last" : "first"} ${result.outputLines} of ${result.totalLines} lines (${formatSize(result.outputBytes)} of ${formatSize(result.totalBytes)}).]`;
+  return tail ? `${note}\n\n${result.content}` : `${result.content}\n\n${note}`;
 }
 
 export function browserExtension(overrides: Partial<BridgeOptions> = {}): (pi: ExtensionAPI) => void {
@@ -100,9 +107,11 @@ export function browserExtension(overrides: Partial<BridgeOptions> = {}): (pi: E
         + "a tab on a host the user has not approved shows only its host; a non-http(s) tab shows only its scheme and is refused until navigated); "
         + "navigate loads an http/https URL in the current pi tab, or a new one with newTab; read returns the page as an accessibility tree "
         + "where [n] marks an element ref. click, type, and keys act on a ref with real input events; scroll brings a ref into view; "
-        + "screenshot returns a JPEG of the tab, bringing it to the front of its window. Refs go stale when the page navigates; "
+        + "screenshot returns a JPEG of the tab, bringing it to the front of its window. console and network list the tab's console messages "
+        + "and requests (method, status, type, URL) since its page loaded, newest last; when the debugger attached after the page loaded, network says so and only a reload shows every request. eval runs code in the page and returns its JSON value; "
+        + "the user confirms every eval with the code shown. Refs go stale when the page navigates; "
         + "read again. Actions do not wait for a page they trigger to load; read to see the result. The user approves each new host; "
-        + "if they deny one, the call fails and you should not retry it. "
+        + "if they deny one, or decline an eval, the call fails and you should not retry it. "
         + `Output is truncated to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)}.`,
       parameters,
       executionMode: "sequential",
@@ -121,11 +130,17 @@ export function browserExtension(overrides: Partial<BridgeOptions> = {}): (pi: E
           const tab = await bridge.call("tab", { tabId: params.tabId }, signal) as { id: number; url: string };
           await approve(loaded(tab.url));
           params.tabId = tab.id;
+          if (action === "eval") {
+            const host = hostOf(tab.url)!;
+            await confirmEval(params.code, host, (title, options) => ctx.ui.select(title, options, { signal }));
+            Object.assign(params, { host });
+          }
         }
         const page = await bridge.call(action, params, signal) as { url: string; text: string; data?: string };
         await approve(loaded(page.url));
         const image = page.data ? [{ type: "image" as const, data: page.data, mimeType: "image/jpeg" }] : [];
-        return { content: [{ type: "text" as const, text: truncate(page.text) }, ...image], details: undefined };
+        const text = truncate(page.text, action === "console" || action === "network");
+        return { content: [{ type: "text" as const, text }, ...image], details: undefined };
       },
     });
 

