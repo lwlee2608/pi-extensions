@@ -56,6 +56,7 @@ export class Bridge {
       const server = createServer((req, res) => void this.request(req, res).catch(() => res.destroy()));
       const wss = new WebSocketServer({ server, verifyClient: ({ origin }: { origin?: string }) => origin === this.options.origin });
       wss.on("connection", socket => this.attach(socket));
+      wss.on("error", () => {});
       server.once("error", (error: NodeJS.ErrnoException) => {
         if (this.starting === starting) this.starting = undefined;
         server.close();

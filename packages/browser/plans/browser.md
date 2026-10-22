@@ -52,7 +52,7 @@
 - **One CI wait per phase** — Push fixes freely; block on CI once, right before merge
 
 ## Progress
-Active: 1 · 8/25 tasks
+Active: 1 · 9/25 tasks
 
 ### Phase 1 — Agent opens and reads a page in a "pi" tab group
 The agent can open a URL in your real Chrome and get its text and numbered elements back.
@@ -65,7 +65,7 @@ The agent can open a URL in your real Chrome and get its text and numbered eleme
 - [x] Implement `tabs` (pi group plus count of others), `navigate` (http/https only), and `read` with accessibility-tree refs (`chrome/background.js`)
 - [x] Register the `browser` tool with those actions and truncated output (`src/index.ts`)
 - [x] Add `/browser` to print the `chrome/` path, connection state, and owner (`src/index.ts`)
-- [ ] Add bridge unit tests: foreign origin rejected, second connection refused, round trip, port in use, take with and without the secret, disconnect fails pending calls (`test/bridge.test.ts`)
+- [x] Add bridge unit tests: foreign origin rejected, second connection refused, round trip, port in use, take with and without the secret, disconnect fails pending calls (`test/bridge.test.ts`)
 - [ ] Let tests set the port, timeouts, and alarm period on both sides (`src/bridge.ts`, `chrome/background.js`)
 - [ ] Add the e2e harness and fixture pages, with Chrome cached outside the repo (`test/e2e/`, `package.json` `e2e` script)
 - [ ] Register the package and bring the README's install steps in line with what shipped (root `package.json`, root `README.md`, `README.md`)
