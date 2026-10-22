@@ -72,7 +72,7 @@ The agent gets one `browser` tool:
 | `network` | Recent requests: method, URL, status, and type. Never headers or bodies. |
 | `eval` | Run JavaScript in the page. You confirm the code every time. |
 
-Page actions take an optional tab id and default to the current pi tab. Refs come from the tab's last `read` and go stale when the page or a frame in it navigates; the agent reads again to get fresh ones. `click`, `type`, and `keys` don't wait for a page they trigger to load; the agent reads to see the result.
+Page actions take an optional tab id and default to the current pi tab. Refs come from the tab's last `read` and go stale when the page navigates (or, for refs inside a frame, when that frame does); the agent reads again to get fresh ones. `click`, `type`, and `keys` don't wait for a page they trigger to load; the agent reads to see the result.
 
 | Command | Result |
 | --- | --- |
