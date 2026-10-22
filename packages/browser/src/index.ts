@@ -14,7 +14,7 @@ const parameters = Type.Object({
   newTab: Type.Optional(Type.Boolean({ description: "navigate: open the URL in a new pi tab" })),
   ref: Type.Optional(Type.Number({ description: "click, type: element ref, the n in [n] from read. keys: focus this ref first. scroll: ref to bring into view" })),
   text: Type.Optional(Type.String({ description: "type: text to insert at the cursor of the ref" })),
-  code: Type.Optional(Type.String({ description: "eval: JavaScript expression to run in the page's main frame; a promise is awaited" })),
+  code: Type.Optional(Type.String({ description: "eval: JavaScript expression to run in the page's main frame; a promise is awaited. At most 30 lines and 1500 characters, with no control characters other than newline and tab" })),
   keys: Type.Optional(Type.String({ description: "keys: space-separated keys or combos, like \"Enter\" or \"Shift+Tab\"; editing shortcuts use Meta on macOS and Control elsewhere, like \"Meta+a\" or \"Control+a\" to select all" })),
 });
 

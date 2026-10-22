@@ -45,7 +45,16 @@ export class Approvals {
   }
 }
 
+const EVAL_MAX_LINES = 30;
+const EVAL_MAX_CHARS = 1_500;
+const HIDDEN = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/;
+
 export async function confirmEval(code: string | undefined, host: string, confirm: Confirm): Promise<void> {
   if (!code?.trim()) throw new Error("eval needs code.");
-  if (!(await confirm(`Run this JavaScript in the ${host} tab?`, code))) throw new Error("The user did not allow this eval.");
+  if (HIDDEN.test(code)) throw new Error("eval code may not contain control or bidi characters other than newline and tab; write them as escapes like \\u001b.");
+  const lines = code.split("\n").length;
+  if (lines > EVAL_MAX_LINES || code.length > EVAL_MAX_CHARS) {
+    throw new Error(`eval code is limited to ${EVAL_MAX_LINES} lines and ${EVAL_MAX_CHARS} characters so the user can see all of it.`);
+  }
+  if (!(await confirm(`Run this ${lines}-line JavaScript in the ${host} tab?`, code))) throw new Error("The user did not allow this eval.");
 }
