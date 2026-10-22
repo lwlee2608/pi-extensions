@@ -72,7 +72,8 @@ const handlers = {
   async keys({ tabId, ref, keys }) {
     const combos = typeof keys === "string" ? keys.trim().split(/\s+/).filter(Boolean) : [];
     if (!combos.length) throw new Error("keys needs key names, like \"Enter\" or \"Shift+Tab\".");
-    const presses = combos.map(parseCombo);
+    const mac = (await chrome.runtime.getPlatformInfo()).os === "mac";
+    const presses = combos.map(combo => parseCombo(combo, mac));
     const tab = await piTab(tabId);
     if (ref !== undefined) await node(tab.id, "DOM.focus", ref);
     for (const press of presses) await pressKeys(tab.id, press);
@@ -101,6 +102,7 @@ const KEYS = {
   ArrowRight: [39, "ArrowRight"], Home: [36, "Home"], End: [35, "End"], PageUp: [33, "PageUp"], PageDown: [34, "PageDown"],
 };
 const MODIFIERS = { Alt: [1, 18], Control: [2, 17], Meta: [4, 91], Shift: [8, 16] };
+const MAC_COMMANDS = { Meta: { a: "selectAll", c: "copy", v: "paste", x: "cut", z: "undo" }, "Meta+Shift": { z: "redo" } };
 
 const attached = new Set();
 const refs = new Map();
@@ -217,7 +219,7 @@ async function acted(tabId, what) {
   return { url: tab.url || tab.pendingUrl || "", text: `${what} in tab ${tabId}.` };
 }
 
-function parseCombo(combo) {
+function parseCombo(combo, mac) {
   const parts = combo.split("+");
   const name = parts.pop();
   const unknown = parts.find(part => !Object.hasOwn(MODIFIERS, part));
@@ -231,13 +233,15 @@ function parseCombo(combo) {
   const upper = name.toUpperCase();
   const code = /[A-Z]/.test(upper) ? `Key${upper}` : /\d/.test(name) ? `Digit${name}` : undefined;
   const typed = (modifiers & ~MODIFIERS.Shift[0]) === 0;
-  return { modifiers: parts, key: { key: name, code, keyCode: code ? upper.charCodeAt(0) : undefined, text: typed ? name : undefined, modifiers } };
+  const commands = mac ? MAC_COMMANDS[parts.toSorted().join("+")]?.[name.toLowerCase()] : undefined;
+  return { modifiers: parts, key: { key: name, code, keyCode: code ? upper.charCodeAt(0) : undefined, text: typed ? name : undefined, modifiers, commands: commands && [commands] } };
 }
 
 async function pressKeys(tabId, { modifiers, key }) {
   let held = 0;
   const send = (type, event) => cdp(tabId, "Input.dispatchKeyEvent", {
     type, key: event.key, code: event.code, windowsVirtualKeyCode: event.keyCode, text: type === "keyDown" ? event.text : undefined, modifiers: event.modifiers,
+    commands: type === "keyUp" ? undefined : event.commands,
   });
   for (const name of modifiers) {
     held |= MODIFIERS[name][0];

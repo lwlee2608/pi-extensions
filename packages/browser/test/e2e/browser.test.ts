@@ -222,6 +222,10 @@ test("type, keys, and click fill and submit a form with real input events", asyn
   const after = await browser({ action: "read" });
   assert.match(after, /submitted: hello pi/);
   assert.match(after, /button "Clicked 1 times"/, "the click arrived as a trusted event");
+  await browser({ action: "keys", ref: ref(page, 'textbox "Name"'), keys: "Control+a Backspace" });
+  await browser({ action: "type", ref: ref(page, 'textbox "Name"'), text: "second" });
+  await browser({ action: "keys", keys: "Enter" });
+  assert.match(await browser({ action: "read" }), /submitted: second/, "select-all and Backspace cleared the field");
 });
 
 test("click reaches a ref inside a same-origin frame, and the frame navigating keeps the page's own refs", async () => {

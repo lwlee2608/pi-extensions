@@ -65,7 +65,7 @@ The agent gets one `browser` tool:
 | `read` | Page text plus numbered element refs from the accessibility tree. |
 | `click` | Click a ref with real mouse events. |
 | `type` | Focus a ref and insert text at its cursor. |
-| `keys` | Press keys or combos, like `Enter`, `Shift+Tab`, or `Control+a`, after focusing a ref if given. |
+| `keys` | Press keys or combos, like `Enter`, `Shift+Tab`, or select-all (`Meta+a` on macOS, `Control+a` elsewhere), after focusing a ref if given. |
 | `scroll` | Scroll a ref into view. |
 | `screenshot` | JPEG of a pi tab's visible area at CSS pixel size, so high-density screens don't produce oversized images. Brings that tab to the front of its window first. |
 | `console` | Recent console messages from a pi tab. |

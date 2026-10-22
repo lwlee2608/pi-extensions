@@ -14,7 +14,7 @@ const parameters = Type.Object({
   newTab: Type.Optional(Type.Boolean({ description: "navigate: open the URL in a new pi tab" })),
   ref: Type.Optional(Type.Number({ description: "click, type: element ref, the n in [n] from read. keys: focus this ref first. scroll: ref to bring into view" })),
   text: Type.Optional(Type.String({ description: "type: text to insert at the cursor of the ref" })),
-  keys: Type.Optional(Type.String({ description: "keys: space-separated keys or combos, like \"Enter\", \"Shift+Tab\", \"Control+a\"" })),
+  keys: Type.Optional(Type.String({ description: "keys: space-separated keys or combos, like \"Enter\" or \"Shift+Tab\"; editing shortcuts use Meta on macOS and Control elsewhere, like \"Meta+a\" or \"Control+a\" to select all" })),
 });
 
 function checkUrl(url: string | undefined): void {
