@@ -3,10 +3,13 @@ import { addHost, loadHosts } from "./config.ts";
 export type Choice = "once" | "session" | "always" | "deny";
 export type Ask = (host: string) => Promise<Choice>;
 
+export function parse(url: string): URL {
+  try { return new URL(url); } catch { throw new Error(`Invalid URL: ${url}`); }
+}
+
 export function hostOf(url: string): string | undefined {
-  let origin: string;
-  try { origin = new URL(url).origin; } catch { throw new Error(`Invalid URL: ${url}`); }
-  return origin === "null" ? undefined : new URL(origin).hostname;
+  const { protocol, hostname } = parse(url);
+  return protocol === "http:" || protocol === "https:" ? hostname : undefined;
 }
 
 export class Approvals {
@@ -23,12 +26,16 @@ export class Approvals {
 
   async allowed(url: string, granted: Set<string>): Promise<boolean> {
     const host = hostOf(url);
-    return !host || granted.has(host) || this.session.has(host) || (await loadHosts(this.configPath)).includes(host);
+    return !!host && (granted.has(host) || this.session.has(host) || (await loadHosts(this.configPath)).includes(host));
   }
 
   async approve(url: string, ask: Ask, granted: Set<string>): Promise<void> {
+    const host = hostOf(url);
+    if (!host) {
+      const { protocol } = parse(url);
+      throw new Error(`The browser only acts on http and https pages, and this pi tab shows ${/^[aeiou]/.test(protocol) ? "an" : "a"} ${protocol} page. Navigate it first.`);
+    }
     if (await this.allowed(url, granted)) return;
-    const host = hostOf(url)!;
     const choice = await ask(host);
     if (choice === "deny") throw new Error(`The user did not allow the browser on ${host}.`);
     granted.add(host);

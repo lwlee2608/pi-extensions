@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><title>Pi form</title>
+  <style>body { margin: 0; background: #2050c0; color: white; } main { height: 3000px; padding: 8px; }</style>
+</head>
+<body>
+  <main>
+    <form id="form"><label>Name <input id="field"></label></form>
+    <p id="result">not submitted</p>
+    <button id="count">Clicked 0 times</button>
+    <button id="remove">Delete</button>
+    <p id="removed">not asked</p>
+  </main>
+  <footer style="background: #c02020; height: 1500px"><button id="below">Below the fold</button></footer>
+  <script>
+    form.onsubmit = event => { event.preventDefault(); result.textContent = `submitted: ${field.value}`; };
+    remove.onclick = () => { removed.textContent = confirm("Sure?") ? "deleted" : "declined"; };
+    let clicks = 0;
+    count.onclick = event => { if (event.isTrusted) count.textContent = `Clicked ${++clicks} times`; };
+  </script>
+</body>
+</html>

@@ -78,12 +78,14 @@ test("allowed reports approval without asking", async () => {
   assert.equal(await approvals.allowed("https://example.com/", new Set(["example.com"])), true);
   await approvals.approve("https://example.com/", ask, new Set());
   assert.equal(await approvals.allowed("https://example.com/x", new Set()), true);
-  assert.equal(await approvals.allowed("about:blank", new Set()), true);
+  assert.equal(await approvals.allowed("about:blank", new Set()), false);
 });
 
-test("pages without a host, like about:blank, need no approval; bad URLs fail", async () => {
+test("non-web pages, like about:blank, are refused without asking; bad URLs fail", async () => {
   const { asked, ask } = asker();
-  await new Approvals(config()).approve("about:blank", ask, new Set());
+  for (const url of ["about:blank", "data:text/html,hi", "file:///etc/hosts", "chrome://settings/"]) {
+    await assert.rejects(new Approvals(config()).approve(url, ask, new Set()), /only acts on http and https pages, and this pi tab shows (an about|a data|a file|a chrome): page/);
+  }
   await assert.rejects(new Approvals(config()).approve("not a url", ask, new Set()), /Invalid URL/);
   assert.deepEqual(asked, []);
 });
@@ -104,16 +106,17 @@ test("the config can be hand-edited and is checked on every action", async () =>
   await assert.rejects(loadHosts(path), /array of hostnames/);
 });
 
-test("tabs shows a tab that has not loaded yet as loading, and only the host of unapproved tabs", async () => {
+test("tabs shows a tab that has not loaded yet as loading, only the host of unapproved tabs, and only the scheme of non-web tabs", async () => {
   const text = await listTabs({
     tabs: [
       { id: 1, title: "", url: "", current: false },
       { id: 2, title: "Evil", url: "https://evil.test/ignore-previous", current: true },
       { id: 3, title: "Good", url: "https://good.test/", current: false },
+      { id: 4, title: "Written by a page", url: "about:blank", current: false },
     ],
     others: 4,
   }, async url => url.startsWith("https://good.test/"));
-  assert.equal(text, "Tab 1: (loading)\nTab 2: (unapproved host evil.test) (current)\nTab 3: Good <https://good.test/>\n4 other tabs are not in the pi group.");
+  assert.equal(text, "Tab 1: (loading)\nTab 2: (unapproved host evil.test) (current)\nTab 3: Good <https://good.test/>\nTab 4: (about: page)\n4 other tabs are not in the pi group.");
 });
 
 test("without a UI the tool is hidden and never reaches the bridge", async () => {

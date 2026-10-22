@@ -2,22 +2,24 @@ import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, getAgentDir, truncate
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
-import { Approvals, hostOf, type Choice } from "./approval.ts";
+import { Approvals, hostOf, parse, type Choice } from "./approval.ts";
 import { Bridge, ORIGIN, PORT, type BridgeOptions } from "./bridge.ts";
 
 const CHROME_DIR = fileURLToPath(new URL("../chrome/", import.meta.url));
 
 const parameters = Type.Object({
-  action: Type.Union([Type.Literal("tabs"), Type.Literal("navigate"), Type.Literal("read")]),
+  action: Type.Union(["tabs", "navigate", "read", "click", "type", "keys", "scroll", "screenshot"].map(action => Type.Literal(action))),
   url: Type.Optional(Type.String({ description: "navigate: http or https URL to load" })),
   tabId: Type.Optional(Type.Number({ description: "Pi tab to act on; defaults to the current pi tab" })),
   newTab: Type.Optional(Type.Boolean({ description: "navigate: open the URL in a new pi tab" })),
+  ref: Type.Optional(Type.Number({ description: "click, type: element ref, the n in [n] from read. keys: focus this ref first. scroll: ref to bring into view" })),
+  text: Type.Optional(Type.String({ description: "type: text to insert at the cursor of the ref" })),
+  keys: Type.Optional(Type.String({ description: "keys: space-separated keys or combos, like \"Enter\" or \"Shift+Tab\"; editing shortcuts use Meta on macOS and Control elsewhere, like \"Meta+a\" or \"Control+a\" to select all" })),
 });
 
 function checkUrl(url: string | undefined): void {
   if (!url) throw new Error("navigate needs a url.");
-  let protocol: string;
-  try { protocol = new URL(url).protocol; } catch { throw new Error(`Invalid URL: ${url}`); }
+  const { protocol } = parse(url);
   if (protocol !== "http:" && protocol !== "https:") throw new Error(`navigate only opens http and https URLs, not ${protocol}`);
 }
 
@@ -35,7 +37,9 @@ interface TabList {
 
 export async function listTabs({ tabs, others }: TabList, allowed: (url: string) => Promise<boolean>): Promise<string> {
   const lines = await Promise.all(tabs.map(async tab => {
-    const page = !tab.url ? "(loading)" : await allowed(tab.url) ? `${tab.title || "(untitled)"} <${tab.url}>` : `(unapproved host ${hostOf(tab.url)})`;
+    const host = tab.url && hostOf(tab.url);
+    const page = !tab.url ? "(loading)" : !host ? `(${parse(tab.url).protocol} page)`
+      : await allowed(tab.url) ? `${tab.title || "(untitled)"} <${tab.url}>` : `(unapproved host ${host})`;
     return `Tab ${tab.id}: ${page}${tab.current ? " (current)" : ""}`;
   }));
   return [...(lines.length ? lines : ["No pi tabs are open."]), `${others} other tabs are not in the pi group.`].join("\n");
@@ -93,34 +97,35 @@ export function browserExtension(overrides: Partial<BridgeOptions> = {}): (pi: E
       name: "browser",
       label: "Browser",
       description: "Drive the user's Chrome, only in tabs of its \"pi\" tab group. Actions: tabs lists pi tabs (other tabs are only counted; "
-        + "a tab on a host the user has not approved shows only its host); "
+        + "a tab on a host the user has not approved shows only its host; a non-http(s) tab shows only its scheme and is refused until navigated); "
         + "navigate loads an http/https URL in the current pi tab, or a new one with newTab; read returns the page as an accessibility tree "
-        + "where [n] marks an element ref. Refs go stale when the page navigates; read again. The user approves each new host; "
+        + "where [n] marks an element ref. click, type, and keys act on a ref with real input events; scroll brings a ref into view; "
+        + "screenshot returns a JPEG of the tab, bringing it to the front of its window. Refs go stale when the page navigates; "
+        + "read again. Actions do not wait for a page they trigger to load; read to see the result. The user approves each new host; "
         + "if they deny one, the call fails and you should not retry it. "
         + `Output is truncated to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)}.`,
       parameters,
       executionMode: "sequential",
-      async execute(_id, { action, url, tabId, newTab }, signal, _update, ctx) {
+      async execute(_id, { action, ...params }, signal, _update, ctx) {
         const bridge = use(ctx);
         const granted = new Set<string>();
         const approve = (url: string) => approvals.approve(url, host => ask(ctx, host, signal), granted);
-        let text: string;
         if (action === "tabs") {
-          text = await listTabs(await bridge.call(action, {}, signal) as TabList, url => approvals.allowed(url, granted));
-        } else {
-          if (action === "navigate") {
-            checkUrl(url);
-            await approve(url!);
-          } else {
-            const tab = await bridge.call("tab", { tabId }, signal) as { id: number; url: string };
-            await approve(loaded(tab.url));
-            tabId = tab.id;
-          }
-          const page = await bridge.call(action, { url, tabId, newTab }, signal) as { url: string; text: string };
-          await approve(loaded(page.url));
-          text = page.text;
+          const text = await listTabs(await bridge.call(action, {}, signal) as TabList, url => approvals.allowed(url, granted));
+          return { content: [{ type: "text", text: truncate(text) }], details: undefined };
         }
-        return { content: [{ type: "text", text: truncate(text) }], details: undefined };
+        if (action === "navigate") {
+          checkUrl(params.url);
+          await approve(params.url!);
+        } else {
+          const tab = await bridge.call("tab", { tabId: params.tabId }, signal) as { id: number; url: string };
+          await approve(loaded(tab.url));
+          params.tabId = tab.id;
+        }
+        const page = await bridge.call(action, params, signal) as { url: string; text: string; data?: string };
+        await approve(loaded(page.url));
+        const image = page.data ? [{ type: "image" as const, data: page.data, mimeType: "image/jpeg" }] : [];
+        return { content: [{ type: "text" as const, text: truncate(page.text) }, ...image], details: undefined };
       },
     });
 
