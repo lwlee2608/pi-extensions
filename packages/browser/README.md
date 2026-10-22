@@ -2,8 +2,6 @@
 
 Let Pi use the Chrome you're already signed into. The agent opens pages, reads them, fills forms, takes screenshots, and checks console and network errors, in your real profile, without a separate automation browser.
 
-> **In development** on `integrate/browser`. Not on npm yet; this README describes the finished v1.
-
 ## What you can do
 
 | Use case | Ask Pi |
@@ -68,11 +66,13 @@ The agent gets one `browser` tool:
 | `keys` | Press keys or combos, like `Enter`, `Shift+Tab`, or select-all (`Meta+a` on macOS, `Control+a` elsewhere), after focusing a ref if given. |
 | `scroll` | Scroll a ref into view. |
 | `screenshot` | JPEG of a pi tab's visible area at CSS pixel size, so high-density screens don't produce oversized images. Brings that tab to the front of its window first. |
-| `console` | Recent console messages from a pi tab. |
-| `network` | Recent requests: method, URL, status, and type. Never headers or bodies. |
-| `eval` | Run JavaScript in the page. You confirm the code every time. |
+| `console` | Console messages, uncaught exceptions, and Chrome's own warnings from the tab's current page. |
+| `network` | Requests from the tab's current page: method, status, type, and URL. Never headers or bodies. |
+| `eval` | Run a JavaScript expression in the page's main frame and return its value as JSON, awaiting a promise. You confirm the code every time. |
 
 Page actions take an optional tab id and default to the current pi tab. Refs come from the tab's last `read` and go stale when the page navigates (or, for refs inside a frame, when that frame does); the agent reads again to get fresh ones. `click`, `type`, and `keys` don't wait for a page they trigger to load; the agent reads to see the result.
+
+`network` only sees requests made since the agent first acted on the tab, or since Pi last reconnected. Both logs start over when the tab's page navigates, so they only ever show the page the agent is looking at. They keep the last 200 entries per tab and cut each message or URL at 1,000 characters. Requests and messages from cross-site frames aren't recorded. `eval` returns values that survive JSON, so for a DOM node it should return a property such as `outerHTML`. Synchronous code is stopped after 10 seconds. Output is truncated to 2,000 lines or 50KB, keeping the start of a page and the newest log entries.
 
 | Command | Result |
 | --- | --- |
@@ -88,7 +88,7 @@ The first action on a new host, reads included, asks you in Pi:
 - **Always:** saved to `~/.pi/agent/pi-browser/config.json` (under `PI_CODING_AGENT_DIR` when set) as `{ "allowedHosts": ["example.com"] }`. Remove a host there to revoke it; the file is read on every action.
 - **Deny:** the action fails. The next action on that host asks again.
 
-Approval matches the exact hostname, so `github.com` doesn't cover `gist.github.com`. It covers the tab's page and the same-site frames inside it, so a `github.com` page that embeds a `gist.github.com` frame shows that frame's text too. `read` skips cross-site frames, but `screenshot` shows whatever is visible in the tab, cross-site frames included. It is checked against the tab's page before every action, against the target before every navigation, and against where the page ended up after it, so a redirect or link to a new host asks again. `tabs` asks nothing; a pi tab on a host you haven't approved shows only its host, never its title or full URL. `eval` always asks, even on an "always" host.
+Approval matches the exact hostname, so `github.com` doesn't cover `gist.github.com`. It covers the tab's page and the same-site frames inside it, so a `github.com` page that embeds a `gist.github.com` frame shows that frame's text too. `read` skips cross-site frames, but `screenshot` shows whatever is visible in the tab, cross-site frames included. It is checked against the tab's page before every action, against the target before every navigation, and against where the page ended up after it, so a redirect or link to a new host asks again. `tabs` asks nothing; a pi tab on a host you haven't approved shows only its host, never its title or full URL. `eval` always asks, even on an "always" host: after the host check, Pi shows you the code and runs it only if you confirm. Declining fails the call.
 
 A pi tab showing anything other than an `http`/`https` page, such as `about:blank`, `data:`, or `chrome:`, has no host to approve, so every action on it is refused and `tabs` shows only its scheme. That stops a page from writing into a blank tab it opened and having the agent read it unasked. Navigate the tab to use it again.
 
@@ -108,7 +108,7 @@ Chrome shows a "Pi Browser started debugging this browser" bar while the agent i
 - **The extension does not authenticate Pi.** While no Pi session holds the port, any local process that listens on `127.0.0.1:47823` can drive the extension, skipping Pi's site approval and eval confirmation. The extension still refuses anything but `http`/`https` on its own. This matters most on machines shared with other OS users or running untrusted local apps.
 - **Approved sites can steer the agent.** Approval is about where the agent may go, not what it reads there. Text on an approved site, such as an issue comment, an email, or a review, can contain instructions the agent may follow on that site. Use "always" only for sites whose content you trust, and watch the agent on sites with user-written content.
 - **Page content goes to your model provider**, like any other tool output.
-- **Network logs skip headers and bodies**, so tokens and cookies don't land in the transcript. Page text, console output, and eval results are returned as-is.
+- **Network logs skip headers and bodies**, so tokens and cookies in them don't land in the transcript. URLs are kept whole, query strings included. Page text, console output, and eval results are returned as-is, only truncated.
 - **Only you can move the browser.** `/browser take` proves itself with a secret in `~/.pi/agent/pi-browser/secret`, readable only by you, so a web page can't make the owning session let go.
 - **The bridge exists only while a Pi session uses the browser.** It closes when Pi exits.
 
@@ -116,7 +116,7 @@ Chrome shows a "Pi Browser started debugging this browser" bar while the agent i
 
 - One Chrome profile at a time. A second connected Chrome is refused.
 - Cross-origin iframes, native dialogs, file pickers, password-manager popups, passkeys, and CAPTCHAs are out of reach.
-- An action that opens an `alert`, `confirm`, or `prompt` dialog fails at once and leaves the dialog for you to answer in Chrome; the tab is blocked until you do.
+- An action or `eval` that opens an `alert`, `confirm`, or `prompt` dialog fails at once and leaves the dialog for you to answer in Chrome; the tab is blocked until you do.
 - No hover and no wheel scrolling: Chrome doesn't answer those events in a tab that isn't in front. `scroll` brings a ref into view instead.
 - Chrome can't load this extension with `--load-extension` anymore; load it unpacked.
 - After updating the package, reload Pi Browser in `chrome://extensions`.

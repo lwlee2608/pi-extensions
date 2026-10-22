@@ -4,6 +4,9 @@ const KEEPALIVE_MS = 20_000;
 const NAVIGATE_WAIT_MS = 20_000;
 const GROUP = "pi";
 const SCREENSHOT_QUALITY = 80;
+const LOG_LIMIT = 200;
+const TEXT_LIMIT = 1_000;
+const EVAL_TIMEOUT_MS = 10_000;
 
 const SKIP = new Set(["generic", "none", "paragraph", "InlineTextBox", "LineBreak", "RootWebArea"]);
 const INTERACTIVE = new Set(["button", "checkbox", "combobox", "link", "listbox", "menuitem", "menuitemcheckbox", "menuitemradio",
@@ -97,6 +100,29 @@ const handlers = {
     const { data } = await cdp(tab.id, "Page.captureScreenshot", { format: "jpeg", quality: SCREENSHOT_QUALITY, clip });
     return { ...(await acted(tab.id, "Screenshot")), data };
   },
+
+  async console({ tabId }) {
+    const tab = await piTab(tabId);
+    const log = await logOf(tab.id);
+    return reply(tab.id, listing(tab.id, "console messages", log.console));
+  },
+
+  async network({ tabId }) {
+    const tab = await piTab(tabId);
+    const log = await logOf(tab.id);
+    const lines = log.network.map(({ method, status, type, url }) => `${method} ${status ?? "pending"} ${type} ${url}`);
+    return reply(tab.id, listing(tab.id, "requests", lines));
+  },
+
+  async eval({ tabId, code, host }) {
+    if (typeof code !== "string" || !code.trim()) throw new Error("eval needs code.");
+    const tab = await piTab(tabId);
+    if (host !== undefined && hostOf(tab.url) !== host) throw new Error(`Tab ${tab.id} is no longer on ${host}, so the code was not run.`);
+    const { result, exceptionDetails } = await guarded(tab.id, () => cdp(tab.id, "Runtime.evaluate", {
+      expression: code, returnByValue: true, awaitPromise: true, timeout: EVAL_TIMEOUT_MS,
+    }));
+    return reply(tab.id, exceptionDetails ? `Uncaught: ${exceptionDetails.exception?.description ?? exceptionDetails.text}` : render(result));
+  },
 };
 
 const KEYS = {
@@ -109,6 +135,7 @@ const MAC_COMMANDS = { Meta: { a: "selectAll", c: "copy", v: "paste", x: "cut", 
 
 const attached = new Set();
 const refs = new Map();
+const logs = new Map();
 const dialogs = new Map();
 let socket;
 let current;
@@ -167,15 +194,84 @@ async function allowed() {
   }
 }
 
+async function attach(tabId) {
+  if (attached.has(tabId)) return;
+  await allowed();
+  await chrome.debugger.attach({ tabId }, "1.3").catch(error => { if (!/already attached/i.test(error.message)) throw error; });
+  logs.set(tabId, { console: [], network: [], requests: new Map() });
+  for (const domain of ["Page", "Runtime", "Log", "Network"]) await chrome.debugger.sendCommand({ tabId }, `${domain}.enable`);
+  attached.add(tabId);
+}
+
 async function cdp(tabId, method, params) {
   if (dialogs.has(tabId)) throw dialogError(dialogs.get(tabId));
-  if (!attached.has(tabId)) {
-    await allowed();
-    await chrome.debugger.attach({ tabId }, "1.3").catch(error => { if (!/already attached/i.test(error.message)) throw error; });
-    await chrome.debugger.sendCommand({ tabId }, "Page.enable");
-    attached.add(tabId);
-  }
+  await attach(tabId);
   return chrome.debugger.sendCommand({ tabId }, method, params);
+}
+
+async function logOf(tabId) {
+  await attach(tabId);
+  return logs.get(tabId);
+}
+
+function clip(text) {
+  return text.length > TEXT_LIMIT ? `${text.slice(0, TEXT_LIMIT)}… (cut)` : text;
+}
+
+function push(list, entry) {
+  list.push(entry);
+  return list.length > LOG_LIMIT ? list.shift() : undefined;
+}
+
+function remote(value) {
+  if (value.type === "string") return value.value;
+  if (value.unserializableValue) return value.unserializableValue;
+  if (value.value !== undefined) return JSON.stringify(value.value);
+  return value.description ?? value.type;
+}
+
+function render(result) {
+  return result.value !== undefined && result.type !== "string" ? JSON.stringify(result.value, null, 2) : remote(result);
+}
+
+function listing(tabId, what, lines) {
+  const head = lines.length
+    ? `${lines.length} ${what} in tab ${tabId} since its page loaded, oldest first${lines.length === LOG_LIMIT ? `; only the last ${LOG_LIMIT} are kept` : ""}:`
+    : `No ${what} in tab ${tabId} since its page loaded.`;
+  return [head, ...lines].join("\n");
+}
+
+function record(tabId, method, params) {
+  const log = logs.get(tabId);
+  if (!log) return;
+  if (method === "Runtime.consoleAPICalled") {
+    push(log.console, clip(`[${params.type}] ${params.args.map(remote).join(" ")}`));
+  } else if (method === "Runtime.exceptionThrown") {
+    push(log.console, clip(`[exception] ${params.exceptionDetails.exception?.description ?? params.exceptionDetails.text}`));
+  } else if (method === "Log.entryAdded" && params.entry.level !== "verbose") {
+    push(log.console, clip(`[${params.entry.level}] ${params.entry.text}${params.entry.url ? ` <${params.entry.url}>` : ""}`));
+  } else if (method === "Network.requestWillBeSent") {
+    const redirected = log.requests.get(params.requestId);
+    if (redirected && params.redirectResponse) redirected.status = params.redirectResponse.status;
+    const request = { id: params.requestId, loaderId: params.loaderId, method: params.request.method, url: clip(params.request.url), type: params.type ?? "Other" };
+    log.requests.set(request.id, request);
+    const dropped = push(log.network, request);
+    if (dropped && log.requests.get(dropped.id) === dropped) log.requests.delete(dropped.id);
+  } else if (method === "Network.responseReceived") {
+    const request = log.requests.get(params.requestId);
+    if (request) Object.assign(request, { status: params.response.status, type: params.type });
+  } else if (method === "Network.loadingFailed") {
+    const request = log.requests.get(params.requestId);
+    if (request) request.status = params.canceled ? "canceled" : params.blockedReason ? `blocked (${params.blockedReason})` : `failed (${params.errorText})`;
+  } else if (method === "Page.frameNavigated" && !params.frame.parentId) {
+    log.console = [];
+    log.network = log.network.filter(request => request.loaderId === params.frame.loaderId);
+    log.requests = new Map(log.network.map(request => [request.id, request]));
+  }
+}
+
+function hostOf(url) {
+  try { return /^https?:$/.test(new URL(url).protocol) ? new URL(url).hostname : undefined; } catch { return undefined; }
 }
 
 async function load(tabId, url) {
@@ -244,9 +340,13 @@ async function node(tabId, method, ref) {
   }
 }
 
-async function acted(tabId, what) {
+async function reply(tabId, text) {
   const tab = await chrome.tabs.get(tabId);
-  return { url: tab.url || tab.pendingUrl || "", text: `${what} in tab ${tabId}.` };
+  return { url: tab.url || tab.pendingUrl || "", text };
+}
+
+function acted(tabId, what) {
+  return reply(tabId, `${what} in tab ${tabId}.`);
 }
 
 function parseCombo(combo, mac) {
@@ -319,6 +419,7 @@ function snapshot(nodes, lines, found) {
 async function detachAll() {
   attached.clear();
   refs.clear();
+  logs.clear();
   dialogs.clear();
   for (const target of await chrome.debugger.getTargets()) {
     if (target.attached && target.tabId !== undefined) chrome.debugger.detach({ tabId: target.tabId }).catch(() => {});
@@ -326,6 +427,7 @@ async function detachAll() {
 }
 
 chrome.debugger.onEvent.addListener(({ tabId }, method, params) => {
+  record(tabId, method, params);
   if (method === "Page.frameNavigated" && !params.frame.parentId) refs.delete(tabId);
   else if (method === "Page.frameNavigated") refs.get(tabId)?.delete(params.frame.id);
   else if (method === "Page.frameDetached") refs.get(tabId)?.delete(params.frameId);
@@ -335,6 +437,7 @@ chrome.debugger.onEvent.addListener(({ tabId }, method, params) => {
 chrome.debugger.onDetach.addListener(({ tabId }, reason) => {
   attached.delete(tabId);
   refs.delete(tabId);
+  logs.delete(tabId);
   dialogs.delete(tabId);
   if (reason !== "canceled_by_user") return;
   chrome.storage.session.set({ canceled: true });
@@ -343,7 +446,7 @@ chrome.debugger.onDetach.addListener(({ tabId }, reason) => {
 chrome.tabs.onUpdated.addListener(async (tabId, { groupId }) => {
   if (groupId === undefined || !attached.has(tabId)) return;
   const group = groupId === chrome.tabGroups.TAB_GROUP_ID_NONE ? undefined : await chrome.tabGroups.get(groupId);
-  if (group?.title !== GROUP) { attached.delete(tabId); refs.delete(tabId); dialogs.delete(tabId); chrome.debugger.detach({ tabId }).catch(() => {}); }
+  if (group?.title !== GROUP) { attached.delete(tabId); refs.delete(tabId); logs.delete(tabId); dialogs.delete(tabId); chrome.debugger.detach({ tabId }).catch(() => {}); }
 });
 chrome.alarms.create("connect", { periodInMinutes: ALARM_MINUTES });
 chrome.alarms.onAlarm.addListener(connect);

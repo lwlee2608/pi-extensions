@@ -2,6 +2,7 @@ import { addHost, loadHosts } from "./config.ts";
 
 export type Choice = "once" | "session" | "always" | "deny";
 export type Ask = (host: string) => Promise<Choice>;
+export type Confirm = (title: string, message: string) => Promise<boolean>;
 
 export function parse(url: string): URL {
   try { return new URL(url); } catch { throw new Error(`Invalid URL: ${url}`); }
@@ -42,4 +43,9 @@ export class Approvals {
     if (choice === "session") this.session.add(host);
     if (choice === "always") await addHost(this.configPath, host);
   }
+}
+
+export async function confirmEval(code: string | undefined, host: string, confirm: Confirm): Promise<void> {
+  if (!code?.trim()) throw new Error("eval needs code.");
+  if (!(await confirm(`Run this JavaScript in the ${host} tab?`, code))) throw new Error("The user did not allow this eval.");
 }

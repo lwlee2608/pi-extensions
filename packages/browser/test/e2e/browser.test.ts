@@ -25,6 +25,11 @@ async function listen(server: Server): Promise<number> {
 const fixtureServer = createServer(async (req, res) => {
   if (req.url!.startsWith("/redirect?to=")) { res.writeHead(302, { location: decodeURIComponent(req.url!.slice(13)) }).end(); return; }
   if (req.url === "/stall") return;
+  if (req.url === "/api/data") {
+    const status = req.headers.authorization === "Bearer fixture-secret-token" ? 201 : 401;
+    res.writeHead(status, { "set-cookie": "session=fixture-secret-cookie", "x-fixture": "fixture-secret-header" }).end("fixture-secret-body");
+    return;
+  }
   if (req.url === "/hang") { res.writeHead(200, { "content-type": "text/html" }).write("<title>Hanging</title><h1>Never finishes</h1>"); return; }
   const body = await readFile(join(fixtures, new URL(req.url!, "http://x").pathname)).catch(() => undefined);
   if (body) res.writeHead(200, { "content-type": "text/html" }).end(body);
@@ -43,7 +48,8 @@ function session() {
   const handlers = new Map<string, ((event: unknown, ctx: ExtensionContext) => unknown)[]>();
   const tools = new Map<string, any>();
   const asked: string[] = [];
-  const answers: string[] = [];
+  const confirmed: string[][] = [];
+  const answers: (string | boolean)[] = [];
   const pi = {
     on: (event: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) => handlers.set(event, [...handlers.get(event) ?? [], handler]),
     registerTool: (tool: { name: string }) => tools.set(tool.name, tool),
@@ -54,14 +60,20 @@ function session() {
   const select = async (title: string) => {
     asked.push(title.match(/use (\S+) in Chrome/)![1]);
     const answer = answers.shift();
-    if (!answer) throw new Error(`Unexpected prompt: ${title}`);
+    if (typeof answer !== "string") throw new Error(`Unexpected prompt: ${title}`);
     return answer;
   };
-  const ctx = { hasUI: true, cwd: work, ui: { notify: () => {}, select }, sessionManager: { getSessionName: () => "e2e" } } as unknown as ExtensionContext;
+  const confirm = async (title: string, message: string) => {
+    confirmed.push([title, message]);
+    const answer = answers.shift();
+    if (typeof answer !== "boolean") throw new Error(`Unexpected confirm: ${title}`);
+    return answer;
+  };
+  const ctx = { hasUI: true, cwd: work, ui: { notify: () => {}, select, confirm }, sessionManager: { getSessionName: () => "e2e" } } as unknown as ExtensionContext;
   const emit = (event: string) => { for (const handler of handlers.get(event) ?? []) handler({}, ctx); };
   browserExtension(options)(pi);
   emit("session_start");
-  const call = async (params: object, ...replies: string[]): Promise<{ content: any[] }> => {
+  const call = async (params: object, ...replies: (string | boolean)[]): Promise<{ content: any[] }> => {
     answers.push(...replies);
     try {
       return await tools.get("browser").execute("call", params, undefined, () => {}, ctx);
@@ -69,11 +81,11 @@ function session() {
       assert.deepEqual(answers.splice(0), [], "every queued answer was asked for");
     }
   };
-  const browser = async (params: object, ...replies: string[]): Promise<string> => (await call(params, ...replies)).content[0].text;
-  return { asked, emit, call, browser };
+  const browser = async (params: object, ...replies: (string | boolean)[]): Promise<string> => (await call(params, ...replies)).content[0].text;
+  return { asked, confirmed, emit, call, browser };
 }
 
-let { asked, emit, call, browser } = session();
+let { asked, confirmed, emit, call, browser } = session();
 const host = new URL(site).hostname;
 const at = (name: string, path = "other.html") => `http://${name}.test:${new URL(site).port}/${path}`;
 
@@ -317,10 +329,45 @@ test("always saves the host, and a fresh session does not ask for it", async () 
   assert.deepEqual(asked.splice(0), ["always.test"]);
   assert.deepEqual(JSON.parse(await readFile(configPath, "utf8")), { allowedHosts: ["always.test"] });
   emit("session_shutdown");
-  ({ asked, emit, call, browser } = session());
+  ({ asked, confirmed, emit, call, browser } = session());
   assert.match(await browser({ action: "read" }), /Not a pi tab/);
   assert.match(await browser({ action: "navigate", url: at("always", "index.html") }), /Pi fixture/);
   assert.deepEqual(asked, []);
+});
+
+test("console returns the page's logged error and uncaught exception, and a navigation clears them", async () => {
+  await browser({ action: "navigate", url: at("always", "debug.html") });
+  const text = await browser({ action: "console" });
+  assert.match(text, /^\[error\] fixture error: widget failed$/m);
+  assert.match(text, /^\[exception\] Error: fixture uncaught/m);
+  await browser({ action: "navigate", url: at("always", "index.html") });
+  assert.match(await browser({ action: "console" }), /^No console messages in tab \d+ since its page loaded\.$/);
+});
+
+test("network lists the page's fetch with its status, and never its headers or body", async () => {
+  await browser({ action: "navigate", url: at("always", "debug.html") });
+  let text = "";
+  await until(async () => /^GET 201 /m.test(text = await browser({ action: "network" })));
+  assert.match(text, /^GET 200 Document http:\/\/always\.test:\d+\/debug\.html$/m);
+  assert.match(text, /^GET 201 Fetch http:\/\/always\.test:\d+\/api\/data$/m, "the fetch carried its Authorization header");
+  assert.doesNotMatch(text, /fixture-secret|Bearer|authorization|cookie/i);
+});
+
+test("eval asks with its code shown even on an always host, returns the value, and fails when declined", async () => {
+  assert.equal(await browser({ action: "eval", code: "document.title" }, true), "Pi debug");
+  assert.deepEqual(confirmed.splice(0), [["Run this JavaScript in the always.test tab?", "document.title"]]);
+  await assert.rejects(browser({ action: "eval", code: "document.title = 'changed'" }, false), /did not allow this eval/);
+  assert.deepEqual(confirmed.splice(0), [["Run this JavaScript in the always.test tab?", "document.title = 'changed'"]]);
+  assert.deepEqual(JSON.parse(await browser({ action: "eval", code: "Promise.resolve({ title: document.title, n: 1 })" }, true)), { title: "Pi debug", n: 1 });
+  assert.match(await browser({ action: "eval", code: "missing.call()" }, true), /^Uncaught: ReferenceError: missing is not defined/);
+  assert.deepEqual(asked, [], "eval adds its confirm, not a host prompt");
+});
+
+test("an eval that opens a dialog fails at once instead of hanging", async () => {
+  await assert.rejects(browser({ action: "eval", code: "confirm('Sure?')" }, true), /opened a confirm dialog/);
+  const tabId = await inWorker(`chrome.tabs.query({ url: "${at("always", "debug.html")}" }).then(([tab]) => tab.id)`);
+  await inWorker(`chrome.debugger.sendCommand({ tabId: ${tabId} }, "Page.handleJavaScriptDialog", { accept: false })`);
+  assert.equal(await browser({ action: "eval", code: "1 + 1" }, true), "2");
 });
 
 test("after a debugging cancel every call fails at once, across a worker restart, until it is allowed again", async () => {

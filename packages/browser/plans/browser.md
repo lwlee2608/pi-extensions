@@ -52,7 +52,7 @@
 - **One CI wait per phase** — Push fixes freely; block on CI once, right before merge
 
 ## Progress
-Active: 4 · 20/25 tasks
+Active: 4 · 25/25 tasks
 
 ### Phase 1 — Agent opens and reads a page in a "pi" tab group
 The agent can open a URL in your real Chrome and get its text and numbered elements back.
@@ -103,11 +103,14 @@ The agent can fill and submit forms and see the page.
 ### Phase 4 — Agent debugs apps: console, network, eval
 The agent can see page errors and requests and run JS you approve.
 **Blocked by:** 3
-- [ ] Buffer console messages and network requests per pi tab; network keeps method, URL, status, and type only (`chrome/background.js`)
-- [ ] Implement `console`, `network`, and `eval` (`chrome/background.js`)
-- [ ] Confirm every eval with its code shown, outside domain approval (`src/approval.ts`, `src/index.ts`)
-- [ ] Add fixture errors and fetches, and e2e cases (`test/e2e/`)
-- [ ] Bring the README in line with what shipped and drop its "In development" note (`README.md`)
+- [x] Buffer console messages and network requests per pi tab; network keeps method, URL, status, and type only (`chrome/background.js`)
+- [x] Implement `console`, `network`, and `eval` (`chrome/background.js`)
+- [x] Confirm every eval with its code shown, outside domain approval (`src/approval.ts`, `src/index.ts`)
+- [x] Add fixture errors and fetches, and e2e cases (`test/e2e/`)
+- [x] Bring the README in line with what shipped and drop its "In development" note (`README.md`)
+- Note: both logs start over when the tab's main frame navigates (network keeps only the new document's own request), so a page left loaded on an unapproved host never leaks into a later page's logs; network only sees requests made after the debugger attached
+- Note: the extension re-checks that the tab is still on the confirmed host right before an eval runs; a navigation in the gap between that check and `Runtime.evaluate` can still run the code on the next page, though its result is withheld by the post-check
+- Note: `dialogError` reads "a alert dialog" for alerts (phase 3 grammar nit, not fixed)
 **Verify:** `npm run e2e -w packages/browser`: `console` returns the fixture's logged error; `network` lists the fixture's fetch with its status code and no header or body content, even though the fixture sends an `Authorization` header; `eval` of `document.title` calls the stubbed confirm with that code and returns the title; a declined confirm makes the tool fail, even on an "always" host.
 
 ## Demo

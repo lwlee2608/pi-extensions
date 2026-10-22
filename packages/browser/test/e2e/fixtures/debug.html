@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Pi debug</title></head>
+<body>
+  <h1>Debug fixture</h1>
+  <script>
+    console.error("fixture error:", "widget failed");
+    fetch("/api/data", { headers: { Authorization: "Bearer fixture-secret-token" } });
+  </script>
+  <script>throw new Error("fixture uncaught");</script>
+</body>
+</html>

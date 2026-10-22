@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { Approvals, type Choice } from "../src/approval.ts";
+import { Approvals, confirmEval, type Choice } from "../src/approval.ts";
 import { loadHosts } from "../src/config.ts";
 import { browserExtension, listTabs } from "../src/index.ts";
 
@@ -104,6 +104,16 @@ test("the config can be hand-edited and is checked on every action", async () =>
   await assert.rejects(loadHosts(path), /not valid JSON/);
   await writeFile(path, JSON.stringify({ allowedHosts: "example.com" }));
   await assert.rejects(loadHosts(path), /array of hostnames/);
+});
+
+test("eval shows its code and host and runs only when confirmed", async () => {
+  const shown: string[][] = [];
+  const answers = [true, false];
+  const confirm = async (title: string, message: string) => { shown.push([title, message]); return answers.shift()!; };
+  await confirmEval("document.title", "example.com", confirm);
+  await assert.rejects(confirmEval("document.cookie", "example.com", confirm), /did not allow this eval/);
+  await assert.rejects(confirmEval("  ", "example.com", confirm), /eval needs code/);
+  assert.deepEqual(shown, [["Run this JavaScript in the example.com tab?", "document.title"], ["Run this JavaScript in the example.com tab?", "document.cookie"]]);
 });
 
 test("tabs shows a tab that has not loaded yet as loading, only the host of unapproved tabs, and only the scheme of non-web tabs", async () => {
