@@ -41,8 +41,8 @@ const attached = new Set();
 let socket;
 let current;
 
-async function connect() {
-  if ((await chrome.storage.session.get("canceled")).canceled || socket) return;
+function connect() {
+  if (socket) return;
   const ws = socket = new WebSocket(`ws://127.0.0.1:${PORT}`);
   let keepalive;
   ws.onopen = () => {
@@ -52,6 +52,7 @@ async function connect() {
   ws.onmessage = async ({ data }) => {
     const { id, method, params } = JSON.parse(data);
     try {
+      await allowed();
       if (!Object.hasOwn(handlers, method)) throw new Error(`Unknown browser action: ${method}`);
       ws.send(JSON.stringify({ id, result: await handlers[method](params ?? {}) }));
     } catch (error) {
@@ -88,8 +89,15 @@ async function openTab() {
   return tab;
 }
 
+async function allowed() {
+  if ((await chrome.storage.session.get("canceled")).canceled) {
+    throw new Error("Debugging was canceled in Chrome. Click the Pi Browser toolbar icon to allow it again.");
+  }
+}
+
 async function cdp(tabId, method, params) {
   if (!attached.has(tabId)) {
+    await allowed();
     await chrome.debugger.attach({ tabId }, "1.3").catch(error => { if (!/already attached/i.test(error.message)) throw error; });
     attached.add(tabId);
   }
@@ -166,7 +174,7 @@ chrome.debugger.onDetach.addListener(({ tabId }, reason) => {
   attached.delete(tabId);
   if (reason !== "canceled_by_user") return;
   chrome.storage.session.set({ canceled: true });
-  socket?.close();
+  detachAll();
 });
 chrome.tabs.onUpdated.addListener(async (tabId, { groupId }) => {
   if (groupId === undefined || !attached.has(tabId)) return;

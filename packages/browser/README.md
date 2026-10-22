@@ -94,7 +94,7 @@ The tool only exists in interactive sessions. Print mode, JSON/RPC mode, and sub
 
 ### While the agent works
 
-Chrome shows a "Pi Browser started debugging this browser" bar while the agent is attached. It goes away when Pi exits. Clicking **Cancel** on the bar takes control away from the agent: Pi Browser disconnects and stays off until you click its toolbar icon.
+Chrome shows a "Pi Browser started debugging this browser" bar while the agent is attached. It goes away when Pi exits. Clicking **Cancel** on the bar takes control away from the agent: Pi Browser refuses every action until you click its toolbar icon.
 
 ## Safety
 

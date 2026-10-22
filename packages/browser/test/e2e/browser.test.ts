@@ -82,6 +82,13 @@ async function inWorker(expression: string): Promise<any> {
   }
 }
 
+async function stopWorker(): Promise<void> {
+  const worker = await target(isWorker);
+  const stopped = cdp.waitFor("Target.targetDestroyed", ({ targetId }) => targetId === worker.targetId);
+  await cdp.send("Target.closeTarget", { targetId: worker.targetId });
+  await stopped;
+}
+
 test("navigate reaches Chrome through the extension and opens the page in a pi tab group", async () => {
   assert.match(await browser({ action: "navigate", url: `${site}index.html` }), /^Tab \d+: Pi fixture </);
   const group = await inWorker(`chrome.tabs.query({ url: "${site}index.html" }).then(([tab]) => chrome.tabGroups.get(tab.groupId)).then(group => group.title)`);
@@ -134,12 +141,21 @@ test("closing the bridge detaches the debugger from pi tabs", async () => {
 
 test("the extension reconnects on its own after its service worker stops", async () => {
   await browser({ action: "tabs" });
-  const worker = await target(isWorker);
-  const stopped = cdp.waitFor("Target.targetDestroyed", ({ targetId }) => targetId === worker.targetId);
-  await cdp.send("Target.closeTarget", { targetId: worker.targetId });
-  await stopped;
+  await stopWorker();
   const start = Date.now();
   assert.match(await browser({ action: "tabs" }), /Pi fixture/);
   const elapsed = Date.now() - start;
   assert.ok(elapsed < ALARM_MS + 1_000, `reconnected after ${elapsed}ms`);
+});
+
+test("after a debugging cancel every call fails at once, across a worker restart, until it is allowed again", async () => {
+  await inWorker(`chrome.storage.session.set({ canceled: true })`);
+  for (const restart of [false, true]) {
+    if (restart) await stopWorker();
+    const start = Date.now();
+    await assert.rejects(browser({ action: "read" }), /canceled in Chrome.*toolbar icon/);
+    assert.ok(Date.now() - start < ALARM_MS + 1_000);
+  }
+  await inWorker(`chrome.storage.session.remove("canceled")`);
+  assert.match(await browser({ action: "read" }), /heading/);
 });
