@@ -238,6 +238,8 @@ test("a click that opens a dialog fails at once instead of hanging, and the tab 
   const start = Date.now();
   await assert.rejects(browser({ action: "click", ref: ref(page, 'button "Delete"') }), /opened a confirm dialog.*answer it in Chrome/);
   assert.ok(Date.now() - start < 2_000);
+  await assert.rejects(browser({ action: "read" }), /opened a confirm dialog.*answer it in Chrome/);
+  assert.ok(Date.now() - start < 2_000, "an open dialog refuses later actions at once");
   const tabId = await inWorker(`chrome.tabs.query({ url: "${form}" }).then(([tab]) => tab.id)`);
   await inWorker(`chrome.debugger.sendCommand({ tabId: ${tabId} }, "Page.handleJavaScriptDialog", { accept: false })`);
   assert.match(await browser({ action: "read" }), /declined/);

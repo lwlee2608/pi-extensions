@@ -109,6 +109,7 @@ const MAC_COMMANDS = { Meta: { a: "selectAll", c: "copy", v: "paste", x: "cut", 
 
 const attached = new Set();
 const refs = new Map();
+const dialogs = new Map();
 let socket;
 let current;
 
@@ -167,6 +168,7 @@ async function allowed() {
 }
 
 async function cdp(tabId, method, params) {
+  if (dialogs.has(tabId)) throw dialogError(dialogs.get(tabId));
   if (!attached.has(tabId)) {
     await allowed();
     await chrome.debugger.attach({ tabId }, "1.3").catch(error => { if (!/already attached/i.test(error.message)) throw error; });
@@ -209,12 +211,16 @@ async function load(tabId, url) {
   }
 }
 
+function dialogError(type) {
+  return new Error(`The page opened a ${type} dialog, which blocks the tab. Ask the user to answer it in Chrome, then read.`);
+}
+
 async function guarded(tabId, run) {
   let onEvent;
   const dialog = new Promise((_, reject) => {
     onEvent = (source, method, params) => {
       if (source.tabId !== tabId || method !== "Page.javascriptDialogOpening") return;
-      reject(new Error(`The page opened a ${params.type} dialog, which blocks the tab. Ask the user to answer it in Chrome, then read.`));
+      reject(dialogError(params.type));
     };
     chrome.debugger.onEvent.addListener(onEvent);
   });
@@ -313,6 +319,7 @@ function snapshot(nodes, lines, found) {
 async function detachAll() {
   attached.clear();
   refs.clear();
+  dialogs.clear();
   for (const target of await chrome.debugger.getTargets()) {
     if (target.attached && target.tabId !== undefined) chrome.debugger.detach({ tabId: target.tabId }).catch(() => {});
   }
@@ -322,10 +329,13 @@ chrome.debugger.onEvent.addListener(({ tabId }, method, params) => {
   if (method === "Page.frameNavigated" && !params.frame.parentId) refs.delete(tabId);
   else if (method === "Page.frameNavigated") refs.get(tabId)?.delete(params.frame.id);
   else if (method === "Page.frameDetached") refs.get(tabId)?.delete(params.frameId);
+  else if (method === "Page.javascriptDialogOpening") dialogs.set(tabId, params.type);
+  else if (method === "Page.javascriptDialogClosed") dialogs.delete(tabId);
 });
 chrome.debugger.onDetach.addListener(({ tabId }, reason) => {
   attached.delete(tabId);
   refs.delete(tabId);
+  dialogs.delete(tabId);
   if (reason !== "canceled_by_user") return;
   chrome.storage.session.set({ canceled: true });
   detachAll();
@@ -333,7 +343,7 @@ chrome.debugger.onDetach.addListener(({ tabId }, reason) => {
 chrome.tabs.onUpdated.addListener(async (tabId, { groupId }) => {
   if (groupId === undefined || !attached.has(tabId)) return;
   const group = groupId === chrome.tabGroups.TAB_GROUP_ID_NONE ? undefined : await chrome.tabGroups.get(groupId);
-  if (group?.title !== GROUP) { attached.delete(tabId); refs.delete(tabId); chrome.debugger.detach({ tabId }).catch(() => {}); }
+  if (group?.title !== GROUP) { attached.delete(tabId); refs.delete(tabId); dialogs.delete(tabId); chrome.debugger.detach({ tabId }).catch(() => {}); }
 });
 chrome.alarms.create("connect", { periodInMinutes: ALARM_MINUTES });
 chrome.alarms.onAlarm.addListener(connect);
