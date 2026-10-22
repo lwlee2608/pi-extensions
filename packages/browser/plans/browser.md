@@ -40,6 +40,7 @@
 - **Integration branch** — `integrate/browser` holds the plan and package skeleton. Each phase branches from it and PRs back into it; one final PR to `main`, as notify did `agent`
 - **Phase count** — 4; phase 1 ships without the approval gate, acceptable because it only lands on `integrate/browser`
 - **README first** — `README.md` is written up front as the v1 spec; each phase keeps it true and amends it where the build proves it wrong `agent`
+- **Build mode** — Orchestrator: fresh worker per phase in its own worktree (opus, medium effort); fresh reviewer per round (opus, high effort)
 - **Verification budget** — Past builds stalled on wasteful verification; the rules below bind every phase, review round, and merge. Slow is acceptable, waste is not
 
 ## Verification budget
