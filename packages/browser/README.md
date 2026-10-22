@@ -116,6 +116,7 @@ Chrome shows a "Pi Browser started debugging this browser" bar while the agent i
 
 - One Chrome profile at a time. A second connected Chrome is refused.
 - Cross-origin iframes, native dialogs, file pickers, password-manager popups, passkeys, and CAPTCHAs are out of reach.
+- An action that opens an `alert`, `confirm`, or `prompt` dialog fails at once and leaves the dialog for you to answer in Chrome; the tab is blocked until you do.
 - No hover and no wheel scrolling: Chrome doesn't answer those events in a tab that isn't in front. `scroll` brings a ref into view instead.
 - Chrome can't load this extension with `--load-extension` anymore; load it unpacked.
 - After updating the package, reload Pi Browser in `chrome://extensions`.
