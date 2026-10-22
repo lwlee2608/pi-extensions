@@ -126,6 +126,14 @@ async function until(condition: () => Promise<boolean>, timeout = 5_000): Promis
   }
 }
 
+function decode({ data, mimeType }: { data: string; mimeType: string }): Promise<number[]> {
+  return inWorker(`fetch("data:${mimeType};base64,${data}").then(response => response.blob()).then(createImageBitmap).then(bitmap => {
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height).getContext("2d");
+    canvas.drawImage(bitmap, 0, 0);
+    return [bitmap.width, bitmap.height, ...canvas.getImageData(bitmap.width / 2, bitmap.height / 2, 1, 1).data];
+  })`);
+}
+
 function ref(page: string, element: string): number {
   const match = page.match(new RegExp(`\\[(\\d+)\\] ${element}`));
   assert.ok(match, `no ref for ${element} in:\n${page}`);
@@ -240,19 +248,17 @@ test("a ref goes stale when the page navigates", async () => {
   await assert.rejects(browser({ action: "click", ref: ref(page, 'button "Clicked 0 times"') }), /Ref \[\d+\] is gone .*Use read for fresh refs/);
 });
 
-test("screenshot brings a pi tab behind another tab to the front and returns a JPEG of its page", async () => {
+test("screenshot brings a pi tab behind another tab to the front and returns a CSS-pixel JPEG of its page", async () => {
   const tabId = await inWorker(`chrome.tabs.query({ url: "${form}" }).then(tabs => tabs.at(-1).id)`);
   await inWorker(`chrome.tabs.get(${tabId}).then(tab => chrome.tabs.create({ windowId: tab.windowId, url: "${site}other.html", active: true }))`);
   const { content } = await call({ action: "screenshot", tabId });
   assert.match(content[0].text, new RegExp(`^Screenshot in tab ${tabId}\\.$`));
   assert.equal(content[1].mimeType, "image/jpeg");
   assert.equal(await inWorker(`chrome.tabs.get(${tabId}).then(tab => tab.active)`), true);
-  const [width, height, r, g, b] = await inWorker(`fetch("data:image/jpeg;base64,${content[1].data}").then(response => response.blob()).then(createImageBitmap).then(bitmap => {
-    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height).getContext("2d");
-    canvas.drawImage(bitmap, 0, 0);
-    return [bitmap.width, bitmap.height, ...canvas.getImageData(bitmap.width / 2, bitmap.height / 2, 1, 1).data];
-  })`);
-  assert.ok(width > 100 && height > 100, `${width}x${height}`);
+  const [width, height, r, g, b] = await decode(content[1]);
+  const [cssWidth, ratio] = await inPage(form, "[innerWidth, devicePixelRatio]");
+  assert.equal(ratio, 2, "Chrome runs at 2x like a high-density screen");
+  assert.ok(width > 500 && width <= cssWidth && height > 100, `${width}x${height} is captured at CSS size, not ${ratio}x`);
   assert.ok(Math.abs(r - 0x20) < 16 && Math.abs(g - 0x50) < 16 && Math.abs(b - 0xc0) < 16, `pixel ${r},${g},${b} is the fixture's background`);
 });
 

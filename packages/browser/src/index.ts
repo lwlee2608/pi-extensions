@@ -1,4 +1,4 @@
-import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, getAgentDir, truncateHead, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, getAgentDir, resizeImage, truncateHead, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
@@ -55,6 +55,12 @@ function truncate(text: string): string {
   const result = truncateHead(text, { maxLines: DEFAULT_MAX_LINES, maxBytes: DEFAULT_MAX_BYTES });
   if (!result.truncated) return text;
   return `${result.content}\n\n[Output truncated: showing ${result.outputLines} of ${result.totalLines} lines (${formatSize(result.outputBytes)} of ${formatSize(result.totalBytes)}).]`;
+}
+
+async function fit(jpeg: string): Promise<{ data: string; mimeType: string }> {
+  const image = await resizeImage(Buffer.from(jpeg, "base64"), "image/jpeg");
+  if (!image) throw new Error("The screenshot could not be shrunk to a size the model accepts.");
+  return { data: image.data, mimeType: image.mimeType };
 }
 
 export function browserExtension(overrides: Partial<BridgeOptions> = {}): (pi: ExtensionAPI) => void {
@@ -125,7 +131,7 @@ export function browserExtension(overrides: Partial<BridgeOptions> = {}): (pi: E
         }
         const page = await bridge.call(action, params, signal) as { url: string; text: string; data?: string };
         await approve(loaded(page.url));
-        const image = page.data ? [{ type: "image" as const, data: page.data, mimeType: "image/jpeg" }] : [];
+        const image = page.data ? [{ type: "image" as const, ...await fit(page.data) }] : [];
         return { content: [{ type: "text" as const, text: truncate(page.text) }, ...image], details: undefined };
       },
     });

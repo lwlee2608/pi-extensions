@@ -88,7 +88,9 @@ const handlers = {
   async screenshot({ tabId }) {
     const tab = await piTab(tabId);
     await chrome.tabs.update(tab.id, { active: true });
-    const { data } = await cdp(tab.id, "Page.captureScreenshot", { format: "jpeg", quality: SCREENSHOT_QUALITY });
+    const { cssVisualViewport: css, visualViewport: device } = await cdp(tab.id, "Page.getLayoutMetrics");
+    const clip = { x: css.pageX, y: css.pageY, width: css.clientWidth, height: css.clientHeight, scale: css.clientWidth / device.clientWidth };
+    const { data } = await cdp(tab.id, "Page.captureScreenshot", { format: "jpeg", quality: SCREENSHOT_QUALITY, clip });
     return { ...(await acted(tab.id, "Screenshot")), data };
   },
 };

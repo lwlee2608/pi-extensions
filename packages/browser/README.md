@@ -67,7 +67,7 @@ The agent gets one `browser` tool:
 | `type` | Focus a ref and insert text at its cursor. |
 | `keys` | Press keys or combos, like `Enter`, `Shift+Tab`, or `Control+a`, after focusing a ref if given. |
 | `scroll` | Scroll a ref into view. |
-| `screenshot` | JPEG of a pi tab. Brings that tab to the front of its window first. |
+| `screenshot` | JPEG of a pi tab's visible area at CSS pixel size, so high-density screens don't produce oversized images. Brings that tab to the front of its window first. |
 | `console` | Recent console messages from a pi tab. |
 | `network` | Recent requests: method, URL, status, and type. Never headers or bodies. |
 | `eval` | Run JavaScript in the page. You confirm the code every time. |
