@@ -70,6 +70,7 @@ The agent can open a URL in your real Chrome and get its text and numbered eleme
 - [x] Add the e2e harness and fixture pages, with Chrome cached outside the repo (`test/e2e/`, `package.json` `e2e` script)
 - [x] Register the package and bring the README's install steps in line with what shipped (root `package.json`, root `README.md`, `README.md`)
 - Note: e2e proves the extension reaches `127.0.0.1` in headless Chrome for Testing 156 with no Local Network Access prompt; headed stable Chrome is covered only by the Demo
+- Note: subagent's compiled test can leave `packages/subagent/*.bun-build` (~63 MB) behind; `*.bun-build` should be gitignored (repo hygiene, out of scope)
 **Verify:** `npm test -w packages/browser` passes the bridge tests: a second extension connection is refused, a take without the secret is refused, and a take with it frees the port for the taker. `npm run e2e -w packages/browser` opens Chrome for Testing, the extension reaches the bridge on `127.0.0.1`, the tool navigates to the fixture page, a "pi" tab group holds that tab, and `read` returns the fixture's heading text and a ref for its button; a `read` on a tab outside the group fails; `tabs` shows the pi tab and only a count for the others; `navigate` to a `javascript:` URL fails; closing the bridge detaches the debugger from the tab; after the test stops the service worker, it reconnects on its own within the test alarm period. The phase report states the full-run time and flags it if over budget.
 
 ### Phase 2 — You approve each new site
