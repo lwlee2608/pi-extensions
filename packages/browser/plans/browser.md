@@ -52,7 +52,7 @@
 - **One CI wait per phase** — Push fixes freely; block on CI once, right before merge
 
 ## Progress
-Active: 1 · 5/25 tasks
+Active: 1 · 6/25 tasks
 
 ### Phase 1 — Agent opens and reads a page in a "pi" tab group
 The agent can open a URL in your real Chrome and get its text and numbered elements back.
@@ -62,7 +62,7 @@ The agent can open a URL in your real Chrome and get its text and numbered eleme
 - [x] Add the MV3 manifest with pinned `key`, debugger/tabs/tabGroups/alarms permissions, and `127.0.0.1` host permission (`chrome/manifest.json`)
 - [x] Connect, keep alive, and reconnect on alarm or toolbar click; detach debugger on disconnect (`chrome/background.js`)
 - [x] Open tabs into a "pi" tab group and refuse actions on tabs outside it (`chrome/background.js`)
-- [ ] Implement `tabs` (pi group plus count of others), `navigate` (http/https only), and `read` with accessibility-tree refs (`chrome/background.js`)
+- [x] Implement `tabs` (pi group plus count of others), `navigate` (http/https only), and `read` with accessibility-tree refs (`chrome/background.js`)
 - [ ] Register the `browser` tool with those actions and truncated output (`src/index.ts`)
 - [ ] Add `/browser` to print the `chrome/` path, connection state, and owner (`src/index.ts`)
 - [ ] Add bridge unit tests: foreign origin rejected, second connection refused, round trip, port in use, take with and without the secret, disconnect fails pending calls (`test/bridge.test.ts`)
