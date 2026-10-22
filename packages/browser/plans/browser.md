@@ -9,7 +9,7 @@
 - **Scope of use** — All of: localhost app verification, signed-in site automation, reading JS/login-gated pages
 - **Who acts** — Agent controls the browser through pi tools; no user-initiated "send to pi" in v1
 - **Transport** — Localhost WebSocket: pi extension runs the server on 127.0.0.1, Chrome extension service worker connects as client
-- **Bridge auth** — Server accepts only `Origin: chrome-extension://<id>` where the id is pinned by the manifest `key`; no pairing token `agent`
+- **Bridge auth** — Server accepts only `Origin: chrome-extension://<id>` where the id is pinned by the manifest `key`; no pairing token `agent`. Amended after phase 1 review: the extension does not authenticate the bridge; a local process squatting the free port can drive it, bypassing pi's gates. Accepted and disclosed in the README; the extension enforces http/https itself `user`
 - **Session ownership** — Amended after plan review. One UI session owns the browser at a time: the first to use it (a browser tool call or `/browser`) binds the port; nothing binds at startup. `/browser take` in another session makes the owner release it. Others get an "in use" error naming `/browser take`. Accepted cost: first use after a handover waits up to ~30s for Chrome to reconnect
 - **Takeover auth** — A take request is authenticated by a user-only secret on disk, never by origin, so web pages and other extensions cannot force a release `agent`
 - **One Chrome at a time** — While one extension connection is live, later ones are refused with a clear error; no replacing, so two profiles cannot flap `agent`

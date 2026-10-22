@@ -98,7 +98,8 @@ Chrome shows a "Pi Browser started debugging this browser" bar while the agent i
 
 ## Safety
 
-- **Only this extension can connect.** The bridge listens on loopback and accepts only the companion's pinned extension ID, so web pages and other extensions can't reach it. A local program running as you could forge that, but such a program can already read your Chrome profile.
+- **Pi accepts only this extension.** The bridge listens on loopback and accepts only the companion's pinned extension ID, so web pages and other extensions can't reach it. A local program running as you could forge that, but such a program can already read your Chrome profile.
+- **The extension does not authenticate Pi.** While no Pi session holds the port, any local process that listens on `127.0.0.1:47823` can drive the extension, skipping Pi's site approval and eval confirmation. The extension still refuses anything but `http`/`https` on its own. This matters most on machines shared with other OS users or running untrusted local apps.
 - **Approved sites can steer the agent.** Approval is about where the agent may go, not what it reads there. Text on an approved site, such as an issue comment, an email, or a review, can contain instructions the agent may follow on that site. Use "always" only for sites whose content you trust, and watch the agent on sites with user-written content.
 - **Page content goes to your model provider**, like any other tool output.
 - **Network logs skip headers and bodies**, so tokens and cookies don't land in the transcript. Page text, console output, and eval results are returned as-is.
