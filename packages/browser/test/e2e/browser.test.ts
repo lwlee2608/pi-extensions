@@ -354,6 +354,7 @@ test("network lists the page's fetch with its status, and never its headers or b
 });
 
 test("eval asks with its code shown even on an always host, returns the value, and fails when declined", async () => {
+  await browser({ action: "navigate", url: at("always", "debug.html"), newTab: true });
   assert.equal(await browser({ action: "eval", code: "document.title" }, true), "Pi debug");
   assert.deepEqual(confirmed.splice(0), [["Run this 1-line JavaScript in the always.test tab?", "document.title"]]);
   await assert.rejects(browser({ action: "eval", code: "document.title = 'changed'" }, false), /did not allow this eval/);
@@ -365,7 +366,7 @@ test("eval asks with its code shown even on an always host, returns the value, a
 
 test("an eval that opens a dialog fails at once instead of hanging", async () => {
   await assert.rejects(browser({ action: "eval", code: "confirm('Sure?')" }, true), /opened a confirm dialog/);
-  const tabId = await inWorker(`chrome.tabs.query({ url: "${at("always", "debug.html")}" }).then(([tab]) => tab.id)`);
+  const tabId = await inWorker(`chrome.tabs.query({ url: "${at("always", "debug.html")}" }).then(tabs => tabs.at(-1).id)`);
   await inWorker(`chrome.debugger.sendCommand({ tabId: ${tabId} }, "Page.handleJavaScriptDialog", { accept: false })`);
   assert.equal(await browser({ action: "eval", code: "1 + 1" }, true), "2");
 });

@@ -102,6 +102,8 @@ The tool only exists in interactive sessions. Print mode, JSON/RPC mode, and sub
 
 Chrome shows a "Pi Browser started debugging this browser" bar while the agent is attached. It goes away when Pi exits. Clicking **Cancel** on the bar takes control away from the agent: Pi Browser refuses every action until you click its toolbar icon.
 
+Once the agent uses `console` on a tab, Chrome reports that tab's console to the debugger, which some sites detect as automation and answer with a challenge. Other actions don't turn this on.
+
 ## Safety
 
 - **Pi accepts only this extension.** The bridge listens on loopback and accepts only the companion's pinned extension ID, so web pages and other extensions can't reach it. A local program running as you could forge that, but such a program can already read your Chrome profile.

@@ -104,6 +104,10 @@ const handlers = {
   async console({ tabId }) {
     const tab = await piTab(tabId);
     const log = await logOf(tab.id);
+    if (!log.listening) {
+      for (const domain of ["Runtime", "Log"]) await cdp(tab.id, `${domain}.enable`);
+      log.listening = true;
+    }
     return reply(tab.id, listing(tab.id, "console messages", log.console));
   },
 
@@ -199,7 +203,8 @@ async function attach(tabId) {
   await allowed();
   await chrome.debugger.attach({ tabId }, "1.3").catch(error => { if (!/already attached/i.test(error.message)) throw error; });
   logs.set(tabId, { console: [], network: [], requests: new Map() });
-  for (const domain of ["Page", "Runtime", "Log", "Network"]) await chrome.debugger.sendCommand({ tabId }, `${domain}.enable`);
+  await chrome.debugger.sendCommand({ tabId }, "Page.enable");
+  await chrome.debugger.sendCommand({ tabId }, "Network.enable");
   attached.add(tabId);
 }
 
