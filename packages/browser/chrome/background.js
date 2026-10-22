@@ -56,8 +56,10 @@ const handlers = {
     if (!quads?.length) throw new Error(`Ref [${ref}] has no visible box to click.`);
     const x = (quads[0][0] + quads[0][2] + quads[0][4] + quads[0][6]) / 4;
     const y = (quads[0][1] + quads[0][3] + quads[0][5] + quads[0][7]) / 4;
-    await cdp(tab.id, "Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
-    await cdp(tab.id, "Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
+    await guarded(tab.id, async () => {
+      await cdp(tab.id, "Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
+      await cdp(tab.id, "Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
+    });
     return acted(tab.id, `Clicked [${ref}]`);
   },
 
@@ -65,7 +67,7 @@ const handlers = {
     if (typeof text !== "string") throw new Error("type needs text.");
     const tab = await piTab(tabId);
     await node(tab.id, "DOM.focus", ref);
-    await cdp(tab.id, "Input.insertText", { text });
+    await guarded(tab.id, () => cdp(tab.id, "Input.insertText", { text }));
     return acted(tab.id, `Typed ${text.length} characters into [${ref}]`);
   },
 
@@ -76,7 +78,7 @@ const handlers = {
     const presses = combos.map(combo => parseCombo(combo, mac));
     const tab = await piTab(tabId);
     if (ref !== undefined) await node(tab.id, "DOM.focus", ref);
-    for (const press of presses) await pressKeys(tab.id, press);
+    await guarded(tab.id, async () => { for (const press of presses) await pressKeys(tab.id, press); });
     return acted(tab.id, `Pressed ${combos.join(" ")}`);
   },
 
@@ -200,6 +202,24 @@ async function load(tabId, url) {
     chrome.debugger.onEvent.removeListener(onEvent);
     chrome.debugger.onDetach.removeListener(onGone);
     chrome.tabs.onRemoved.removeListener(onGone);
+  }
+}
+
+async function guarded(tabId, run) {
+  let onEvent;
+  const dialog = new Promise((_, reject) => {
+    onEvent = (source, method, params) => {
+      if (source.tabId !== tabId || method !== "Page.javascriptDialogOpening") return;
+      reject(new Error(`The page opened a ${params.type} dialog, which blocks the tab. Ask the user to answer it in Chrome, then read.`));
+    };
+    chrome.debugger.onEvent.addListener(onEvent);
+  });
+  const action = run();
+  action.catch(() => {});
+  try {
+    return await Promise.race([action, dialog]);
+  } finally {
+    chrome.debugger.onEvent.removeListener(onEvent);
   }
 }
 

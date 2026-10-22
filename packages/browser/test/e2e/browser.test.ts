@@ -228,6 +228,16 @@ test("type, keys, and click fill and submit a form with real input events", asyn
   assert.match(await browser({ action: "read" }), /submitted: second/, "select-all and Backspace cleared the field");
 });
 
+test("a click that opens a dialog fails at once instead of hanging, and the tab works once it is answered", async () => {
+  const page = await browser({ action: "read" });
+  const start = Date.now();
+  await assert.rejects(browser({ action: "click", ref: ref(page, 'button "Delete"') }), /opened a confirm dialog.*answer it in Chrome/);
+  assert.ok(Date.now() - start < 2_000);
+  const tabId = await inWorker(`chrome.tabs.query({ url: "${form}" }).then(([tab]) => tab.id)`);
+  await inWorker(`chrome.debugger.sendCommand({ tabId: ${tabId} }, "Page.handleJavaScriptDialog", { accept: false })`);
+  assert.match(await browser({ action: "read" }), /declined/);
+});
+
 test("click reaches a ref inside a same-origin frame, and the frame navigating keeps the page's own refs", async () => {
   const page = await browser({ action: "read", tabId: await inWorker(`chrome.tabs.query({ url: "${site}index.html" }).then(([tab]) => tab.id)`) });
   await browser({ action: "click", ref: ref(page, 'link "Link inside frame"') });
