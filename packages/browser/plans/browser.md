@@ -32,10 +32,10 @@
 - **Local e2e harness** — Chrome for Testing launched with `--load-extension` against a local fixture page server, driving the pi tool through a fake `ExtensionAPI`; local only, not in CI. Stable Chrome no longer honors `--load-extension` `agent`
 - **Integration branch** — `integrate/browser` holds the plan and package skeleton. Each phase branches from it and PRs back into it; one final PR to `main`, as notify did `agent`
 - **Phase count** — 4; phase 1 ships without the approval gate, acceptable because it only lands on `integrate/browser`
-- **Verification budget** — Past builds stalled on slow verification; the rules below bind every phase, review round, and merge
+- **Verification budget** — Past builds stalled on wasteful verification; the rules below bind every phase, review round, and merge. Slow is acceptable, waste is not
 
 ## Verification budget
-- **Time limit** — Full e2e under 30s with Chrome cached; unit tests under 2s. No sleeps: wait on events. Connect, call, load, and alarm timeouts are injectable and short in tests
+- **Time budget** — Targets: full e2e under 30s with Chrome cached, unit tests under 2s. A target, not a cap: never cut coverage to fit. When a run exceeds it, flag it in the phase report with the time, the slow cases, and why they cost that. Waste to avoid: sleeps instead of events, real timeouts where injected ones would do, re-running checks the change could not affect
 - **Different checks at each point** — Before the PR: the phase's Verify (its own e2e cases plus unit tests). After a review fix: unit tests plus e2e for the actions the fix touched. Before merge: the full e2e, once
 - **Reviewers don't run e2e** — Reviewers read the diff; the worker owns verification
 - **Chrome cache outside the repo** — Chrome for Testing downloads once to a shared user cache so worktrees don't re-download it
@@ -59,7 +59,7 @@ The agent can open a URL in your real Chrome and get its text and numbered eleme
 - [ ] Let tests set the port, timeouts, and alarm period on both sides (`src/bridge.ts`, `chrome/background.js`)
 - [ ] Add the e2e harness and fixture pages, with Chrome cached outside the repo (`test/e2e/`, `package.json` `e2e` script)
 - [ ] Register the package and write install steps (root `package.json`, root `README.md`, `README.md`)
-**Verify:** `npm test -w packages/browser` passes the bridge tests. `npm run e2e -w packages/browser` opens Chrome for Testing, the tool navigates to the fixture page, a "pi" tab group holds that tab, and `read` returns the fixture's heading text and a ref for its button; a `read` on a tab outside the group fails; closing the bridge detaches the debugger from the tab; after the test stops the service worker, it reconnects on its own within the test alarm period. Full run stays under 30s.
+**Verify:** `npm test -w packages/browser` passes the bridge tests. `npm run e2e -w packages/browser` opens Chrome for Testing, the tool navigates to the fixture page, a "pi" tab group holds that tab, and `read` returns the fixture's heading text and a ref for its button; a `read` on a tab outside the group fails; closing the bridge detaches the debugger from the tab; after the test stops the service worker, it reconnects on its own within the test alarm period. The phase report states the full-run time and flags it if over budget.
 
 ### Phase 2 — You approve each new site
 The first action on any new host asks you in pi: allow once, this session, or always.
