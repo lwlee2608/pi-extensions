@@ -6,7 +6,7 @@ import test from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Approvals, confirmEval, type Choice } from "../src/approval.ts";
 import { loadHosts } from "../src/config.ts";
-import { browserExtension, listTabs } from "../src/index.ts";
+import { browserExtension, listTabs, truncate } from "../src/index.ts";
 
 const dir = await mkdtemp(join(tmpdir(), "pi-browser-approval-"));
 test.after(() => rm(dir, { recursive: true, force: true }));
@@ -134,6 +134,14 @@ test("eval refuses code that could hide part of itself from the prompt", async (
   for (const code of ["fetch('//evil')\n\n\ndocument.title", "fetch('//evil')\n \n\t\ndocument.title", "\n\ndocument.title", "a\n\u00a0\n\n"]) {
     await assert.rejects(confirmEval(code, "example.com", choose), /two blank lines in a row/);
   }
+});
+
+test("output whose first line alone is over the byte limit keeps the start of that line", () => {
+  const text = truncate(`"${"x".repeat(80 * 1024)}"\nmore`);
+  assert.ok(text.startsWith(`"${"x".repeat(1000)}`));
+  assert.match(text, /\n\n\[Output truncated: showing the first 50\.0KB of line 1 \(80\.0KB\) of 2 lines\.\]$/);
+  assert.ok(Buffer.byteLength(text) < 51 * 1024);
+  assert.equal(truncate("short"), "short");
 });
 
 test("tabs shows a tab that has not loaded yet as loading, only the host of unapproved tabs, and only the scheme of non-web tabs", async () => {

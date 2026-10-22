@@ -51,9 +51,14 @@ function loaded(url: string): string {
   return url;
 }
 
-function truncate(text: string, tail = false): string {
+export function truncate(text: string, tail = false): string {
   const result = (tail ? truncateTail : truncateHead)(text, { maxLines: DEFAULT_MAX_LINES, maxBytes: DEFAULT_MAX_BYTES });
   if (!result.truncated) return text;
+  if (result.firstLineExceedsLimit) {
+    const line = Buffer.from(text.split("\n", 1)[0]);
+    const content = line.subarray(0, DEFAULT_MAX_BYTES).toString().replace(/�$/, "");
+    return `${content}\n\n[Output truncated: showing the first ${formatSize(DEFAULT_MAX_BYTES)} of line 1 (${formatSize(line.length)}) of ${result.totalLines} lines.]`;
+  }
   const note = `[Output truncated: showing the ${tail ? "last" : "first"} ${result.outputLines} of ${result.totalLines} lines (${formatSize(result.outputBytes)} of ${formatSize(result.totalBytes)}).]`;
   return tail ? `${note}\n\n${result.content}` : `${result.content}\n\n${note}`;
 }
