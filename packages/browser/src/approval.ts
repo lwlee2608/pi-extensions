@@ -2,7 +2,7 @@ import { addHost, loadHosts } from "./config.ts";
 
 export type Choice = "once" | "session" | "always" | "deny";
 export type Ask = (host: string) => Promise<Choice>;
-export type Confirm = (title: string, message: string) => Promise<boolean>;
+export type Choose = (title: string, options: string[]) => Promise<string | undefined>;
 
 export function parse(url: string): URL {
   try { return new URL(url); } catch { throw new Error(`Invalid URL: ${url}`); }
@@ -45,16 +45,18 @@ export class Approvals {
   }
 }
 
-const EVAL_MAX_LINES = 30;
+const EVAL_MAX_LINES = 20;
 const EVAL_MAX_CHARS = 1_500;
 const HIDDEN = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u061c\u200b-\u200f\u2028-\u202e\u2060-\u2069\ufeff]/;
 
-export async function confirmEval(code: string | undefined, host: string, confirm: Confirm): Promise<void> {
+export async function confirmEval(code: string | undefined, host: string, choose: Choose): Promise<void> {
   if (!code?.trim()) throw new Error("eval needs code.");
   if (HIDDEN.test(code)) throw new Error("eval code may not contain invisible or control characters other than newline and tab; write them as escapes like \\u001b.");
-  const lines = code.split("\n").length;
-  if (lines > EVAL_MAX_LINES || code.length > EVAL_MAX_CHARS) {
+  const lines = code.split("\n");
+  if (lines.length > EVAL_MAX_LINES || code.length > EVAL_MAX_CHARS) {
     throw new Error(`eval code is limited to ${EVAL_MAX_LINES} lines and ${EVAL_MAX_CHARS} characters so the user can see all of it.`);
   }
-  if (!(await confirm(`Run this ${lines}-line JavaScript in the ${host} tab?`, code))) throw new Error("The user did not allow this eval.");
+  if (lines.some((line, i) => !line.trim() && i > 0 && !lines[i - 1].trim())) throw new Error("eval code may not have two blank lines in a row.");
+  const run = `Run all ${lines.length} line${lines.length === 1 ? "" : "s"}`;
+  if (await choose(`Run this JavaScript in the ${host} tab?\n${code}`, [run, "Don't run"]) !== run) throw new Error("The user did not allow this eval.");
 }
