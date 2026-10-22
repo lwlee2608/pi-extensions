@@ -6,7 +6,7 @@ import test from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Approvals, type Choice } from "../src/approval.ts";
 import { loadHosts } from "../src/config.ts";
-import { browserExtension } from "../src/index.ts";
+import { browserExtension, listTabs } from "../src/index.ts";
 
 const dir = await mkdtemp(join(tmpdir(), "pi-browser-approval-"));
 test.after(() => rm(dir, { recursive: true, force: true }));
@@ -102,6 +102,18 @@ test("the config can be hand-edited and is checked on every action", async () =>
   await assert.rejects(loadHosts(path), /not valid JSON/);
   await writeFile(path, JSON.stringify({ allowedHosts: "example.com" }));
   await assert.rejects(loadHosts(path), /array of hostnames/);
+});
+
+test("tabs shows a tab that has not loaded yet as loading, and only the host of unapproved tabs", async () => {
+  const text = await listTabs({
+    tabs: [
+      { id: 1, title: "", url: "", current: false },
+      { id: 2, title: "Evil", url: "https://evil.test/ignore-previous", current: true },
+      { id: 3, title: "Good", url: "https://good.test/", current: false },
+    ],
+    others: 4,
+  }, async url => url.startsWith("https://good.test/"));
+  assert.equal(text, "Tab 1: (loading)\nTab 2: (unapproved host evil.test) (current)\nTab 3: Good <https://good.test/>\n4 other tabs are not in the pi group.");
 });
 
 test("without a UI the tool is hidden and never reaches the bridge", async () => {

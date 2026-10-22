@@ -33,12 +33,17 @@ interface TabList {
   others: number;
 }
 
-async function listTabs({ tabs, others }: TabList, allowed: (url: string) => Promise<boolean>): Promise<string> {
+export async function listTabs({ tabs, others }: TabList, allowed: (url: string) => Promise<boolean>): Promise<string> {
   const lines = await Promise.all(tabs.map(async tab => {
-    const page = await allowed(tab.url) ? `${tab.title || "(untitled)"} <${tab.url}>` : `(unapproved host ${hostOf(tab.url)})`;
+    const page = !tab.url ? "(loading)" : await allowed(tab.url) ? `${tab.title || "(untitled)"} <${tab.url}>` : `(unapproved host ${hostOf(tab.url)})`;
     return `Tab ${tab.id}: ${page}${tab.current ? " (current)" : ""}`;
   }));
   return [...(lines.length ? lines : ["No pi tabs are open."]), `${others} other tabs are not in the pi group.`].join("\n");
+}
+
+function loaded(url: string): string {
+  if (!url) throw new Error("The pi tab has not loaded a page yet; try again in a moment.");
+  return url;
 }
 
 function truncate(text: string): string {
@@ -108,11 +113,11 @@ export function browserExtension(overrides: Partial<BridgeOptions> = {}): (pi: E
             await approve(url!);
           } else {
             const tab = await bridge.call("tab", { tabId }, signal) as { id: number; url: string };
-            await approve(tab.url);
+            await approve(loaded(tab.url));
             tabId = tab.id;
           }
           const page = await bridge.call(action, { url, tabId, newTab }, signal) as { url: string; text: string };
-          await approve(page.url);
+          await approve(loaded(page.url));
           text = page.text;
         }
         return { content: [{ type: "text", text: truncate(text) }], details: undefined };
