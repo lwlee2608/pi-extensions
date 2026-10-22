@@ -244,6 +244,17 @@ test("type, keys, and click fill and submit a form with real input events", asyn
   assert.match(await browser({ action: "read" }), /submitted: second/, "select-all and Backspace cleared the field");
 });
 
+test("zero and empty params a model fills in count as not given", async () => {
+  const blank = { tabId: 0, ref: 0, url: "", text: "", code: "", keys: "", newTab: false };
+  const [, tabId] = (await browser({ ...blank, action: "tabs" })).match(/^Tab (\d+): .*\(current\)$/m)!;
+  assert.match(await browser({ ...blank, action: "navigate", url: form }), new RegExp(`^Tab ${tabId}: Pi form`));
+  const page = await browser({ ...blank, action: "read" });
+  await browser({ ...blank, action: "type", ref: ref(page, 'textbox "Name"'), text: "zero" });
+  assert.match(await browser({ ...blank, action: "keys", keys: "Enter" }), new RegExp(`^Pressed Enter in tab ${tabId}\\.$`));
+  assert.match(await browser({ ...blank, action: "read" }), /submitted: zero/);
+  await assert.rejects(browser({ ...blank, action: "click", ref: -1 }), /Ref \[-1\] is gone/);
+});
+
 test("a click that opens a dialog fails at once instead of hanging, and the tab works once it is answered", async () => {
   const page = await browser({ action: "read" });
   const start = Date.now();

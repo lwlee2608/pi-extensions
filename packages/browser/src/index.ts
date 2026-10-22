@@ -46,6 +46,10 @@ export async function listTabs({ tabs, others }: TabList, allowed: (url: string)
   return [...(lines.length ? lines : ["No pi tabs are open."]), `${others} other tabs are not in the pi group.`].join("\n");
 }
 
+export function given<T extends object>(params: T): T {
+  return Object.fromEntries(Object.entries(params).filter(([, value]) => value !== 0 && value !== "")) as T;
+}
+
 function loaded(url: string): string {
   if (!url) throw new Error("The pi tab has not loaded a page yet; try again in a moment.");
   return url;
@@ -115,7 +119,8 @@ export function browserExtension(overrides: Partial<BridgeOptions> = {}): (pi: E
         + `Output is truncated to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)}.`,
       parameters,
       executionMode: "sequential",
-      async execute(_id, { action, ...params }, signal, _update, ctx) {
+      async execute(_id, { action, ...raw }, signal, _update, ctx) {
+        const params = given(raw);
         const bridge = use(ctx);
         const granted = new Set<string>();
         const approve = (url: string) => approvals.approve(url, host => ask(ctx, host, signal), granted);
