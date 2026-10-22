@@ -144,6 +144,9 @@ test("a redirect to a new host asks again, and allow once covers only that actio
   await assert.rejects(browser({ action: "read" }, "Deny"), /redirect\.test/);
   assert.match(await browser({ action: "read" }, "Allow once"), /Not a pi tab/);
   await assert.rejects(browser({ action: "read" }, "Deny"), /redirect\.test/);
+  const tabs = await browser({ action: "tabs" });
+  assert.match(tabs, /^Tab \d+: \(unapproved host redirect\.test\) \(current\)$/m);
+  assert.doesNotMatch(tabs, /Other tab|other\.html/);
   assert.deepEqual(asked.splice(0), ["redirect.test", "redirect.test", "redirect.test", "redirect.test"]);
   assert.match(await browser({ action: "navigate", url: `${site}index.html` }), /Pi fixture/);
   assert.deepEqual(asked, []);

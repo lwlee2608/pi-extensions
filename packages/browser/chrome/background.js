@@ -12,8 +12,10 @@ const handlers = {
   async tabs() {
     const all = await chrome.tabs.query({});
     const tabs = await piTabs();
-    const lines = tabs.map(tab => `${describe(tab)}${tab.id === current ? " (current)" : ""}`);
-    return [...(lines.length ? lines : ["No pi tabs are open."]), `${all.length - tabs.length} other tabs are not in the pi group.`].join("\n");
+    return {
+      tabs: tabs.map(tab => ({ id: tab.id, title: tab.title, url: tab.url, current: tab.id === current })),
+      others: all.length - tabs.length,
+    };
   },
 
   async tab({ tabId }) {

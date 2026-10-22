@@ -21,10 +21,14 @@ export class Approvals {
     this.session.clear();
   }
 
-  async approve(url: string, ask: Ask, granted: Set<string>): Promise<void> {
+  async allowed(url: string, granted: Set<string>): Promise<boolean> {
     const host = hostOf(url);
-    if (!host || granted.has(host) || this.session.has(host)) return;
-    if ((await loadHosts(this.configPath)).includes(host)) return;
+    return !host || granted.has(host) || this.session.has(host) || (await loadHosts(this.configPath)).includes(host);
+  }
+
+  async approve(url: string, ask: Ask, granted: Set<string>): Promise<void> {
+    if (await this.allowed(url, granted)) return;
+    const host = hostOf(url)!;
     const choice = await ask(host);
     if (choice === "deny") throw new Error(`The user did not allow the browser on ${host}.`);
     granted.add(host);

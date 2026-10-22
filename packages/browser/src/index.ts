@@ -2,7 +2,7 @@ import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, getAgentDir, truncate
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
-import { Approvals, type Choice } from "./approval.ts";
+import { Approvals, hostOf, type Choice } from "./approval.ts";
 import { Bridge, ORIGIN, PORT, type BridgeOptions } from "./bridge.ts";
 
 const CHROME_DIR = fileURLToPath(new URL("../chrome/", import.meta.url));
@@ -26,6 +26,19 @@ const CHOICES: Record<string, Choice> = { "Allow once": "once", "Allow for this 
 async function ask(ctx: ExtensionContext, host: string, signal?: AbortSignal): Promise<Choice> {
   const answer = await ctx.ui.select(`Let the agent use ${host} in Chrome?`, Object.keys(CHOICES), { signal });
   return (answer && CHOICES[answer]) || "deny";
+}
+
+interface TabList {
+  tabs: { id: number; title: string; url: string; current: boolean }[];
+  others: number;
+}
+
+async function listTabs({ tabs, others }: TabList, allowed: (url: string) => Promise<boolean>): Promise<string> {
+  const lines = await Promise.all(tabs.map(async tab => {
+    const page = await allowed(tab.url) ? `${tab.title || "(untitled)"} <${tab.url}>` : `(unapproved host ${hostOf(tab.url)})`;
+    return `Tab ${tab.id}: ${page}${tab.current ? " (current)" : ""}`;
+  }));
+  return [...(lines.length ? lines : ["No pi tabs are open."]), `${others} other tabs are not in the pi group.`].join("\n");
 }
 
 function truncate(text: string): string {
@@ -74,7 +87,8 @@ export function browserExtension(overrides: Partial<BridgeOptions> = {}): (pi: E
     pi.registerTool({
       name: "browser",
       label: "Browser",
-      description: "Drive the user's Chrome, only in tabs of its \"pi\" tab group. Actions: tabs lists pi tabs (other tabs are only counted); "
+      description: "Drive the user's Chrome, only in tabs of its \"pi\" tab group. Actions: tabs lists pi tabs (other tabs are only counted; "
+        + "a tab on a host the user has not approved shows only its host); "
         + "navigate loads an http/https URL in the current pi tab, or a new one with newTab; read returns the page as an accessibility tree "
         + "where [n] marks an element ref. Refs go stale when the page navigates; read again. The user approves each new host; "
         + "if they deny one, the call fails and you should not retry it. "
@@ -87,7 +101,7 @@ export function browserExtension(overrides: Partial<BridgeOptions> = {}): (pi: E
         const approve = (url: string) => approvals.approve(url, host => ask(ctx, host, signal), granted);
         let text: string;
         if (action === "tabs") {
-          text = String(await bridge.call(action, {}, signal));
+          text = await listTabs(await bridge.call(action, {}, signal) as TabList, url => approvals.allowed(url, granted));
         } else {
           if (action === "navigate") {
             checkUrl(url);

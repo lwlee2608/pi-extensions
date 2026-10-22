@@ -71,6 +71,16 @@ test("approval matches the exact hostname, so a redirect to another host asks ag
   assert.deepEqual(asked, ["github.com", "gist.github.com", "evil.example"]);
 });
 
+test("allowed reports approval without asking", async () => {
+  const approvals = new Approvals(config());
+  const { ask } = asker("session");
+  assert.equal(await approvals.allowed("https://example.com/", new Set()), false);
+  assert.equal(await approvals.allowed("https://example.com/", new Set(["example.com"])), true);
+  await approvals.approve("https://example.com/", ask, new Set());
+  assert.equal(await approvals.allowed("https://example.com/x", new Set()), true);
+  assert.equal(await approvals.allowed("about:blank", new Set()), true);
+});
+
 test("pages without a host, like about:blank, need no approval; bad URLs fail", async () => {
   const { asked, ask } = asker();
   await new Approvals(config()).approve("about:blank", ask, new Set());
