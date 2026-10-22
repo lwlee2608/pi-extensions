@@ -91,6 +91,7 @@ The agent can fill and submit forms and see the page.
 - [ ] Implement `screenshot` as JPEG, bringing the pi tab to the front of its window first (`chrome/background.js`)
 - [ ] Expose the actions and return screenshots as image content (`src/index.ts`)
 - [ ] Add a fixture form and e2e cases for each action (`test/e2e/`)
+- Note: tabs whose URL has no host (`about:blank`, `data:`, `file:`, `chrome:`) skip approval, and `tabs`/`read` show them in full. Once clicks give an unapproved page B (left loaded after a denied post-check) a user gesture, B can `window.open` an about:blank tab into the pi group and write into it. Phase 3 must close this before clicks ship: exempt only an empty about:blank or refuse non-http(s) tabs for read, and optionally blank the tab after a post-check deny
 **Verify:** `npm run e2e -w packages/browser`: the tool types into the fixture form, presses Enter, and the next `read` shows the fixture's "submitted: <text>" result; `scroll` reveals an element below the fold; `screenshot` of a pi tab that was behind another tab in its window returns a decodable JPEG of the fixture page.
 
 ### Phase 4 — Agent debugs apps: console, network, eval
