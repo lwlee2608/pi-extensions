@@ -47,7 +47,7 @@ export class Approvals {
 
 const EVAL_MAX_LINES = 30;
 const EVAL_MAX_CHARS = 1_500;
-const HIDDEN = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f‎‏‪-‮⁦-⁩]/;
+const HIDDEN = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/;
 
 export async function confirmEval(code: string | undefined, host: string, confirm: Confirm): Promise<void> {
   if (!code?.trim()) throw new Error("eval needs code.");
