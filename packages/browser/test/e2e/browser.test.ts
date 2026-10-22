@@ -113,6 +113,8 @@ test("tabs lists the pi tab and only counts the others", async () => {
 test("navigate refuses non-http schemes", async () => {
   for (const url of ["javascript:alert(1)", "data:text/html,hi", "file:///etc/hosts"]) {
     await assert.rejects(browser({ action: "navigate", url }), /only opens http and https/);
+    const answer = await inWorker(`handlers.navigate({ url: ${JSON.stringify(url)} }).then(() => "opened", error => error.message)`);
+    assert.match(answer, /only opens http and https/);
   }
 });
 

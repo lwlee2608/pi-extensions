@@ -17,6 +17,7 @@ const handlers = {
   },
 
   async navigate({ url, tabId, newTab }) {
+    if (!/^https?:\/\//i.test(url)) throw new Error(`navigate only opens http and https URLs: ${url}`);
     const tab = newTab || (tabId === undefined && !(await piTabs()).length) ? await openTab() : await piTab(tabId);
     await cdp(tab.id, "Page.enable");
     const outcome = await load(tab.id, url);
