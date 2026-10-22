@@ -16,13 +16,19 @@ const handlers = {
     return [...(lines.length ? lines : ["No pi tabs are open."]), `${all.length - tabs.length} other tabs are not in the pi group.`].join("\n");
   },
 
+  async tab({ tabId }) {
+    const tab = await piTab(tabId);
+    return { id: tab.id, url: tab.url };
+  },
+
   async navigate({ url, tabId, newTab }) {
     if (!/^https?:\/\//i.test(url)) throw new Error(`navigate only opens http and https URLs: ${url}`);
     const tab = newTab || (tabId === undefined && !(await piTabs()).length) ? await openTab() : await piTab(tabId);
     await cdp(tab.id, "Page.enable");
     const outcome = await load(tab.id, url);
     if (outcome === "gone") throw new Error(`Tab ${tab.id} closed or detached while loading ${url}.`);
-    return `${describe(await chrome.tabs.get(tab.id))}${outcome === "timeout" ? " (still loading)" : ""}`;
+    const loaded = await chrome.tabs.get(tab.id);
+    return { url: loaded.url, text: `${describe(loaded)}${outcome === "timeout" ? " (still loading)" : ""}` };
   },
 
   async read({ tabId }) {
@@ -33,7 +39,7 @@ const handlers = {
       const { nodes } = await cdp(tab.id, "Accessibility.getFullAXTree", { frameId }).catch(() => ({ nodes: [] }));
       snapshot(nodes, lines);
     }
-    return lines.join("\n");
+    return { url: (await chrome.tabs.get(tab.id)).url, text: lines.join("\n") };
   },
 };
 

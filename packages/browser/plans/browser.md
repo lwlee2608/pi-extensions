@@ -52,7 +52,7 @@
 - **One CI wait per phase** — Push fixes freely; block on CI once, right before merge
 
 ## Progress
-Active: none (paused after phase 1) · 12/25 tasks
+Active: 2 · 16/25 tasks
 
 ### Phase 1 — Agent opens and reads a page in a "pi" tab group
 The agent can open a URL in your real Chrome and get its text and numbered elements back.
@@ -76,10 +76,13 @@ The agent can open a URL in your real Chrome and get its text and numbered eleme
 ### Phase 2 — You approve each new site
 The first action on any new host asks you in pi: allow once, this session, or always.
 **Blocked by:** 1
-- [ ] Load and save always-allowed hosts in a user config (`src/config.ts`)
-- [ ] Gate every action on the tab's current host and every navigate on its target host (`src/approval.ts`, `src/index.ts`)
-- [ ] Hide the tool when there is no UI (`src/index.ts`)
-- [ ] Test allow once / session / always / deny, persistence, and redirect to a new host (`test/approval.test.ts`, `test/e2e/`)
+- [x] Load and save always-allowed hosts in a user config (`src/config.ts`)
+- [x] Gate every action on the tab's current host and every navigate on its target host (`src/approval.ts`, `src/index.ts`)
+- [x] Hide the tool when there is no UI (`src/index.ts`)
+- [x] Test allow once / session / always / deny, persistence, and redirect to a new host (`test/approval.test.ts`, `test/e2e/`)
+- Note: `tabs` is not gated, so after a denied redirect it still lists that pi tab's title and URL; the model sees a title from an unapproved host
+- Note: a navigate denied only after a redirect leaves the page loaded in the pi tab (Chrome already fetched it); only its content is withheld
+- Note: on this host Chrome for Testing aborts with "No usable sandbox" (AppArmor blocks unprivileged user namespaces), so phase 2's e2e ran with a local, uncommitted `--no-sandbox`; the harness may want an opt-in env flag
 **Verify:** `npm run e2e -w packages/browser`: navigating to the fixture host calls the stubbed prompt once; "deny" makes the tool fail; "session" skips the prompt on the next action; "always" writes the host to the config and a fresh session does not prompt; a fixture link that redirects to a second host prompts again.
 
 ### Phase 3 — Agent clicks, types, scrolls, and screenshots

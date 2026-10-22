@@ -23,6 +23,7 @@ async function listen(server: Server): Promise<number> {
 }
 
 const fixtureServer = createServer(async (req, res) => {
+  if (req.url!.startsWith("/redirect?to=")) { res.writeHead(302, { location: decodeURIComponent(req.url!.slice(13)) }).end(); return; }
   if (req.url === "/hang") { res.writeHead(200, { "content-type": "text/html" }).write("<title>Hanging</title><h1>Never finishes</h1>"); return; }
   const body = await readFile(join(fixtures, new URL(req.url!, "http://x").pathname)).catch(() => undefined);
   if (body) res.writeHead(200, { "content-type": "text/html" }).end(body);
@@ -33,22 +34,47 @@ const probe = createServer();
 const port = await listen(probe);
 probe.close();
 
-const handlers = new Map<string, ((event: unknown, ctx: ExtensionContext) => unknown)[]>();
-const tools = new Map<string, any>();
-const pi = {
-  on: (event: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) => handlers.set(event, [...handlers.get(event) ?? [], handler]),
-  registerTool: (tool: { name: string }) => tools.set(tool.name, tool),
-  registerCommand: () => {},
-} as unknown as ExtensionAPI;
-const ctx = { hasUI: true, cwd: work, ui: { notify: () => {} }, sessionManager: { getSessionName: () => "e2e" } } as unknown as ExtensionContext;
-const emit = (event: string) => { for (const handler of handlers.get(event) ?? []) handler({}, ctx); };
-browserExtension({ port, secretPath: join(work, "secret"), connectTimeout: 10_000, callTimeout: 10_000 })(pi);
-emit("session_start");
+process.env.PI_CODING_AGENT_DIR = join(work, "agent");
+const configPath = join(work, "agent", "pi-browser", "config.json");
+const options = { port, secretPath: join(work, "secret"), connectTimeout: 10_000, callTimeout: 10_000 };
 
-async function browser(params: object): Promise<string> {
-  const result = await tools.get("browser").execute("call", params, undefined, () => {}, ctx);
-  return result.content[0].text;
+function session() {
+  const handlers = new Map<string, ((event: unknown, ctx: ExtensionContext) => unknown)[]>();
+  const tools = new Map<string, any>();
+  const asked: string[] = [];
+  const answers: string[] = [];
+  const pi = {
+    on: (event: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) => handlers.set(event, [...handlers.get(event) ?? [], handler]),
+    registerTool: (tool: { name: string }) => tools.set(tool.name, tool),
+    registerCommand: () => {},
+    getActiveTools: () => [...tools.keys()],
+    setActiveTools: () => {},
+  } as unknown as ExtensionAPI;
+  const select = async (title: string) => {
+    asked.push(title.match(/use (\S+) in Chrome/)![1]);
+    const answer = answers.shift();
+    if (!answer) throw new Error(`Unexpected prompt: ${title}`);
+    return answer;
+  };
+  const ctx = { hasUI: true, cwd: work, ui: { notify: () => {}, select }, sessionManager: { getSessionName: () => "e2e" } } as unknown as ExtensionContext;
+  const emit = (event: string) => { for (const handler of handlers.get(event) ?? []) handler({}, ctx); };
+  browserExtension(options)(pi);
+  emit("session_start");
+  const browser = async (params: object, ...replies: string[]): Promise<string> => {
+    answers.push(...replies);
+    try {
+      const result = await tools.get("browser").execute("call", params, undefined, () => {}, ctx);
+      return result.content[0].text;
+    } finally {
+      assert.deepEqual(answers.splice(0), [], "every queued answer was asked for");
+    }
+  };
+  return { asked, emit, browser };
 }
+
+let { asked, emit, browser } = session();
+const host = new URL(site).hostname;
+const at = (name: string, path = "other.html") => `http://${name}.test:${new URL(site).port}/${path}`;
 
 const extensionDir = await copyExtension(join(work, "extension"), { PORT: port, ALARM_MINUTES: ALARM_MS / 60_000, NAVIGATE_WAIT_MS: 300 });
 const chrome = await launchChrome(extensionDir, join(work, "profile"));
@@ -89,8 +115,16 @@ async function stopWorker(): Promise<void> {
   await stopped;
 }
 
+test("a navigate to a new host asks first, and a denied one fails before Chrome loads it", async () => {
+  await assert.rejects(browser({ action: "navigate", url: `${site}index.html` }, "Deny"), new RegExp(`did not allow the browser on ${host.replaceAll(".", "\\.")}`));
+  assert.deepEqual(asked.splice(0), [host]);
+  const { targetInfos } = await cdp.send("Target.getTargets");
+  assert.ok(targetInfos.every((info: any) => !info.url.startsWith(site)));
+});
+
 test("navigate reaches Chrome through the extension and opens the page in a pi tab group", async () => {
-  assert.match(await browser({ action: "navigate", url: `${site}index.html` }), /^Tab \d+: Pi fixture </);
+  assert.match(await browser({ action: "navigate", url: `${site}index.html` }, "Allow for this session"), /^Tab \d+: Pi fixture </);
+  assert.deepEqual(asked.splice(0), [host]);
   const group = await inWorker(`chrome.tabs.query({ url: "${site}index.html" }).then(([tab]) => chrome.tabGroups.get(tab.groupId)).then(group => group.title)`);
   assert.equal(group, "pi");
 });
@@ -102,6 +136,17 @@ test("read returns the page text and refs, including shadow DOM and same-origin 
   assert.match(text, /^\s*\[\d+\] button "Press me"$/m);
   assert.match(text, /^\s*\[\d+\] button "Shadow button"$/m);
   assert.match(text, /^\s*\[\d+\] link "Link inside frame"$/m);
+  assert.deepEqual(asked, [], "a session-approved host does not ask again");
+});
+
+test("a redirect to a new host asks again, and allow once covers only that action", async () => {
+  await assert.rejects(browser({ action: "navigate", url: `${site}redirect?to=${encodeURIComponent(at("redirect"))}` }, "Deny"), /did not allow the browser on redirect\.test/);
+  await assert.rejects(browser({ action: "read" }, "Deny"), /redirect\.test/);
+  assert.match(await browser({ action: "read" }, "Allow once"), /Not a pi tab/);
+  await assert.rejects(browser({ action: "read" }, "Deny"), /redirect\.test/);
+  assert.deepEqual(asked.splice(0), ["redirect.test", "redirect.test", "redirect.test", "redirect.test"]);
+  assert.match(await browser({ action: "navigate", url: `${site}index.html` }), /Pi fixture/);
+  assert.deepEqual(asked, []);
 });
 
 test("read refuses a tab outside the pi group", async () => {
@@ -146,6 +191,17 @@ test("the extension reconnects on its own after its service worker stops", async
   assert.match(await browser({ action: "tabs" }), /Pi fixture/);
   const elapsed = Date.now() - start;
   assert.ok(elapsed < ALARM_MS + 1_000, `reconnected after ${elapsed}ms`);
+});
+
+test("always saves the host, and a fresh session does not ask for it", async () => {
+  assert.match(await browser({ action: "navigate", url: at("always"), newTab: true }, "Always allow"), /Other tab/);
+  assert.deepEqual(asked.splice(0), ["always.test"]);
+  assert.deepEqual(JSON.parse(await readFile(configPath, "utf8")), { allowedHosts: ["always.test"] });
+  emit("session_shutdown");
+  ({ asked, emit, browser } = session());
+  assert.match(await browser({ action: "read" }), /Not a pi tab/);
+  assert.match(await browser({ action: "navigate", url: at("always", "index.html") }), /Pi fixture/);
+  assert.deepEqual(asked, []);
 });
 
 test("after a debugging cancel every call fails at once, across a worker restart, until it is allowed again", async () => {

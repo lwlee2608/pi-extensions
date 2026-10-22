@@ -1,0 +1,34 @@
+import { addHost, loadHosts } from "./config.ts";
+
+export type Choice = "once" | "session" | "always" | "deny";
+export type Ask = (host: string) => Promise<Choice>;
+
+export function hostOf(url: string): string | undefined {
+  let origin: string;
+  try { origin = new URL(url).origin; } catch { throw new Error(`Invalid URL: ${url}`); }
+  return origin === "null" ? undefined : new URL(origin).hostname;
+}
+
+export class Approvals {
+  private readonly session = new Set<string>();
+  private readonly configPath: string;
+
+  constructor(configPath: string) {
+    this.configPath = configPath;
+  }
+
+  reset(): void {
+    this.session.clear();
+  }
+
+  async approve(url: string, ask: Ask, granted: Set<string>): Promise<void> {
+    const host = hostOf(url);
+    if (!host || granted.has(host) || this.session.has(host)) return;
+    if ((await loadHosts(this.configPath)).includes(host)) return;
+    const choice = await ask(host);
+    if (choice === "deny") throw new Error(`The user did not allow the browser on ${host}.`);
+    granted.add(host);
+    if (choice === "session") this.session.add(host);
+    if (choice === "always") await addHost(this.configPath, host);
+  }
+}
