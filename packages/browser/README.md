@@ -72,7 +72,7 @@ The agent gets one `browser` tool:
 
 Page actions take an optional tab id and default to the current pi tab. Refs come from the tab's last `read` and go stale when the page navigates (or, for refs inside a frame, when that frame does); the agent reads again to get fresh ones. `click`, `type`, and `keys` don't wait for a page they trigger to load; the agent reads to see the result.
 
-`network` only sees requests made since the agent first acted on the tab, or since Pi last reconnected. Both logs start over when the tab's page navigates, so they only ever show the page the agent is looking at. They keep the last 200 entries per tab and cut each message or URL at 1,000 characters. Requests and messages from cross-site frames aren't recorded. `eval` returns values that survive JSON, so for a DOM node it should return a property such as `outerHTML`. Synchronous code is stopped after 10 seconds. Output is truncated to 2,000 lines or 50KB, keeping the start of a page and the newest log entries.
+`network` only sees requests made since the agent first acted on the tab, or since Pi last reconnected; when that came after the page loaded, it says so, and reloading the page shows every request. Both logs start over when the tab's page navigates, so they only ever show the page the agent is looking at. They keep the last 200 entries per tab and cut each message or URL at 1,000 characters. Requests and messages from cross-site frames aren't recorded. `eval` returns values that survive JSON, so for a DOM node it should return a property such as `outerHTML`. Synchronous code is stopped after 10 seconds. Output is truncated to 2,000 lines or 50KB, keeping the start of a page and the newest log entries.
 
 | Command | Result |
 | --- | --- |

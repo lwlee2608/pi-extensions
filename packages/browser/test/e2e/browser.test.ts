@@ -352,6 +352,15 @@ test("network lists the page's fetch with its status, and never its headers or b
   assert.doesNotMatch(text, /fixture-secret|Bearer|authorization|cookie/i);
 });
 
+test("network on a page loaded before the debugger reattached says it may be missing requests", async () => {
+  const tabId = await inWorker(`chrome.tabs.query({ url: "${at("always", "debug.html")}" }).then(([tab]) => tab.id)`);
+  emit("session_shutdown");
+  ({ asked, confirmed, emit, call, browser } = session());
+  assert.match(await browser({ action: "network", tabId }), /^No requests in tab \d+ since the debugger attached; reload the page to see all requests\.$/);
+  await browser({ action: "navigate", url: at("always", "debug.html"), tabId });
+  assert.match(await browser({ action: "network", tabId }), /^\d+ requests in tab \d+ since its page loaded, oldest first:/);
+});
+
 test("eval asks with its code shown even on an always host, returns the value, and fails when declined", async () => {
   await browser({ action: "navigate", url: at("always", "debug.html"), newTab: true });
   assert.equal(await browser({ action: "eval", code: "document.title" }, true), "Pi debug");

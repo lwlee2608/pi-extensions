@@ -115,7 +115,7 @@ const handlers = {
     const tab = await piTab(tabId);
     const log = await logOf(tab.id);
     const lines = log.network.map(({ method, status, type, url }) => `${method} ${status ?? "pending"} ${type} ${url}`);
-    return reply(tab.id, listing(tab.id, "requests", lines));
+    return reply(tab.id, listing(tab.id, "requests", lines, log.partial ? "since the debugger attached; reload the page to see all requests" : undefined));
   },
 
   async eval({ tabId, code, host }) {
@@ -212,7 +212,7 @@ async function attach(tabId) {
   if (attached.has(tabId)) return;
   await allowed();
   await chrome.debugger.attach({ tabId }, "1.3").catch(error => { if (!/already attached/i.test(error.message)) throw error; });
-  logs.set(tabId, { console: [], network: [], requests: new Map() });
+  logs.set(tabId, { console: [], network: [], requests: new Map(), partial: true });
   await chrome.debugger.sendCommand({ tabId }, "Page.enable");
   await chrome.debugger.sendCommand({ tabId }, "Network.enable", { maxTotalBufferSize: 0, maxResourceBufferSize: 0 });
   attached.add(tabId);
@@ -249,10 +249,10 @@ function render(result) {
   return result.value !== undefined && result.type !== "string" ? JSON.stringify(result.value, null, 2) : remote(result);
 }
 
-function listing(tabId, what, lines) {
+function listing(tabId, what, lines, since = "since its page loaded") {
   const head = lines.length
-    ? `${lines.length} ${what} in tab ${tabId} since its page loaded, oldest first${lines.length === LOG_LIMIT ? `; only the last ${LOG_LIMIT} are kept` : ""}:`
-    : `No ${what} in tab ${tabId} since its page loaded.`;
+    ? `${lines.length} ${what} in tab ${tabId} ${since}, oldest first${lines.length === LOG_LIMIT ? `; only the last ${LOG_LIMIT} are kept` : ""}:`
+    : `No ${what} in tab ${tabId} ${since}.`;
   return [head, ...lines].join("\n");
 }
 
@@ -281,6 +281,7 @@ function record(tabId, method, params) {
     const request = log.requests.get(params.requestId);
     if (request) request.status = params.canceled ? "canceled" : params.blockedReason ? `blocked (${params.blockedReason})` : `failed (${params.errorText})`;
   } else if (method === "Page.frameNavigated" && !params.frame.parentId) {
+    log.partial = false;
     log.console = [];
     log.network = log.network.filter(request => request.loaderId === params.frame.loaderId);
     log.requests = new Map(log.network.map(request => [request.id, request]));

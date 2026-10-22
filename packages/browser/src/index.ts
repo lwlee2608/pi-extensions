@@ -108,7 +108,7 @@ export function browserExtension(overrides: Partial<BridgeOptions> = {}): (pi: E
         + "navigate loads an http/https URL in the current pi tab, or a new one with newTab; read returns the page as an accessibility tree "
         + "where [n] marks an element ref. click, type, and keys act on a ref with real input events; scroll brings a ref into view; "
         + "screenshot returns a JPEG of the tab, bringing it to the front of its window. console and network list the tab's console messages "
-        + "and requests (method, status, type, URL) since its page loaded, newest last. eval runs code in the page and returns its JSON value; "
+        + "and requests (method, status, type, URL) since its page loaded, newest last; when the debugger attached after the page loaded, network says so and only a reload shows every request. eval runs code in the page and returns its JSON value; "
         + "the user confirms every eval with the code shown. Refs go stale when the page navigates; "
         + "read again. Actions do not wait for a page they trigger to load; read to see the result. The user approves each new host; "
         + "if they deny one, or decline an eval, the call fails and you should not retry it. "
