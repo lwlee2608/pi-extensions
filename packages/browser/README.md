@@ -82,9 +82,10 @@ The first action on a new host, reads included, asks you in Pi:
 
 - **Allow once:** this action only.
 - **This session:** until the session ends.
-- **Always:** saved to `~/.pi/agent/pi-browser/config.json` (under `PI_CODING_AGENT_DIR` when set). Remove a host there to revoke it.
+- **Always:** saved to `~/.pi/agent/pi-browser/config.json` (under `PI_CODING_AGENT_DIR` when set) as `{ "allowedHosts": ["example.com"] }`. Remove a host there to revoke it; the file is read on every action.
+- **Deny:** the action fails. The next action on that host asks again.
 
-Approval matches the exact hostname, so `github.com` doesn't cover `gist.github.com`. It is checked on every action and before every navigation, so a redirect or link to a new host asks again. `eval` always asks, even on an "always" host.
+Approval matches the exact hostname, so `github.com` doesn't cover `gist.github.com`. It covers the tab's page and the same-site frames inside it, so a `github.com` page that embeds a `gist.github.com` frame shows that frame's text too. It is checked against the tab's page before every action, against the target before every navigation, and against where the page ended up after it, so a redirect or link to a new host asks again. `tabs` asks nothing; a pi tab on a host you haven't approved shows only its host, never its title or full URL. `eval` always asks, even on an "always" host.
 
 ### One session at a time
 

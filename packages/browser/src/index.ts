@@ -2,6 +2,7 @@ import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, getAgentDir, truncate
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
+import { Approvals, hostOf, type Choice } from "./approval.ts";
 import { Bridge, ORIGIN, PORT, type BridgeOptions } from "./bridge.ts";
 
 const CHROME_DIR = fileURLToPath(new URL("../chrome/", import.meta.url));
@@ -20,6 +21,31 @@ function checkUrl(url: string | undefined): void {
   if (protocol !== "http:" && protocol !== "https:") throw new Error(`navigate only opens http and https URLs, not ${protocol}`);
 }
 
+const CHOICES: Record<string, Choice> = { "Allow once": "once", "Allow for this session": "session", "Always allow": "always", Deny: "deny" };
+
+async function ask(ctx: ExtensionContext, host: string, signal?: AbortSignal): Promise<Choice> {
+  const answer = await ctx.ui.select(`Let the agent use ${host} in Chrome?`, Object.keys(CHOICES), { signal });
+  return (answer && CHOICES[answer]) || "deny";
+}
+
+interface TabList {
+  tabs: { id: number; title: string; url: string; current: boolean }[];
+  others: number;
+}
+
+export async function listTabs({ tabs, others }: TabList, allowed: (url: string) => Promise<boolean>): Promise<string> {
+  const lines = await Promise.all(tabs.map(async tab => {
+    const page = !tab.url ? "(loading)" : await allowed(tab.url) ? `${tab.title || "(untitled)"} <${tab.url}>` : `(unapproved host ${hostOf(tab.url)})`;
+    return `Tab ${tab.id}: ${page}${tab.current ? " (current)" : ""}`;
+  }));
+  return [...(lines.length ? lines : ["No pi tabs are open."]), `${others} other tabs are not in the pi group.`].join("\n");
+}
+
+function loaded(url: string): string {
+  if (!url) throw new Error("The pi tab has not loaded a page yet; try again in a moment.");
+  return url;
+}
+
 function truncate(text: string): string {
   const result = truncateHead(text, { maxLines: DEFAULT_MAX_LINES, maxBytes: DEFAULT_MAX_BYTES });
   if (!result.truncated) return text;
@@ -29,6 +55,7 @@ function truncate(text: string): string {
 export function browserExtension(overrides: Partial<BridgeOptions> = {}): (pi: ExtensionAPI) => void {
   return pi => {
     let session: ExtensionContext | undefined;
+    const approvals = new Approvals(join(getAgentDir(), "pi-browser", "config.json"));
     const bridge = new Bridge({
       port: PORT,
       origin: ORIGIN,
@@ -53,21 +80,46 @@ export function browserExtension(overrides: Partial<BridgeOptions> = {}): (pi: E
       return lines.join("\n");
     }
 
-    pi.on("session_start", (_event, ctx) => { session = ctx; });
+    const hideWithoutUI = (_event: unknown, ctx: ExtensionContext) => {
+      if (ctx.hasUI) return;
+      const active = pi.getActiveTools();
+      if (active.includes("browser")) pi.setActiveTools(active.filter(name => name !== "browser"));
+    };
+    pi.on("session_start", (event, ctx) => { session = ctx; approvals.reset(); hideWithoutUI(event, ctx); });
+    pi.on("before_agent_start", hideWithoutUI);
     pi.on("session_shutdown", () => bridge.close());
 
     pi.registerTool({
       name: "browser",
       label: "Browser",
-      description: "Drive the user's Chrome, only in tabs of its \"pi\" tab group. Actions: tabs lists pi tabs (other tabs are only counted); "
+      description: "Drive the user's Chrome, only in tabs of its \"pi\" tab group. Actions: tabs lists pi tabs (other tabs are only counted; "
+        + "a tab on a host the user has not approved shows only its host); "
         + "navigate loads an http/https URL in the current pi tab, or a new one with newTab; read returns the page as an accessibility tree "
-        + `where [n] marks an element ref. Refs go stale when the page navigates; read again. Output is truncated to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)}.`,
+        + "where [n] marks an element ref. Refs go stale when the page navigates; read again. The user approves each new host; "
+        + "if they deny one, the call fails and you should not retry it. "
+        + `Output is truncated to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)}.`,
       parameters,
       executionMode: "sequential",
       async execute(_id, { action, url, tabId, newTab }, signal, _update, ctx) {
         const bridge = use(ctx);
-        if (action === "navigate") checkUrl(url);
-        const text = String(await bridge.call(action, { url, tabId, newTab }, signal));
+        const granted = new Set<string>();
+        const approve = (url: string) => approvals.approve(url, host => ask(ctx, host, signal), granted);
+        let text: string;
+        if (action === "tabs") {
+          text = await listTabs(await bridge.call(action, {}, signal) as TabList, url => approvals.allowed(url, granted));
+        } else {
+          if (action === "navigate") {
+            checkUrl(url);
+            await approve(url!);
+          } else {
+            const tab = await bridge.call("tab", { tabId }, signal) as { id: number; url: string };
+            await approve(loaded(tab.url));
+            tabId = tab.id;
+          }
+          const page = await bridge.call(action, { url, tabId, newTab }, signal) as { url: string; text: string };
+          await approve(loaded(page.url));
+          text = page.text;
+        }
         return { content: [{ type: "text", text: truncate(text) }], details: undefined };
       },
     });

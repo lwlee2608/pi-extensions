@@ -73,7 +73,7 @@ export class Cdp {
 export async function launchChrome(extensionDir: string, userDataDir: string): Promise<{ cdp: Cdp; close: () => Promise<void> }> {
   const chrome = spawn(await chromePath(), [
     `--user-data-dir=${userDataDir}`, "--headless=new", "--no-first-run", "--no-default-browser-check",
-    "--use-mock-keychain", "--password-store=basic", "--remote-debugging-port=0",
+    "--use-mock-keychain", "--password-store=basic", "--remote-debugging-port=0", "--host-resolver-rules=MAP *.test 127.0.0.1",
     `--disable-extensions-except=${extensionDir}`, `--load-extension=${extensionDir}`, "about:blank",
   ], { stdio: ["ignore", "ignore", "pipe"] });
   const url = await new Promise<string>((resolve, reject) => {

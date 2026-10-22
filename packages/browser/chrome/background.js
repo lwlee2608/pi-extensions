@@ -12,8 +12,15 @@ const handlers = {
   async tabs() {
     const all = await chrome.tabs.query({});
     const tabs = await piTabs();
-    const lines = tabs.map(tab => `${describe(tab)}${tab.id === current ? " (current)" : ""}`);
-    return [...(lines.length ? lines : ["No pi tabs are open."]), `${all.length - tabs.length} other tabs are not in the pi group.`].join("\n");
+    return {
+      tabs: tabs.map(tab => ({ id: tab.id, title: tab.title, url: tab.url || tab.pendingUrl || "", current: tab.id === current })),
+      others: all.length - tabs.length,
+    };
+  },
+
+  async tab({ tabId }) {
+    const tab = await piTab(tabId);
+    return { id: tab.id, url: tab.url || tab.pendingUrl || "" };
   },
 
   async navigate({ url, tabId, newTab }) {
@@ -22,7 +29,8 @@ const handlers = {
     await cdp(tab.id, "Page.enable");
     const outcome = await load(tab.id, url);
     if (outcome === "gone") throw new Error(`Tab ${tab.id} closed or detached while loading ${url}.`);
-    return `${describe(await chrome.tabs.get(tab.id))}${outcome === "timeout" ? " (still loading)" : ""}`;
+    const loaded = await chrome.tabs.get(tab.id);
+    return { url: loaded.url || loaded.pendingUrl || "", text: `${describe(loaded)}${outcome === "timeout" ? " (still loading)" : ""}` };
   },
 
   async read({ tabId }) {
@@ -33,7 +41,8 @@ const handlers = {
       const { nodes } = await cdp(tab.id, "Accessibility.getFullAXTree", { frameId }).catch(() => ({ nodes: [] }));
       snapshot(nodes, lines);
     }
-    return lines.join("\n");
+    const done = await chrome.tabs.get(tab.id);
+    return { url: done.url || done.pendingUrl || "", text: lines.join("\n") };
   },
 };
 
