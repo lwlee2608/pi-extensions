@@ -122,6 +122,7 @@ Once the agent uses `console` on a tab, Chrome reports that tab's console to the
 - No hover and no wheel scrolling: Chrome doesn't answer those events in a tab that isn't in front. `scroll` brings a ref into view instead.
 - Chrome can't load this extension with `--load-extension` anymore; load it unpacked.
 - After updating the package, reload Pi Browser in `chrome://extensions`.
+- Password-manager extensions such as LastPass inject frames into form pages, and Chrome then blocks the debugger on that tab ("Cannot access a chrome-extension:// URL of different extension"). Turn the extension off for that site, or use a Chrome profile without it ([#34](https://github.com/lwlee2608/pi-extensions/issues/34)).
 
 ## Troubleshooting
 
