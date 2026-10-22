@@ -31,7 +31,7 @@ const handlers = {
     if (outcome === "gone") throw new Error(`Tab ${tab.id} closed or detached while loading ${url}.`);
     const loaded = await chrome.tabs.get(tab.id);
     const committed = loaded.url === "about:blank" ? "" : loaded.url;
-    return { url: committed || loaded.pendingUrl || loaded.url || "", text: `${describe(loaded)}${outcome === "timeout" ? " (still loading)" : ""}` };
+    return { url: committed || loaded.pendingUrl || loaded.url || "", text: `${describe(committed ? loaded : { ...loaded, title: "" })}${outcome === "timeout" ? " (still loading)" : ""}` };
   },
 
   async read({ tabId }) {
