@@ -52,13 +52,13 @@
 - **One CI wait per phase** — Push fixes freely; block on CI once, right before merge
 
 ## Progress
-Active: 1 · 1/25 tasks
+Active: 1 · 2/25 tasks
 
 ### Phase 1 — Agent opens and reads a page in a "pi" tab group
 The agent can open a URL in your real Chrome and get its text and numbered elements back.
 **Blocked by:** none
 - [x] Finish the WebSocket bridge: origin pinning, one live connection, connect wait, bind on first use in UI sessions only (`src/bridge.ts`, `src/index.ts`)
-- [ ] Add `/browser take` with secret-authenticated release of the current owner (`src/bridge.ts`, `src/index.ts`)
+- [x] Add `/browser take` with secret-authenticated release of the current owner (`src/bridge.ts`, `src/index.ts`)
 - [ ] Add the MV3 manifest with pinned `key`, debugger/tabs/tabGroups/alarms permissions, and `127.0.0.1` host permission (`chrome/manifest.json`)
 - [ ] Connect, keep alive, and reconnect on alarm or toolbar click; detach debugger on disconnect (`chrome/background.js`)
 - [ ] Open tabs into a "pi" tab group and refuse actions on tabs outside it (`chrome/background.js`)

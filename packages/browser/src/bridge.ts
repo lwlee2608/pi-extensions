@@ -1,4 +1,7 @@
+import { randomBytes, timingSafeEqual } from "node:crypto";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { dirname } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 
 export const PORT = 47823;
@@ -7,9 +10,17 @@ export const ORIGIN = "chrome-extension://enidoebkpjligpdgedlellobooiiljib";
 export interface BridgeOptions {
   port: number;
   origin: string;
+  secretPath: string;
+  label?: () => string;
   connectTimeout?: number;
   callTimeout?: number;
   onChange?: (connected: boolean) => void;
+  onRelease?: () => void;
+}
+
+export interface Owner {
+  label: string;
+  connected: boolean;
 }
 
 interface Pending {
@@ -26,6 +37,7 @@ export class Bridge {
   private readonly waiters = new Set<(error?: Error) => void>();
   private readonly pending = new Map<number, Pending>();
   private nextId = 0;
+  private secret?: Promise<string>;
 
   constructor(options: BridgeOptions) {
     this.options = options;
@@ -41,7 +53,7 @@ export class Bridge {
 
   listen(): Promise<void> {
     const starting = this.starting ??= new Promise((resolve, reject) => {
-      const server = createServer((req, res) => this.request(req, res));
+      const server = createServer((req, res) => void this.request(req, res).catch(() => res.destroy()));
       const wss = new WebSocketServer({ server, verifyClient: ({ origin }: { origin?: string }) => origin === this.options.origin });
       wss.on("connection", socket => this.attach(socket));
       server.once("error", (error: NodeJS.ErrnoException) => {
@@ -81,6 +93,19 @@ export class Bridge {
     });
   }
 
+  async take(): Promise<boolean> {
+    if (this.server) return false;
+    const response = await this.fetch("/release", "POST");
+    if (response && !response.ok) throw new Error(`Port ${this.options.port} refused the take (HTTP ${response.status}). Is another program using it?`);
+    await this.listen();
+    return true;
+  }
+
+  async owner(): Promise<Owner | undefined> {
+    const response = await this.fetch("/owner", "GET");
+    return response?.ok ? await response.json() as Owner : undefined;
+  }
+
   close(reason = "Browser bridge is closed."): void {
     this.starting = undefined;
     this.server?.close();
@@ -90,8 +115,28 @@ export class Bridge {
     this.socket?.terminate();
   }
 
-  private request(_req: IncomingMessage, res: ServerResponse): void {
-    res.writeHead(404).end();
+  private async fetch(path: string, method: string): Promise<Response | undefined> {
+    const headers = { authorization: `Bearer ${await this.loadSecret()}` };
+    return fetch(`http://127.0.0.1:${this.options.port}${path}`, { method, headers }).catch(() => undefined);
+  }
+
+  private async request(req: IncomingMessage, res: ServerResponse): Promise<void> {
+    const expected = Buffer.from(`Bearer ${await this.loadSecret()}`);
+    const given = Buffer.from(req.headers.authorization ?? "");
+    if (given.length !== expected.length || !timingSafeEqual(given, expected)) { res.writeHead(403).end(); return; }
+    if (req.method === "GET" && req.url === "/owner") {
+      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ label: this.options.label?.() ?? "another pi session", connected: this.connected }));
+    } else if (req.method === "POST" && req.url === "/release") {
+      this.close("Another pi session took the browser.");
+      res.writeHead(200, { connection: "close" }).end();
+      this.options.onRelease?.();
+    } else {
+      res.writeHead(404).end();
+    }
+  }
+
+  private loadSecret(): Promise<string> {
+    return this.secret ??= loadSecret(this.options.secretPath);
   }
 
   private attach(socket: WebSocket): void {
@@ -136,4 +181,14 @@ export class Bridge {
       this.waiters.add(done);
     });
   }
+}
+
+export async function loadSecret(path: string): Promise<string> {
+  try { return (await readFile(path, "utf8")).trim(); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  const secret = randomBytes(32).toString("hex");
+  try { await writeFile(path, secret, { mode: 0o600, flag: "wx" }); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === "EEXIST") return (await readFile(path, "utf8")).trim(); throw error; }
+  return secret;
 }
