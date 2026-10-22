@@ -118,6 +118,14 @@ async function inPage(url: string, expression: string): Promise<any> {
   }
 }
 
+async function until(condition: () => Promise<boolean>, timeout = 5_000): Promise<void> {
+  const deadline = Date.now() + timeout;
+  while (!(await condition())) {
+    if (Date.now() > deadline) throw new Error("condition not met in time");
+    await new Promise(resolve => setTimeout(resolve, 20));
+  }
+}
+
 function ref(page: string, element: string): number {
   const match = page.match(new RegExp(`\\[(\\d+)\\] ${element}`));
   assert.ok(match, `no ref for ${element} in:\n${page}`);
@@ -208,10 +216,12 @@ test("type, keys, and click fill and submit a form with real input events", asyn
   assert.match(after, /button "Clicked 1 times"/, "the click arrived as a trusted event");
 });
 
-test("click reaches a ref inside a same-origin frame", async () => {
+test("click reaches a ref inside a same-origin frame, and the frame navigating keeps the page's own refs", async () => {
   const page = await browser({ action: "read", tabId: await inWorker(`chrome.tabs.query({ url: "${site}index.html" }).then(([tab]) => tab.id)`) });
   await browser({ action: "click", ref: ref(page, 'link "Link inside frame"') });
-  assert.equal(await inPage(`${site}index.html`, "document.querySelector('iframe').contentWindow.location.pathname"), "/index.html");
+  await until(async () => await inPage(`${site}index.html`, "document.querySelector('iframe').contentWindow.location.pathname") === "/index.html");
+  await until(async () => (await browser({ action: "scroll", ref: ref(page, 'link "Link inside frame"') }).catch(error => error.message)).includes("is gone"));
+  assert.match(await browser({ action: "click", ref: ref(page, 'button "Press me"') }), /^Clicked/);
 });
 
 test("scroll brings a ref below the fold into view", async () => {

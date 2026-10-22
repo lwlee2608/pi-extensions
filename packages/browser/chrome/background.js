@@ -37,12 +37,14 @@ const handlers = {
     const tab = await piTab(tabId);
     const { frameTree } = await cdp(tab.id, "Page.getFrameTree");
     const lines = [describe(tab)];
-    const found = new Set();
+    const frames = new Map();
+    refs.set(tab.id, frames);
     for (const frameId of frameIds(frameTree)) {
+      const found = new Set();
+      frames.set(frameId, found);
       const { nodes } = await cdp(tab.id, "Accessibility.getFullAXTree", { frameId }).catch(() => ({ nodes: [] }));
       snapshot(nodes, lines, found);
     }
-    refs.set(tab.id, found);
     const done = await chrome.tabs.get(tab.id);
     return { url: done.url || done.pendingUrl || "", text: lines.join("\n") };
   },
@@ -199,7 +201,7 @@ async function load(tabId, url) {
 
 async function node(tabId, method, ref) {
   if (!Number.isInteger(ref)) throw new Error("This action needs a ref: the number in [n] from read.");
-  if (!refs.get(tabId)?.has(ref)) throw new Error(`Ref [${ref}] is gone or was never in this tab's last read; the page may have navigated. Use read for fresh refs.`);
+  if (![...refs.get(tabId)?.values() ?? []].some(found => found.has(ref))) throw new Error(`Ref [${ref}] is gone or was never in this tab's last read; the page may have navigated. Use read for fresh refs.`);
   try {
     return await cdp(tabId, method, { backendNodeId: ref });
   } catch (error) {
@@ -280,12 +282,17 @@ function snapshot(nodes, lines, found) {
 
 async function detachAll() {
   attached.clear();
+  refs.clear();
   for (const target of await chrome.debugger.getTargets()) {
     if (target.attached && target.tabId !== undefined) chrome.debugger.detach({ tabId: target.tabId }).catch(() => {});
   }
 }
 
-chrome.debugger.onEvent.addListener(({ tabId }, method) => { if (method === "Page.frameNavigated") refs.delete(tabId); });
+chrome.debugger.onEvent.addListener(({ tabId }, method, params) => {
+  if (method === "Page.frameNavigated" && !params.frame.parentId) refs.delete(tabId);
+  else if (method === "Page.frameNavigated") refs.get(tabId)?.delete(params.frame.id);
+  else if (method === "Page.frameDetached") refs.get(tabId)?.delete(params.frameId);
+});
 chrome.debugger.onDetach.addListener(({ tabId }, reason) => {
   attached.delete(tabId);
   refs.delete(tabId);
@@ -296,7 +303,7 @@ chrome.debugger.onDetach.addListener(({ tabId }, reason) => {
 chrome.tabs.onUpdated.addListener(async (tabId, { groupId }) => {
   if (groupId === undefined || !attached.has(tabId)) return;
   const group = groupId === chrome.tabGroups.TAB_GROUP_ID_NONE ? undefined : await chrome.tabGroups.get(groupId);
-  if (group?.title !== GROUP) { attached.delete(tabId); chrome.debugger.detach({ tabId }).catch(() => {}); }
+  if (group?.title !== GROUP) { attached.delete(tabId); refs.delete(tabId); chrome.debugger.detach({ tabId }).catch(() => {}); }
 });
 chrome.alarms.create("connect", { periodInMinutes: ALARM_MINUTES });
 chrome.alarms.onAlarm.addListener(connect);
