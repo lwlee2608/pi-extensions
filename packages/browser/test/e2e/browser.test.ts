@@ -86,7 +86,7 @@ test.after(async () => {
   await chrome.close();
   fixtureServer.closeAllConnections();
   fixtureServer.close();
-  await rm(work, { recursive: true, force: true });
+  await rm(work, { recursive: true, force: true, maxRetries: 10 });
 });
 
 async function target(match: (info: any) => boolean): Promise<any> {
