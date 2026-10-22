@@ -31,7 +31,10 @@ export class Approvals {
 
   async approve(url: string, ask: Ask, granted: Set<string>): Promise<void> {
     const host = hostOf(url);
-    if (!host) throw new Error(`The browser only acts on http and https pages, and this pi tab shows a ${parse(url).protocol} page. Navigate it first.`);
+    if (!host) {
+      const { protocol } = parse(url);
+      throw new Error(`The browser only acts on http and https pages, and this pi tab shows ${/^[aeiou]/.test(protocol) ? "an" : "a"} ${protocol} page. Navigate it first.`);
+    }
     if (await this.allowed(url, granted)) return;
     const choice = await ask(host);
     if (choice === "deny") throw new Error(`The user did not allow the browser on ${host}.`);

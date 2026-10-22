@@ -84,7 +84,7 @@ test("allowed reports approval without asking", async () => {
 test("non-web pages, like about:blank, are refused without asking; bad URLs fail", async () => {
   const { asked, ask } = asker();
   for (const url of ["about:blank", "data:text/html,hi", "file:///etc/hosts", "chrome://settings/"]) {
-    await assert.rejects(new Approvals(config()).approve(url, ask, new Set()), /only acts on http and https pages.*a [a-z]+: page/);
+    await assert.rejects(new Approvals(config()).approve(url, ask, new Set()), /only acts on http and https pages, and this pi tab shows (an about|a data|a file|a chrome): page/);
   }
   await assert.rejects(new Approvals(config()).approve("not a url", ask, new Set()), /Invalid URL/);
   assert.deepEqual(asked, []);

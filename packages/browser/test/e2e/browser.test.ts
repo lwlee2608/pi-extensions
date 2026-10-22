@@ -24,6 +24,7 @@ async function listen(server: Server): Promise<number> {
 
 const fixtureServer = createServer(async (req, res) => {
   if (req.url!.startsWith("/redirect?to=")) { res.writeHead(302, { location: decodeURIComponent(req.url!.slice(13)) }).end(); return; }
+  if (req.url === "/stall") return;
   if (req.url === "/hang") { res.writeHead(200, { "content-type": "text/html" }).write("<title>Hanging</title><h1>Never finishes</h1>"); return; }
   const body = await readFile(join(fixtures, new URL(req.url!, "http://x").pathname)).catch(() => undefined);
   if (body) res.writeHead(200, { "content-type": "text/html" }).end(body);
@@ -203,6 +204,10 @@ test("navigate refuses non-http schemes", async () => {
     const answer = await inWorker(`handlers.navigate({ url: ${JSON.stringify(url)} }).then(() => "opened", error => error.message)`);
     assert.match(answer, /only opens http and https/);
   }
+});
+
+test("navigate in a new tab that times out before the page commits reports the pending page", async () => {
+  assert.match(await browser({ action: "navigate", url: `${site}stall`, newTab: true }), /\(still loading\)$/);
 });
 
 test("navigate returns a page that never finishes loading as still loading, and it reads", async () => {

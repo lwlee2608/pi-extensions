@@ -30,7 +30,8 @@ const handlers = {
     const outcome = await load(tab.id, url);
     if (outcome === "gone") throw new Error(`Tab ${tab.id} closed or detached while loading ${url}.`);
     const loaded = await chrome.tabs.get(tab.id);
-    return { url: loaded.url || loaded.pendingUrl || "", text: `${describe(loaded)}${outcome === "timeout" ? " (still loading)" : ""}` };
+    const committed = loaded.url === "about:blank" ? "" : loaded.url;
+    return { url: committed || loaded.pendingUrl || loaded.url || "", text: `${describe(loaded)}${outcome === "timeout" ? " (still loading)" : ""}` };
   },
 
   async read({ tabId }) {
@@ -191,7 +192,10 @@ async function load(tabId, url) {
   chrome.tabs.onRemoved.addListener(onGone);
   const timer = setTimeout(() => finish("timeout"), NAVIGATE_WAIT_MS);
   try {
-    const result = await cdp(tabId, "Page.navigate", { url });
+    const navigated = cdp(tabId, "Page.navigate", { url });
+    navigated.catch(() => {});
+    const result = await Promise.race([navigated, done]);
+    if (typeof result === "string") return result;
     if (result.errorText) throw new Error(`Navigation to ${url} failed: ${result.errorText}`);
     if (!result.loaderId) return "loaded";
     loaderId = result.loaderId;
