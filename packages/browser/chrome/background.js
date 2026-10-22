@@ -1,6 +1,7 @@
 const PORT = 47823;
 const ALARM_MINUTES = 0.5;
 const KEEPALIVE_MS = 20_000;
+const NAVIGATE_WAIT_MS = 20_000;
 const GROUP = "pi";
 
 const SKIP = new Set(["generic", "none", "paragraph", "InlineTextBox", "LineBreak", "RootWebArea"]);
@@ -18,19 +19,9 @@ const handlers = {
   async navigate({ url, tabId, newTab }) {
     const tab = newTab || (tabId === undefined && !(await piTabs()).length) ? await openTab() : await piTab(tabId);
     await cdp(tab.id, "Page.enable");
-    let listener;
-    const loaded = new Promise(resolve => {
-      listener = (source, method) => { if (source.tabId === tab.id && method === "Page.loadEventFired") resolve(); };
-      chrome.debugger.onEvent.addListener(listener);
-    });
-    try {
-      const { errorText, loaderId } = await cdp(tab.id, "Page.navigate", { url });
-      if (errorText) throw new Error(`Navigation to ${url} failed: ${errorText}`);
-      if (loaderId) await loaded;
-    } finally {
-      chrome.debugger.onEvent.removeListener(listener);
-    }
-    return describe(await chrome.tabs.get(tab.id));
+    const outcome = await load(tab.id, url);
+    if (outcome === "gone") throw new Error(`Tab ${tab.id} closed or detached while loading ${url}.`);
+    return `${describe(await chrome.tabs.get(tab.id))}${outcome === "timeout" ? " (still loading)" : ""}`;
   },
 
   async read({ tabId }) {
@@ -102,6 +93,36 @@ async function cdp(tabId, method, params) {
     attached.add(tabId);
   }
   return chrome.debugger.sendCommand({ tabId }, method, params);
+}
+
+async function load(tabId, url) {
+  const loaded = new Set();
+  let mainLoader, loaderId, finish;
+  const done = new Promise(resolve => { finish = resolve; });
+  const onEvent = (source, method, params) => {
+    if (source.tabId !== tabId) return;
+    if (method === "Page.frameNavigated" && !params.frame.parentId) mainLoader = params.frame.loaderId;
+    if (method === "Page.loadEventFired") loaded.add(mainLoader);
+    if (loaderId && loaded.has(loaderId)) finish("loaded");
+  };
+  const onGone = source => { if ((source.tabId ?? source) === tabId) finish("gone"); };
+  chrome.debugger.onEvent.addListener(onEvent);
+  chrome.debugger.onDetach.addListener(onGone);
+  chrome.tabs.onRemoved.addListener(onGone);
+  const timer = setTimeout(() => finish("timeout"), NAVIGATE_WAIT_MS);
+  try {
+    const result = await cdp(tabId, "Page.navigate", { url });
+    if (result.errorText) throw new Error(`Navigation to ${url} failed: ${result.errorText}`);
+    if (!result.loaderId) return "loaded";
+    loaderId = result.loaderId;
+    if (loaded.has(loaderId)) return "loaded";
+    return await done;
+  } finally {
+    clearTimeout(timer);
+    chrome.debugger.onEvent.removeListener(onEvent);
+    chrome.debugger.onDetach.removeListener(onGone);
+    chrome.tabs.onRemoved.removeListener(onGone);
+  }
 }
 
 function describe(tab) {

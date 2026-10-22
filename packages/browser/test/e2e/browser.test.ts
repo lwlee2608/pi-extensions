@@ -23,6 +23,7 @@ async function listen(server: Server): Promise<number> {
 }
 
 const fixtureServer = createServer(async (req, res) => {
+  if (req.url === "/hang") { res.writeHead(200, { "content-type": "text/html" }).write("<title>Hanging</title><h1>Never finishes</h1>"); return; }
   const body = await readFile(join(fixtures, new URL(req.url!, "http://x").pathname)).catch(() => undefined);
   if (body) res.writeHead(200, { "content-type": "text/html" }).end(body);
   else res.writeHead(404).end();
@@ -49,7 +50,7 @@ async function browser(params: object): Promise<string> {
   return result.content[0].text;
 }
 
-const extensionDir = await copyExtension(join(work, "extension"), { port, alarmMinutes: ALARM_MS / 60_000 });
+const extensionDir = await copyExtension(join(work, "extension"), { PORT: port, ALARM_MINUTES: ALARM_MS / 60_000, NAVIGATE_WAIT_MS: 300 });
 const chrome = await launchChrome(extensionDir, join(work, "profile"));
 const { cdp } = chrome;
 await cdp.send("Target.setDiscoverTargets", { discover: true });
@@ -57,6 +58,7 @@ await cdp.send("Target.setDiscoverTargets", { discover: true });
 test.after(async () => {
   emit("session_shutdown");
   await chrome.close();
+  fixtureServer.closeAllConnections();
   fixtureServer.close();
   await rm(work, { recursive: true, force: true });
 });
@@ -112,6 +114,12 @@ test("navigate refuses non-http schemes", async () => {
   for (const url of ["javascript:alert(1)", "data:text/html,hi", "file:///etc/hosts"]) {
     await assert.rejects(browser({ action: "navigate", url }), /only opens http and https/);
   }
+});
+
+test("navigate returns a page that never finishes loading as still loading, and it reads", async () => {
+  const text = await browser({ action: "navigate", url: `${site}hang`, newTab: true });
+  assert.match(text, /^Tab (\d+): Hanging <.*\/hang> \(still loading\)$/);
+  assert.match(await browser({ action: "read" }), /heading "Never finishes"/);
 });
 
 test("closing the bridge detaches the debugger from pi tabs", async () => {
