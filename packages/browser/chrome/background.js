@@ -251,8 +251,10 @@ function record(tabId, method, params) {
   if (!log) return;
   if (method === "Runtime.consoleAPICalled") {
     push(log.console, clip(`[${params.type}] ${params.args.map(remote).join(" ")}`));
+    release(tabId);
   } else if (method === "Runtime.exceptionThrown") {
     push(log.console, clip(`[exception] ${params.exceptionDetails.exception?.description ?? params.exceptionDetails.text}`));
+    release(tabId);
   } else if (method === "Log.entryAdded" && params.entry.level !== "verbose") {
     push(log.console, clip(`[${params.entry.level}] ${params.entry.text}${params.entry.url ? ` <${params.entry.url}>` : ""}`));
   } else if (method === "Network.requestWillBeSent") {
@@ -273,6 +275,10 @@ function record(tabId, method, params) {
     log.network = log.network.filter(request => request.loaderId === params.frame.loaderId);
     log.requests = new Map(log.network.map(request => [request.id, request]));
   }
+}
+
+function release(tabId) {
+  chrome.debugger.sendCommand({ tabId }, "Runtime.releaseObjectGroup", { objectGroup: "console" }).catch(() => {});
 }
 
 function hostOf(url) {
