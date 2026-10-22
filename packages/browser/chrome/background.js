@@ -204,7 +204,7 @@ async function attach(tabId) {
   await chrome.debugger.attach({ tabId }, "1.3").catch(error => { if (!/already attached/i.test(error.message)) throw error; });
   logs.set(tabId, { console: [], network: [], requests: new Map() });
   await chrome.debugger.sendCommand({ tabId }, "Page.enable");
-  await chrome.debugger.sendCommand({ tabId }, "Network.enable");
+  await chrome.debugger.sendCommand({ tabId }, "Network.enable", { maxTotalBufferSize: 0, maxResourceBufferSize: 0 });
   attached.add(tabId);
 }
 
