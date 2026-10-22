@@ -14,7 +14,6 @@ export interface BridgeOptions {
   label?: () => string;
   connectTimeout?: number;
   callTimeout?: number;
-  onChange?: (connected: boolean) => void;
   onRelease?: () => void;
 }
 
@@ -143,15 +142,12 @@ export class Bridge {
   private attach(socket: WebSocket): void {
     if (this.socket) { socket.close(4409, "Another Chrome is already connected to pi."); return; }
     this.socket = socket;
-    this.options.onChange?.(true);
     for (const wake of this.waiters) wake();
     socket.on("error", () => {});
     socket.on("message", data => this.receive(data.toString()));
     socket.on("close", () => {
       for (const call of this.pending.values()) if (call.socket === socket) call.reject(new Error("Chrome extension disconnected."));
-      if (this.socket !== socket) return;
-      this.socket = undefined;
-      this.options.onChange?.(false);
+      if (this.socket === socket) this.socket = undefined;
     });
   }
 
