@@ -170,8 +170,8 @@ async function cdp(tabId, method, params) {
   if (!attached.has(tabId)) {
     await allowed();
     await chrome.debugger.attach({ tabId }, "1.3").catch(error => { if (!/already attached/i.test(error.message)) throw error; });
-    attached.add(tabId);
     await chrome.debugger.sendCommand({ tabId }, "Page.enable");
+    attached.add(tabId);
   }
   return chrome.debugger.sendCommand({ tabId }, method, params);
 }

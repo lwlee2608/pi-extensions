@@ -19,8 +19,7 @@ const parameters = Type.Object({
 
 function checkUrl(url: string | undefined): void {
   if (!url) throw new Error("navigate needs a url.");
-  let protocol: string;
-  try { protocol = new URL(url).protocol; } catch { throw new Error(`Invalid URL: ${url}`); }
+  const { protocol } = parse(url);
   if (protocol !== "http:" && protocol !== "https:") throw new Error(`navigate only opens http and https URLs, not ${protocol}`);
 }
 
