@@ -40,8 +40,8 @@ const attached = new Set();
 let socket;
 let current;
 
-function connect() {
-  if (socket) return;
+async function connect() {
+  if ((await chrome.storage.session.get("canceled")).canceled || socket) return;
   const ws = socket = new WebSocket(`ws://127.0.0.1:${PORT}`);
   let keepalive;
   ws.onopen = () => {
@@ -161,7 +161,12 @@ async function detachAll() {
   }
 }
 
-chrome.debugger.onDetach.addListener(({ tabId }) => attached.delete(tabId));
+chrome.debugger.onDetach.addListener(({ tabId }, reason) => {
+  attached.delete(tabId);
+  if (reason !== "canceled_by_user") return;
+  chrome.storage.session.set({ canceled: true });
+  socket?.close();
+});
 chrome.tabs.onUpdated.addListener(async (tabId, { groupId }) => {
   if (groupId === undefined || !attached.has(tabId)) return;
   const group = groupId === chrome.tabGroups.TAB_GROUP_ID_NONE ? undefined : await chrome.tabGroups.get(groupId);
@@ -169,5 +174,5 @@ chrome.tabs.onUpdated.addListener(async (tabId, { groupId }) => {
 });
 chrome.alarms.create("connect", { periodInMinutes: ALARM_MINUTES });
 chrome.alarms.onAlarm.addListener(connect);
-chrome.action.onClicked.addListener(connect);
+chrome.action.onClicked.addListener(() => chrome.storage.session.remove("canceled").then(connect));
 connect();

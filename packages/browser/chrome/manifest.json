@@ -5,7 +5,7 @@
   "description": "Lets a local Pi session drive Chrome.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxCdWdGUtMWQ8zFYo+qhRkhj+vuGQ11ainy2ROs9JgPo6S9KcL/bXIsvgtZR1r3Gu5LK4GiBI2a53qcE76Tjc7Me9AZO5o8+ZJigVNy+Q+ADqeDpgxnPzKLTdgEBjVZ5QsW9FHCdbMp5KaqxceOCJDu8U/QygbjhNX4dhLek7k7LChOfPdS4PV9KDuTPMKsmg2vpKyg2uKM2XviDHik4F3mcC+BawMk6hQ9Phozh/sWVnN5H5cH4OxPGyqXCQ5GdEvLfq5q705K4XHpNGc4gv7Z4NlajkdS+C9uVR21zFmJh41fYbo8WDdgSf+iYE7Tl7O2nEtaMnhTSlFAXPowNfqwIDAQAB",
   "minimum_chrome_version": "120",
-  "permissions": ["debugger", "tabs", "tabGroups", "alarms"],
+  "permissions": ["debugger", "tabs", "tabGroups", "alarms", "storage"],
   "host_permissions": ["http://127.0.0.1/*"],
   "background": {
     "service_worker": "background.js"
