@@ -122,10 +122,20 @@ const handlers = {
     if (typeof code !== "string" || !code.trim()) throw new Error("eval needs code.");
     const tab = await piTab(tabId);
     if (host !== undefined && hostOf(tab.url) !== host) throw new Error(`Tab ${tab.id} is no longer on ${host}, so the code was not run.`);
-    const { result, exceptionDetails } = await guarded(tab.id, () => cdp(tab.id, "Runtime.evaluate", {
-      expression: code, returnByValue: true, awaitPromise: true, timeout: EVAL_TIMEOUT_MS,
-    }));
-    return reply(tab.id, exceptionDetails ? `Uncaught: ${exceptionDetails.exception?.description ?? exceptionDetails.text}` : render(result));
+    const objectGroup = "pi-eval";
+    try {
+      let { result, exceptionDetails } = await guarded(tab.id, () => cdp(tab.id, "Runtime.evaluate", {
+        expression: code, replMode: true, objectGroup, awaitPromise: true, timeout: EVAL_TIMEOUT_MS,
+      }));
+      if (!exceptionDetails && result.objectId) {
+        ({ result, exceptionDetails } = await guarded(tab.id, () => cdp(tab.id, "Runtime.callFunctionOn", {
+          objectId: result.objectId, functionDeclaration: "function () { return this; }", returnByValue: true, awaitPromise: true,
+        })));
+      }
+      return await reply(tab.id, exceptionDetails ? `Uncaught: ${exceptionDetails.exception?.description ?? exceptionDetails.text}` : render(result));
+    } finally {
+      chrome.debugger.sendCommand({ tabId: tab.id }, "Runtime.releaseObjectGroup", { objectGroup }).catch(() => {});
+    }
   },
 };
 

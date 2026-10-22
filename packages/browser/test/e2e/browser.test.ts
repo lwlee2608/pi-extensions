@@ -360,6 +360,10 @@ test("eval asks with its code shown even on an always host, returns the value, a
   assert.deepEqual(confirmed.splice(0), [["Run this JavaScript in the always.test tab?\ndocument.title = 'changed'", "Run all 1 line", "Don't run"]]);
   assert.deepEqual(JSON.parse(await browser({ action: "eval", code: "Promise.resolve({ title: document.title, n: 1 })" }, true)), { title: "Pi debug", n: 1 });
   assert.match(await browser({ action: "eval", code: "missing.call()" }, true), /^Uncaught: ReferenceError: missing is not defined/);
+  for (let i = 0; i < 2; i++) {
+    assert.equal(await browser({ action: "eval", code: "const heading = await Promise.resolve(document.querySelector('h1'));\nheading.textContent" }, true), "Debug fixture");
+  }
+  confirmed.splice(0);
   assert.deepEqual(asked, [], "eval adds its confirm, not a host prompt");
 });
 

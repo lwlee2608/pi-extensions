@@ -68,7 +68,7 @@ The agent gets one `browser` tool:
 | `screenshot` | JPEG of a pi tab's visible area at CSS pixel size, so high-density screens don't produce oversized images. Brings that tab to the front of its window first. |
 | `console` | Console messages, uncaught exceptions, and Chrome's own warnings from the tab's current page. |
 | `network` | Requests from the tab's current page: method, status, type, and URL. Never headers or bodies. |
-| `eval` | Run a JavaScript expression in the page's main frame and return its value as JSON, awaiting a promise. You confirm the code every time. |
+| `eval` | Run JavaScript in the page's main frame like the DevTools console, and return the last value as JSON, awaiting a promise. You confirm the code every time. |
 
 Page actions take an optional tab id and default to the current pi tab. Refs come from the tab's last `read` and go stale when the page navigates (or, for refs inside a frame, when that frame does); the agent reads again to get fresh ones. `click`, `type`, and `keys` don't wait for a page they trigger to load; the agent reads to see the result.
 
