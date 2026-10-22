@@ -111,6 +111,7 @@ The agent can see page errors and requests and run JS you approve.
 - Note: both logs start over when the tab's main frame navigates (network keeps only the new document's own request), so a page left loaded on an unapproved host never leaks into a later page's logs; network only sees requests made after the debugger attached
 - Note: the extension re-checks that the tab is still on the confirmed host right before an eval runs; a navigation in the gap between that check and `Runtime.evaluate` can still run the code on the next page, though its result is withheld by the post-check
 - Note: the eval prompt is a `ctx.ui.select` whose run option carries the line count, not `ctx.ui.confirm`, so the count stays visible when tall code scrolls; the Verify's "stubbed confirm" is met by the e2e's stubbed select
+- Note: after a service-worker restart, `console` keeps saying "since its page loaded" though messages from before the restart can be missing; not fixed
 - Note: `dialogError` reads "a alert dialog" for alerts (phase 3 grammar nit, not fixed)
 **Verify:** `npm run e2e -w packages/browser`: `console` returns the fixture's logged error; `network` lists the fixture's fetch with its status code and no header or body content, even though the fixture sends an `Authorization` header; `eval` of `document.title` calls the stubbed confirm with that code and returns the title; a declined confirm makes the tool fail, even on an "always" host.
 

