@@ -1,7 +1,10 @@
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, getAgentDir, truncateHead, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { basename, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
 import { Bridge, ORIGIN, PORT, type BridgeOptions } from "./bridge.ts";
+
+const CHROME_DIR = fileURLToPath(new URL("../chrome/", import.meta.url));
 
 const parameters = Type.Object({
   action: Type.Union([Type.Literal("tabs"), Type.Literal("navigate"), Type.Literal("read")]),
@@ -40,6 +43,16 @@ export function browserExtension(overrides: Partial<BridgeOptions> = {}): (pi: E
       return bridge;
     }
 
+    async function status(bridge: Bridge): Promise<string> {
+      const lines = [`Chrome extension folder: ${CHROME_DIR}`];
+      const error = await bridge.listen().catch((error: Error) => error);
+      const owner = error ? await bridge.owner() : { label: "this session", connected: bridge.connected };
+      if (!owner) return [...lines, (error as Error).message].join("\n");
+      lines.push(`Owner: ${owner.label}${error ? ". Run /browser take to move it here." : ""}`);
+      lines.push(owner.connected ? "Chrome: connected" : "Chrome: not connected. Load the folder unpacked in chrome://extensions, then click the Pi Browser toolbar icon.");
+      return lines.join("\n");
+    }
+
     pi.on("session_start", (_event, ctx) => { session = ctx; });
     pi.on("session_shutdown", () => bridge.close());
 
@@ -62,12 +75,17 @@ export function browserExtension(overrides: Partial<BridgeOptions> = {}): (pi: E
     pi.registerCommand("browser", {
       description: "Browser status, or take: move the browser to this session",
       handler: async (args, ctx) => {
-        if (args.trim() !== "take") { ctx.ui.notify("Usage: /browser [take]", "warning"); return; }
+        const command = args.trim();
+        if (command !== "" && command !== "take") { ctx.ui.notify("Usage: /browser [take]", "warning"); return; }
         try {
-          const moved = await use(ctx).take();
-          ctx.ui.notify(moved
-            ? "This session now owns the browser. Chrome reconnects within about 30s; click the Pi Browser toolbar icon to reconnect now."
-            : "This session already owns the browser.", "info");
+          if (command === "take") {
+            const moved = await use(ctx).take();
+            ctx.ui.notify(moved
+              ? "This session now owns the browser. Chrome reconnects within about 30s; click the Pi Browser toolbar icon to reconnect now."
+              : "This session already owns the browser.", "info");
+          } else {
+            ctx.ui.notify(await status(use(ctx)), "info");
+          }
         } catch (error) {
           ctx.ui.notify((error as Error).message, "warning");
         }
