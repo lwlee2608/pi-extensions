@@ -239,7 +239,7 @@ async function node(tabId, method, ref) {
   try {
     return await cdp(tabId, method, { backendNodeId: ref });
   } catch (error) {
-    if (/no node|layout object/i.test(error.message)) throw new Error(`Ref [${ref}] is no longer on the page. Use read for fresh refs.`);
+    if (/no node|layout object|detached/i.test(error.message)) throw new Error(`Ref [${ref}] is no longer on the page. Use read for fresh refs.`);
     throw error;
   }
 }
