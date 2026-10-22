@@ -14,6 +14,7 @@ export interface BridgeOptions {
   label?: () => string;
   connectTimeout?: number;
   callTimeout?: number;
+  requestTimeout?: number;
   onRelease?: () => void;
 }
 
@@ -117,7 +118,11 @@ export class Bridge {
 
   private async fetch(path: string, method: string): Promise<Response | undefined> {
     const headers = { authorization: `Bearer ${await this.loadSecret()}` };
-    return fetch(`http://127.0.0.1:${this.options.port}${path}`, { method, headers }).catch(() => undefined);
+    const timeout = this.options.requestTimeout ?? 3_000;
+    return fetch(`http://127.0.0.1:${this.options.port}${path}`, { method, headers, signal: AbortSignal.timeout(timeout) }).catch((error: Error) => {
+      if (error.name !== "TimeoutError") return undefined;
+      throw new Error(`The pi session holding port ${this.options.port} did not answer within ${timeout / 1000}s. It may be suspended; resume or quit it, then retry.`);
+    });
   }
 
   private async request(req: IncomingMessage, res: ServerResponse): Promise<void> {

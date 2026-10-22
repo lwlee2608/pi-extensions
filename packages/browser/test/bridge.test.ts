@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { mkdtemp, rm, stat } from "node:fs/promises";
-import { createServer } from "node:net";
+import { createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -122,6 +122,21 @@ test("take with the secret frees the port for the taker", async () => {
   assert.deepEqual(await taker.call("echo", {}), { method: "echo", params: {} });
   await assert.rejects(owner.call("echo", {}), /in use/);
   assert.equal(await taker.take(), false);
+});
+
+test("take and owner fail clearly when the holder of the port never answers", async () => {
+  const port = await freePort();
+  const sockets: Socket[] = [];
+  const holder = createServer(socket => sockets.push(socket)).listen(port, "127.0.0.1");
+  await once(holder, "listening");
+  try {
+    const taker = bridge(port, { requestTimeout: 50 });
+    await assert.rejects(taker.take(), /did not answer within 0.05s/);
+    await assert.rejects(taker.owner(), /did not answer/);
+  } finally {
+    for (const socket of sockets) socket.destroy();
+    holder.close();
+  }
 });
 
 test("the secret is created once, user-only", async () => {
