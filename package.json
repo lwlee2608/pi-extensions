@@ -15,7 +15,8 @@
       "./packages/footer/src/index.ts",
       "./packages/ask-user/src/index.ts",
       "./packages/subagent/src/index.ts",
-      "./packages/notify/src/index.ts"
+      "./packages/notify/src/index.ts",
+      "./packages/browser/src/index.ts"
     ]
   },
   "engines": {
