@@ -179,7 +179,7 @@ chrome.debugger.onDetach.addListener(({ tabId }, reason) => {
 chrome.tabs.onUpdated.addListener(async (tabId, { groupId }) => {
   if (groupId === undefined || !attached.has(tabId)) return;
   const group = groupId === chrome.tabGroups.TAB_GROUP_ID_NONE ? undefined : await chrome.tabGroups.get(groupId);
-  if (group?.title !== GROUP) chrome.debugger.detach({ tabId }).catch(() => {});
+  if (group?.title !== GROUP) { attached.delete(tabId); chrome.debugger.detach({ tabId }).catch(() => {}); }
 });
 chrome.alarms.create("connect", { periodInMinutes: ALARM_MINUTES });
 chrome.alarms.onAlarm.addListener(connect);
