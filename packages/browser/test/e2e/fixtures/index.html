@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Pi fixture</title></head>
+<body>
+  <h1>Pi fixture heading</h1>
+  <p>Some page text.</p>
+  <button>Press me</button>
+  <div id="host"></div>
+  <iframe src="frame.html" title="Same-origin frame"></iframe>
+  <script>
+    document.getElementById("host").attachShadow({ mode: "open" }).innerHTML = "<button>Shadow button</button>";
+  </script>
+</body>
+</html>

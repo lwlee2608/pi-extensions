@@ -1,0 +1,38 @@
+{
+  "name": "@lwlee2608/pi-browser",
+  "version": "0.1.0",
+  "description": "Let Pi drive your signed-in Chrome through a companion extension.",
+  "type": "module",
+  "license": "MIT",
+  "author": "lwlee2608",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lwlee2608/pi-extensions.git",
+    "directory": "packages/browser"
+  },
+  "homepage": "https://github.com/lwlee2608/pi-extensions/tree/main/packages/browser#readme",
+  "bugs": "https://github.com/lwlee2608/pi-extensions/issues",
+  "keywords": ["pi-package", "pi-extension", "chrome", "browser"],
+  "files": ["src", "chrome"],
+  "pi": {
+    "extensions": ["./src/index.ts"]
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "node --test test/*.test.ts",
+    "e2e": "node --test test/e2e/*.test.ts"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "dependencies": {
+    "ws": "8.22.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
