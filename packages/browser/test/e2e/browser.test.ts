@@ -44,6 +44,8 @@ process.env.PI_CODING_AGENT_DIR = join(work, "agent");
 const configPath = join(work, "agent", "pi-browser", "config.json");
 const options = { port, secretPath: join(work, "secret"), connectTimeout: 10_000, callTimeout: 10_000 };
 
+let stops = 0;
+
 function session() {
   const handlers = new Map<string, ((event: unknown, ctx: ExtensionContext) => unknown)[]>();
   const tools = new Map<string, any>();
@@ -68,7 +70,7 @@ function session() {
     if (typeof answer !== "string") throw new Error(`Unexpected prompt: ${title}`);
     return answer;
   };
-  const ctx = { hasUI: true, cwd: work, ui: { notify: () => {}, select }, sessionManager: { getSessionName: () => "e2e" } } as unknown as ExtensionContext;
+  const ctx = { hasUI: true, cwd: work, abort: () => { stops++; }, ui: { notify: () => {}, select }, sessionManager: { getSessionName: () => "e2e" } } as unknown as ExtensionContext;
   const emit = (event: string) => { for (const handler of handlers.get(event) ?? []) handler({}, ctx); };
   browserExtension(options)(pi);
   emit("session_start");
@@ -120,14 +122,18 @@ async function inWorker(expression: string): Promise<any> {
   }
 }
 
-async function inPage(url: string, expression: string): Promise<any> {
+async function onPage<T>(url: string, run: (sessionId: string) => Promise<T>): Promise<T> {
   const { targetId } = await target(info => info.type === "page" && info.url === url);
   const { sessionId } = await cdp.send("Target.attachToTarget", { targetId, flatten: true });
   try {
-    return (await cdp.send("Runtime.evaluate", { expression, returnByValue: true }, sessionId)).result.value;
+    return await run(sessionId);
   } finally {
     await cdp.send("Target.detachFromTarget", { sessionId });
   }
+}
+
+async function inPage(url: string, expression: string): Promise<any> {
+  return onPage(url, async sessionId => (await cdp.send("Runtime.evaluate", { expression, returnByValue: true }, sessionId)).result.value);
 }
 
 async function until(condition: () => Promise<boolean>, timeout = 5_000): Promise<void> {
@@ -242,6 +248,31 @@ test("type, keys, and click fill and submit a form with real input events", asyn
   await browser({ action: "type", ref: ref(page, 'textbox "Name"'), text: "second" });
   await browser({ action: "keys", keys: "Enter" });
   assert.match(await browser({ action: "read" }), /submitted: second/, "select-all and Backspace cleared the field");
+});
+
+test("the pi overlay marks where the agent clicks, stays out of read and the page's reach, and its Stop button aborts the agent", async () => {
+  const tabId = await inWorker(`chrome.tabs.query({ url: "${form}" }).then(([tab]) => chrome.tabs.update(tab.id, { active: true })).then(tab => tab.id)`);
+  const page = await browser({ action: "read", tabId });
+  assert.doesNotMatch(page, /Stop pi/);
+  await browser({ action: "click", ref: ref(page, 'button "Clicked \\d+ times"') });
+  const overlay = "!!document.querySelector('pi-overlay')";
+  assert.deepEqual(await inPage(form, `[${overlay}, document.querySelector('pi-overlay').shadowRoot, typeof piStop]`), [true, null, "undefined"]);
+  const [x, y] = await inPage(form, "(box => [box.x + box.width / 2, box.y + box.height / 2])(count.getBoundingClientRect())");
+  const shot = await onPage(form, sessionId => cdp.send("Page.captureScreenshot", { format: "png", clip: { x: x - 1, y: y - 1, width: 2, height: 2, scale: 1 } }, sessionId));
+  const [, , r, g, b] = await decode({ data: shot.data, mimeType: "image/png" });
+  assert.ok(Math.abs(r - 0x3b) < 16 && Math.abs(g - 0x82) < 16 && Math.abs(b - 0xf6) < 16, `pixel ${r},${g},${b} at the clicked button is the pi cursor`);
+
+  emit("agent_end");
+  await until(async () => !(await inPage(form, overlay)));
+
+  await browser({ action: "read", tabId });
+  assert.equal(await inPage(form, overlay), true);
+  const [stopX, stopY] = await inPage(form, "[innerWidth / 2, innerHeight - 34]");
+  await onPage(form, async sessionId => {
+    for (const type of ["mousePressed", "mouseReleased"]) await cdp.send("Input.dispatchMouseEvent", { type, x: stopX, y: stopY, button: "left", clickCount: 1 }, sessionId);
+  });
+  await until(async () => stops === 1);
+  await until(async () => !(await inPage(form, overlay)));
 });
 
 test("zero and empty params a model fills in count as not given", async () => {

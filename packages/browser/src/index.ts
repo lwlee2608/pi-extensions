@@ -70,6 +70,7 @@ export function truncate(text: string, tail = false): string {
 export function browserExtension(overrides: Partial<BridgeOptions> = {}): (pi: ExtensionAPI) => void {
   return pi => {
     let session: ExtensionContext | undefined;
+    let used = false;
     const approvals = new Approvals(join(getAgentDir(), "pi-browser", "config.json"));
     const bridge = new Bridge({
       port: PORT,
@@ -77,6 +78,10 @@ export function browserExtension(overrides: Partial<BridgeOptions> = {}): (pi: E
       secretPath: join(getAgentDir(), "pi-browser", "secret"),
       label: () => `${session?.sessionManager.getSessionName() ?? basename(session?.cwd ?? "pi")} (pid ${process.pid})`,
       onRelease: () => session?.ui.notify("Another pi session took the browser.", "info"),
+      onStop: () => {
+        session?.abort();
+        session?.ui.notify("Stopped from Chrome.", "info");
+      },
       ...overrides,
     });
 
@@ -102,6 +107,10 @@ export function browserExtension(overrides: Partial<BridgeOptions> = {}): (pi: E
     };
     pi.on("session_start", (event, ctx) => { session = ctx; approvals.reset(); hideWithoutUI(event, ctx); });
     pi.on("before_agent_start", hideWithoutUI);
+    pi.on("agent_end", () => {
+      if (used && bridge.connected) bridge.call("idle", {}).catch(() => {});
+      used = false;
+    });
     pi.on("session_shutdown", () => bridge.close());
 
     pi.registerTool({
@@ -122,6 +131,7 @@ export function browserExtension(overrides: Partial<BridgeOptions> = {}): (pi: E
       async execute(_id, { action, ...raw }, signal, _update, ctx) {
         const params = given(raw);
         const bridge = use(ctx);
+        used = true;
         const granted = new Set<string>();
         const approve = (url: string) => approvals.approve(url, host => ask(ctx, host, signal), granted);
         if (action === "tabs") {
