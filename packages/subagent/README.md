@@ -98,17 +98,17 @@ Optional. Create `~/.pi/agent/pi-subagent/config.json`:
 
 ## Inspector
 
-`/subagents` opens a live view of workers and their transcripts.
+`/subagents` opens a live view: workers on the left, grouped with the reviewers nested under them, and the selected worker's transcript on the right.
 
 | Key | Action |
 | --- | --- |
 | ↑/↓ | Select worker |
 | PgUp/PgDn, End | Scroll transcript, follow live output |
+| `i` | Show model, folder, PID, session file and IDs |
 | `m` | Send a task, or steer a running worker |
 | `r` | Reply to a question |
 | `s` | Stop (confirm with `y`) |
 | `c` | Recover a closed worker |
-| `f` | Toggle flow view |
 | Esc | Close |
 
 ## Storage
