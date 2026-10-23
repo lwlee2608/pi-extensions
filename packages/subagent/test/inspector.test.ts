@@ -61,16 +61,19 @@ test("inspector lists nested workers under their group and shows the selected tr
     await f.manager.wait([root.runId]);
     const child = f.manager.start(f.launch, "REVIEW_TASK", "once", "owctl review 1", root.workerId);
     await f.manager.wait([child.runId]);
+    const second = f.manager.start(f.launch, "REVIEW_TASK", "once", "owctl review 1", root.workerId);
+    await f.manager.wait([second.runId]);
     inspector = new Inspector(f.manager, theme, () => {}, () => 24, () => {});
     const list = inspector.render(100);
     assert.match(list[1], /^  ✓ owctl phase 1 +│ owctl phase 1 · fixture · idle · /);
     assert.match(list[2], /^▸   ✓ fixture +\d+s │ ─+$/);
-    assert.match(list[3], /^    ✓ owctl review 1 +\d+s │ /);
+    assert.match(list[3], /^    ✓ owctl review 1 #1 +\d+s │ /);
+    assert.match(list[4], /^    ✓ owctl review 1 #2 +\d+s │ /);
     inspector.handleInput("\x1b[B"); inspector.handleInput("i");
     while (!/REVIEW_TASK/.test(inspector.render(100).join("\n"))) await new Promise(resolve => setTimeout(resolve, 20));
     const selected = inspector.render(100).join("\n");
-    assert.match(selected, /\n▸   ✓ owctl review 1 /);
-    assert.match(selected, /owctl review 1 · fixture · closed /); assert.ok(selected.includes(child.workerId) && selected.includes(child.runId));
+    assert.match(selected, /\n▸   ✓ owctl review 1 #1 /);
+    assert.match(selected, /owctl review 1 #1 · fixture · closed /); assert.ok(selected.includes(child.workerId) && selected.includes(child.runId));
     assert.match(selected, /│ Task +\n.*│   REVIEW_TASK/);
     for (const width of [1, 5, 20, 59, 60, 80]) for (const line of inspector.render(width)) assert.ok(visibleWidth(line) <= width);
   } finally { inspector?.dispose(); await f.cleanup(); }

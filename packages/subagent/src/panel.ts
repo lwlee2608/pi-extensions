@@ -67,7 +67,8 @@ export function elapsed(worker: Snapshot, now: number): number { return (active.
 function detail(worker: Snapshot): Mark {
   const question = worker.questions?.find(q => q.state === "pending");
   if (question) return ["warning", `asks: ${question.question} · /subagents → r`];
-  if (worker.error) return ["error", worker.error];
+  const error = worker.error ?? worker.result?.error;
+  if (error) return ["error", error];
   if (reminded(worker)) return ["warning", `saved conversation${worker.questions?.some(q => q.state === "cancelled") ? "; pending questions cancelled" : ""} · /subagents → c`];
   return ["dim", active.includes(worker.state) ? [worker.activity, line(worker.output, true)].filter(Boolean).join(" · ") : line(worker.output, false) || worker.activity];
 }
@@ -79,11 +80,11 @@ export function names(nodes: Node[]): Map<string, string> {
     for (const [id, name] of pairs) { const k = (seen.get(name) ?? 0) + 1; seen.set(name, k); result.set(id, totals.get(name)! > 1 ? `${name} #${k}` : name); }
   };
   number(nodes.map(node => [node.root.workerId, display(node.title)]));
-  for (const node of nodes) number(node.members.filter(m => m !== node.root).map(m => [m.workerId, display(m.label)]));
+  for (const node of nodes) number(node.members.filter(m => m.workerId !== node.root.workerId).map(m => [m.workerId, display(m.label)]));
   return result;
 }
 export function named(node: Node, member: Snapshot, labels: Map<string, string>): string {
-  return member === node.root && member.label !== node.title ? display(member.label) : labels.get(member.workerId) ?? display(member.label);
+  return member.workerId === node.root.workerId && member.label !== node.title ? display(member.label) : labels.get(member.workerId) ?? display(member.label);
 }
 const tones = ["text", "muted", "dim", "dim", "dim"] as const;
 interface Row { prefix: string; mark: Mark; cells: string[]; detail: Mark }
@@ -114,7 +115,7 @@ export function panelLines(workers: Snapshot[], width: number, now = Date.now(),
     const agent = (m: Snapshot, name: string) => { const value = agents.get(m.runId) ?? ""; return name.startsWith(value) ? "" : value; };
     if (members.length === 1) {
       const [member] = members, name = named(node, member, labels);
-      const single = row("", member, member === node.root ? name : `${title} › ${name}`, agent(member, name), now, cost(node));
+      const single = row("", member, member.workerId === node.root.workerId ? name : `${title} › ${name}`, agent(member, name), now, cost(node));
       singles.push(single);
       return { rank, count: 1, single };
     }

@@ -188,7 +188,7 @@ export class Inspector {
     return body.map(l => fit(l, width));
   }
   private pane(worker: Snapshot, width: number, rows: number, now: number): string[] {
-    const nodes = tree(this.manager.status(), this.manager.history()), node = nodes.find(n => n.members.includes(worker));
+    const nodes = tree(this.manager.status(), this.manager.history()), node = nodes.find(n => n.members.some(m => m.workerId === worker.workerId));
     const name = node ? named(node, worker, names(nodes)) : display(worker.label), agent = display(this.manager.history().find(s => s.runId === worker.runId)?.agent ?? "");
     const spent = (worker.result?.usage ?? worker.usage)?.cost.total ?? 0;
     const head = [this.theme.fg("accent", display([name, ...(name.startsWith(agent) ? [] : [agent]), worker.state, duration(elapsed(worker, now)), ...(spent ? [`$${spent.toFixed(2)}`] : [])].join(" · ")))];
