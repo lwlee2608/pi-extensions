@@ -71,42 +71,69 @@ function detail(worker: Snapshot): Mark {
   if (reminded(worker)) return ["warning", `saved conversation${worker.questions?.some(q => q.state === "cancelled") ? "; pending questions cancelled" : ""} · /subagents → c`];
   return ["dim", active.includes(worker.state) ? [worker.activity, line(worker.output, true)].filter(Boolean).join(" · ") : line(worker.output, false) || worker.activity];
 }
-function group(node: Node, members: Snapshot[], agents: Map<string, string>, now: number, theme: Paint): string[] {
-  const total = cost(node), [color, symbol] = icon([...members].sort(byState)[0], now);
-  const head = `${theme.fg(color, symbol)} ${theme.fg("accent", display(node.title))} ${theme.fg("dim", `· ${[duration(span(node, now)), ...(total ? [`$${total.toFixed(2)}`] : [])].join(" · ")}`)}`;
-  const cells = members.map(m => {
-    const agent = display(agents.get(m.runId) ?? ""), label = display(m.label);
-    return [label === node.title || label === agent ? "" : truncateToWidth(label, 32, "…"), agent, duration(elapsed(m, now)), m.context ? `ctx ${tokens(m.context)}` : ""];
-  });
-  const widths = cells[0].map((_, j) => Math.max(...cells.map(c => visibleWidth(c[j]))));
-  const tones = ["text", "muted", "dim", "dim"] as const;
-  return [head, ...members.map((member, i) => {
-    const [mc, ms] = icon(member, now), [tone, text] = detail(member);
-    const cols = cells[i].flatMap((cell, j) => {
+export function names(nodes: Node[]): Map<string, string> {
+  const result = new Map<string, string>();
+  const number = (pairs: [string, string][]) => {
+    const totals = new Map<string, number>(), seen = new Map<string, number>();
+    for (const [, name] of pairs) totals.set(name, (totals.get(name) ?? 0) + 1);
+    for (const [id, name] of pairs) { const k = (seen.get(name) ?? 0) + 1; seen.set(name, k); result.set(id, totals.get(name)! > 1 ? `${name} #${k}` : name); }
+  };
+  number(nodes.map(node => [node.root.workerId, display(node.title)]));
+  for (const node of nodes) number(node.members.filter(m => m !== node.root).map(m => [m.workerId, display(m.label)]));
+  return result;
+}
+export function named(node: Node, member: Snapshot, labels: Map<string, string>): string {
+  return member === node.root && member.label !== node.title ? display(member.label) : labels.get(member.workerId) ?? display(member.label);
+}
+const tones = ["text", "muted", "dim", "dim", "dim"] as const;
+interface Row { prefix: string; mark: Mark; cells: string[]; detail: Mark }
+function row(prefix: string, worker: Snapshot, name: string, agent: string, now: number, total = 0): Row {
+  return { prefix, mark: icon(worker, now), detail: detail(worker),
+    cells: [truncateToWidth(name, 32, "…"), agent, duration(elapsed(worker, now)), worker.context ? `ctx ${tokens(worker.context)}` : "", total ? `$${total.toFixed(2)}` : ""] };
+}
+function table(rows: Row[], theme: Paint): string[] {
+  const widths = tones.map((_, j) => Math.max(0, ...rows.map(r => visibleWidth(r.cells[j]))));
+  return rows.map(r => {
+    const cols = r.cells.flatMap((cell, j) => {
       const space = " ".repeat(widths[j] - visibleWidth(cell));
       return widths[j] ? [theme.fg(tones[j], j === 2 ? space + cell : cell + space)] : [];
     });
-    return `${theme.fg("dim", i === members.length - 1 ? "  └ " : "  ├ ")}${theme.fg(mc, ms)} ${[...cols, theme.fg(tone, display(text))].join("  ")}`;
-  })];
+    return `${r.prefix}${theme.fg(r.mark[0], r.mark[1])} ${[...cols, theme.fg(r.detail[0], display(r.detail[1]))].join("  ")}`;
+  });
 }
 export function panelLines(workers: Snapshot[], width: number, now = Date.now(), theme: Paint = plain, steps: Step[] = []): string[] {
   if (width < 1) return [];
-  const agents = new Map(steps.map(s => [s.runId, s.agent]));
-  const groups = tree(workers, steps).flatMap(node => {
+  const agents = new Map(steps.map(s => [s.runId, display(s.agent)])), nodes = tree(workers, steps), labels = names(nodes);
+  const groups = nodes.flatMap(node => {
     const members = node.members.filter(w => shown(w, now));
     return members.length ? [{ node, members, rank: Math.min(...members.map(m => order[m.state])) }] : [];
   });
-  const queued = groups.filter(g => g.members.every(m => m.state === "queued"));
-  const entries = groups.filter(g => !queued.includes(g)).map(g => ({ rank: g.rank, count: 1, lines: group(g.node, g.members, agents, now, theme) }));
-  if (queued.length) entries.push({ rank: order.queued, count: queued.length, lines: [theme.fg("dim", display(`○ ${queued.length} queued: ${queued.map(g => g.node.title).join(", ")}`))] });
-  const rows: string[] = [];
+  const queued = groups.filter(g => g.members.every(m => m.state === "queued")), singles: Row[] = [];
+  const entries = groups.filter(g => !queued.includes(g)).map(({ node, members, rank }) => {
+    const title = labels.get(node.root.workerId)!;
+    const agent = (m: Snapshot, name: string) => { const value = agents.get(m.runId) ?? ""; return name.startsWith(value) ? "" : value; };
+    if (members.length === 1) {
+      const [member] = members, name = named(node, member, labels);
+      const single = row("", member, member === node.root ? name : `${title} › ${name}`, agent(member, name), now, cost(node));
+      singles.push(single);
+      return { rank, count: 1, single };
+    }
+    const total = cost(node), [color, symbol] = icon([...members].sort(byState)[0], now);
+    const head = `${theme.fg(color, symbol)} ${theme.fg("accent", title)} ${theme.fg("dim", `· ${[duration(span(node, now)), ...(total ? [`$${total.toFixed(2)}`] : [])].join(" · ")}`)}`;
+    const rows = members.map((m, i) => { const name = named(node, m, labels); return row(theme.fg("dim", i === members.length - 1 ? "  └ " : "  ├ "), m, name === title ? "" : name, agent(m, name === title ? "" : name), now); });
+    return { rank, count: 1, lines: [head, ...table(rows, theme)] };
+  });
+  const aligned = new Map(table(singles, theme).map((text, i) => [singles[i], text]));
+  if (queued.length) entries.push({ rank: order.queued, count: queued.length, lines: [theme.fg("dim", `○ ${queued.length} queued: ${queued.map(g => labels.get(g.node.root.workerId)).join(", ")}`)] });
+  const lines: string[] = [];
   let hidden = 0;
   for (const entry of entries.sort((a, b) => a.rank - b.rank)) {
-    if (hidden || (rows.length && rows.length + entry.lines.length > budget)) hidden += entry.count;
-    else rows.push(...entry.lines);
+    const text = entry.single ? [aligned.get(entry.single)!] : entry.lines!;
+    if (hidden || (lines.length && lines.length + text.length > budget)) hidden += entry.count;
+    else lines.push(...text);
   }
-  if (hidden) rows.push(theme.fg("muted", `+${hidden} more · /subagents`));
-  return rows.map(row => truncateToWidth(row, width));
+  if (hidden) lines.push(theme.fg("muted", `+${hidden} more · /subagents`));
+  return lines.map(line => truncateToWidth(line, width));
 }
 export function attachPanel(manager: Manager, ui: ExtensionUIContext): () => void {
   let render: (() => void) | undefined;

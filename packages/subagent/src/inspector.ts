@@ -2,7 +2,7 @@ import { open } from "node:fs/promises";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, Input, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { Manager, Snapshot } from "./manager.ts";
-import { active, byState, display, duration, elapsed, icon, reminded, tree } from "./panel.ts";
+import { active, byState, display, duration, elapsed, icon, named, names, reminded, tree } from "./panel.ts";
 
 const prefix = "Delegated input (literal task or guidance):\n\n";
 function first(text: string): string { return text.trim().split("\n")[0] ?? ""; }
@@ -173,11 +173,12 @@ export class Inspector {
       if (selected) chosen = lines.length;
       lines.push(`${selected ? this.theme.fg("accent", "▸") : " "} ${indent}${this.theme.fg(color, symbol)} ${selected ? this.theme.fg("accent", label) : label} ${this.theme.fg("dim", time)}`);
     };
-    for (const node of tree(this.manager.status(), this.manager.history())) {
-      if (node.members.length === 1) { row(node.members[0], node.title, ""); continue; }
-      const [color, symbol] = icon([...node.members].sort(byState)[0], now);
-      lines.push(`  ${this.theme.fg(color, symbol)} ${display(node.title)}`);
-      for (const member of node.members) row(member, member.label === node.title ? agents.get(member.runId) ?? member.label : member.label, "  ");
+    const nodes = tree(this.manager.status(), this.manager.history()), labels = names(nodes);
+    for (const node of nodes) {
+      if (node.members.length === 1) { row(node.members[0], named(node, node.members[0], labels), ""); continue; }
+      const [color, symbol] = icon([...node.members].sort(byState)[0], now), title = labels.get(node.root.workerId)!;
+      lines.push(`  ${this.theme.fg(color, symbol)} ${title}`);
+      for (const member of node.members) { const name = named(node, member, labels); row(member, name === title ? agents.get(member.runId) ?? name : name, "  "); }
     }
     if (chosen < this.listOffset) this.listOffset = chosen;
     else if (chosen >= this.listOffset + rows) this.listOffset = chosen - rows + 1;
@@ -187,8 +188,10 @@ export class Inspector {
     return body.map(l => fit(l, width));
   }
   private pane(worker: Snapshot, width: number, rows: number, now: number): string[] {
-    const agent = this.manager.history().find(s => s.runId === worker.runId)?.agent, spent = (worker.result?.usage ?? worker.usage)?.cost.total ?? 0;
-    const head = [this.theme.fg("accent", display([worker.label, ...(agent ? [agent] : []), worker.state, duration(elapsed(worker, now)), ...(spent ? [`$${spent.toFixed(2)}`] : [])].join(" · ")))];
+    const nodes = tree(this.manager.status(), this.manager.history()), node = nodes.find(n => n.members.includes(worker));
+    const name = node ? named(node, worker, names(nodes)) : display(worker.label), agent = display(this.manager.history().find(s => s.runId === worker.runId)?.agent ?? "");
+    const spent = (worker.result?.usage ?? worker.usage)?.cost.total ?? 0;
+    const head = [this.theme.fg("accent", display([name, ...(name.startsWith(agent) ? [] : [agent]), worker.state, duration(elapsed(worker, now)), ...(spent ? [`$${spent.toFixed(2)}`] : [])].join(" · ")))];
     const question = worker.questions?.find(q => q.state === "pending"), error = worker.error ?? worker.result?.error, running = active.includes(worker.state);
     if (question) head.push(this.theme.fg("warning", display(`? asks: ${question.question} · r reply`)));
     if (error) head.push(this.theme.fg("error", display(`Error: ${error}`)));
