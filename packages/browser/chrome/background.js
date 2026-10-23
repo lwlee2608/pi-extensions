@@ -62,9 +62,9 @@ const handlers = {
 
   async click({ tabId, ref }) {
     const tab = await piTab(tabId);
-    const at = await point(tab.id, ref);
+    await overlay(tab.id, "aim", await point(tab.id, ref));
+    const at = await center(tab.id, ref);
     if (!at) throw new Error(`Ref [${ref}] has no visible box to click.`);
-    await overlay(tab.id, "aim", at);
     await guarded(tab.id, async () => {
       await cdp(tab.id, "Input.dispatchMouseEvent", { type: "mousePressed", ...at, button: "left", clickCount: 1 });
       await cdp(tab.id, "Input.dispatchMouseEvent", { type: "mouseReleased", ...at, button: "left", clickCount: 1 });
@@ -378,6 +378,10 @@ async function node(tabId, method, ref) {
 
 async function point(tabId, ref) {
   await node(tabId, "DOM.scrollIntoViewIfNeeded", ref);
+  return center(tabId, ref);
+}
+
+async function center(tabId, ref) {
   const { quads } = await node(tabId, "DOM.getContentQuads", ref);
   if (!quads?.length) return undefined;
   const [quad] = quads;
@@ -385,12 +389,16 @@ async function point(tabId, ref) {
 }
 
 function overlay(tabId, command, at) {
+  const send = (method, params) => attached.has(tabId) && !dialogs.has(tabId)
+    ? chrome.debugger.sendCommand({ tabId }, method, params)
+    : Promise.reject(new Error(`Tab ${tabId} was released.`));
   const run = async () => {
-    const { frameTree } = await cdp(tabId, "Page.getFrameTree");
-    const { executionContextId } = await cdp(tabId, "Page.createIsolatedWorld", { frameId: frameTree.frame.id, worldName: OVERLAY_WORLD });
-    await cdp(tabId, "Runtime.addBinding", { name: STOP_BINDING, executionContextName: OVERLAY_WORLD });
+    await attach(tabId);
+    const { frameTree } = await send("Page.getFrameTree");
+    const { executionContextId } = await send("Page.createIsolatedWorld", { frameId: frameTree.frame.id, worldName: OVERLAY_WORLD });
+    await send("Runtime.addBinding", { name: STOP_BINDING, executionContextName: OVERLAY_WORLD });
     const args = JSON.stringify([command, at ?? null, { move: CURSOR_MOVE_MS, idle: OVERLAY_IDLE_MS, binding: STOP_BINDING }]);
-    await cdp(tabId, "Runtime.evaluate", { contextId: executionContextId, expression: `(${paint})(...${args})`, awaitPromise: true });
+    await send("Runtime.evaluate", { contextId: executionContextId, expression: `(${paint})(...${args})`, awaitPromise: true });
   };
   const wait = new Promise(resolve => setTimeout(resolve, OVERLAY_WAIT_MS));
   return Promise.race([run().catch(() => {}), wait]);
