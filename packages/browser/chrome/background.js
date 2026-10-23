@@ -7,6 +7,11 @@ const SCREENSHOT_QUALITY = 80;
 const LOG_LIMIT = 200;
 const TEXT_LIMIT = 1_000;
 const EVAL_TIMEOUT_MS = 10_000;
+const CURSOR_MOVE_MS = 250;
+const OVERLAY_IDLE_MS = 120_000;
+const OVERLAY_WAIT_MS = 1_000;
+const OVERLAY_WORLD = "pi-overlay";
+const STOP_BINDING = "piStop";
 
 const SKIP = new Set(["generic", "none", "paragraph", "InlineTextBox", "LineBreak", "RootWebArea"]);
 const INTERACTIVE = new Set(["button", "checkbox", "combobox", "link", "listbox", "menuitem", "menuitemcheckbox", "menuitemradio",
@@ -32,6 +37,7 @@ const handlers = {
     const tab = newTab || (tabId === undefined && !(await piTabs()).length) ? await openTab() : await piTab(tabId);
     const outcome = await load(tab.id, url);
     if (outcome === "gone") throw new Error(`Tab ${tab.id} closed or detached while loading ${url}.`);
+    await overlay(tab.id, "show");
     const loaded = await chrome.tabs.get(tab.id);
     const committed = loaded.url === "about:blank" ? "" : loaded.url;
     return { url: committed || loaded.pendingUrl || loaded.url || "", text: `${describe(committed ? loaded : { ...loaded, title: "" })}${outcome === "timeout" ? " (still loading)" : ""}` };
@@ -39,6 +45,7 @@ const handlers = {
 
   async read({ tabId }) {
     const tab = await piTab(tabId);
+    await overlay(tab.id, "show");
     const { frameTree } = await cdp(tab.id, "Page.getFrameTree");
     const lines = [describe(tab)];
     const frames = new Map();
@@ -55,21 +62,21 @@ const handlers = {
 
   async click({ tabId, ref }) {
     const tab = await piTab(tabId);
-    await node(tab.id, "DOM.scrollIntoViewIfNeeded", ref);
-    const { quads } = await node(tab.id, "DOM.getContentQuads", ref);
-    if (!quads?.length) throw new Error(`Ref [${ref}] has no visible box to click.`);
-    const x = (quads[0][0] + quads[0][2] + quads[0][4] + quads[0][6]) / 4;
-    const y = (quads[0][1] + quads[0][3] + quads[0][5] + quads[0][7]) / 4;
+    const at = await point(tab.id, ref);
+    if (!at) throw new Error(`Ref [${ref}] has no visible box to click.`);
+    await overlay(tab.id, "aim", at);
     await guarded(tab.id, async () => {
-      await cdp(tab.id, "Input.dispatchMouseEvent", { type: "mousePressed", x, y, button: "left", clickCount: 1 });
-      await cdp(tab.id, "Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", clickCount: 1 });
+      await cdp(tab.id, "Input.dispatchMouseEvent", { type: "mousePressed", ...at, button: "left", clickCount: 1 });
+      await cdp(tab.id, "Input.dispatchMouseEvent", { type: "mouseReleased", ...at, button: "left", clickCount: 1 });
     });
+    overlay(tab.id, "show");
     return acted(tab.id, `Clicked [${ref}]`);
   },
 
   async type({ tabId, ref, text }) {
     if (typeof text !== "string") throw new Error("type needs text.");
     const tab = await piTab(tabId);
+    await overlay(tab.id, "show", await point(tab.id, ref).catch(() => undefined));
     await node(tab.id, "DOM.focus", ref);
     await guarded(tab.id, () => cdp(tab.id, "Input.insertText", { text }));
     return acted(tab.id, `Typed ${text.length} characters into [${ref}]`);
@@ -81,6 +88,7 @@ const handlers = {
     const mac = (await chrome.runtime.getPlatformInfo()).os === "mac";
     const presses = combos.map(combo => parseCombo(combo, mac));
     const tab = await piTab(tabId);
+    await overlay(tab.id, "show", ref === undefined ? undefined : await point(tab.id, ref).catch(() => undefined));
     if (ref !== undefined) await node(tab.id, "DOM.focus", ref);
     await guarded(tab.id, async () => { for (const press of presses) await pressKeys(tab.id, press); });
     return acted(tab.id, `Pressed ${combos.join(" ")}`);
@@ -88,7 +96,7 @@ const handlers = {
 
   async scroll({ tabId, ref }) {
     const tab = await piTab(tabId);
-    await node(tab.id, "DOM.scrollIntoViewIfNeeded", ref);
+    await overlay(tab.id, "show", await point(tab.id, ref));
     return acted(tab.id, `Scrolled [${ref}] into view`);
   },
 
@@ -97,7 +105,8 @@ const handlers = {
     await chrome.tabs.update(tab.id, { active: true });
     const { cssVisualViewport: css, visualViewport: device } = await cdp(tab.id, "Page.getLayoutMetrics");
     const clip = { x: css.pageX, y: css.pageY, width: css.clientWidth, height: css.clientHeight, scale: css.clientWidth / device.clientWidth };
-    const { data } = await cdp(tab.id, "Page.captureScreenshot", { format: "jpeg", quality: SCREENSHOT_QUALITY, clip });
+    await overlay(tab.id, "conceal");
+    const { data } = await cdp(tab.id, "Page.captureScreenshot", { format: "jpeg", quality: SCREENSHOT_QUALITY, clip }).finally(() => overlay(tab.id, "show"));
     return { ...(await acted(tab.id, "Screenshot")), data };
   },
 
@@ -136,6 +145,11 @@ const handlers = {
     } finally {
       chrome.debugger.sendCommand({ tabId: tab.id }, "Runtime.releaseObjectGroup", { objectGroup }).catch(() => {});
     }
+  },
+
+  async idle() {
+    await Promise.all([...attached].map(tabId => overlay(tabId, "hide")));
+    return {};
   },
 };
 
@@ -362,6 +376,109 @@ async function node(tabId, method, ref) {
   }
 }
 
+async function point(tabId, ref) {
+  await node(tabId, "DOM.scrollIntoViewIfNeeded", ref);
+  const { quads } = await node(tabId, "DOM.getContentQuads", ref);
+  if (!quads?.length) return undefined;
+  const [quad] = quads;
+  return { x: (quad[0] + quad[2] + quad[4] + quad[6]) / 4, y: (quad[1] + quad[3] + quad[5] + quad[7]) / 4 };
+}
+
+function overlay(tabId, command, at) {
+  const run = async () => {
+    const { frameTree } = await cdp(tabId, "Page.getFrameTree");
+    const { executionContextId } = await cdp(tabId, "Page.createIsolatedWorld", { frameId: frameTree.frame.id, worldName: OVERLAY_WORLD });
+    await cdp(tabId, "Runtime.addBinding", { name: STOP_BINDING, executionContextName: OVERLAY_WORLD });
+    const args = JSON.stringify([command, at ?? null, { move: CURSOR_MOVE_MS, idle: OVERLAY_IDLE_MS, binding: STOP_BINDING }]);
+    await cdp(tabId, "Runtime.evaluate", { contextId: executionContextId, expression: `(${paint})(...${args})`, awaitPromise: true });
+  };
+  const wait = new Promise(resolve => setTimeout(resolve, OVERLAY_WAIT_MS));
+  return Promise.race([run().catch(() => {}), wait]);
+}
+
+function paint(command, at, { move, idle, binding }) {
+  let ui = globalThis.piOverlay;
+  if (!ui?.host.isConnected) {
+    if (command === "hide" || command === "conceal") return;
+    ui = globalThis.piOverlay = build();
+  }
+  clearTimeout(ui.timer);
+  if (command === "hide") return ui.remove();
+  ui.timer = setTimeout(ui.remove, idle);
+  ui.frame.classList.toggle("concealed", command === "conceal");
+  ui.stop.style.pointerEvents = command === "aim" ? "none" : "";
+  const moved = at && (at.x !== ui.x || at.y !== ui.y);
+  if (moved) {
+    ui.x = at.x;
+    ui.y = at.y;
+    ui.cursor.style.transform = `translate(${at.x}px, ${at.y}px)`;
+  }
+  const arrived = moved && !document.hidden ? new Promise(resolve => setTimeout(resolve, move)) : Promise.resolve();
+  return command === "aim" ? arrived.then(ui.ripple) : arrived;
+
+  function build() {
+    const host = document.createElement("pi-overlay");
+    host.setAttribute("aria-hidden", "true");
+    host.style.cssText = "all: initial !important; position: fixed !important; inset: 0 !important; z-index: 2147483647 !important; pointer-events: none !important;";
+    const root = host.attachShadow({ mode: "closed" });
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(`
+      .frame { opacity: 0; transition: opacity 300ms; }
+      .frame.on { opacity: 1; }
+      .frame.concealed { display: none; }
+      .glow { position: fixed; inset: 0; animation: pulse 2s ease-in-out infinite;
+        box-shadow: inset 0 0 15px rgba(59, 130, 246, 0.7), inset 0 0 25px rgba(59, 130, 246, 0.5), inset 0 0 35px rgba(59, 130, 246, 0.2); }
+      .cursor { position: fixed; top: 0; left: 0; transition: transform ${move}ms cubic-bezier(0.2, 0, 0, 1); }
+      .ring, .dot, .ripple { position: absolute; box-sizing: border-box; border-radius: 50%; }
+      .ring { width: 28px; height: 28px; margin: -14px; border: 2px solid rgba(59, 130, 246, 0.55); background: rgba(59, 130, 246, 0.12);
+        box-shadow: 0 0 12px rgba(59, 130, 246, 0.6); }
+      .dot { width: 10px; height: 10px; margin: -5px; background: #3b82f6; box-shadow: 0 0 0 2px #fff, 0 0 8px rgba(59, 130, 246, 0.9); }
+      .ripple { width: 28px; height: 28px; margin: -14px; border: 2px solid #3b82f6; animation: ripple 500ms ease-out forwards; }
+      button { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); display: inline-flex; align-items: center; gap: 10px;
+        padding: 10px 16px; border: 1px solid rgba(59, 130, 246, 0.35); border-radius: 12px; background: #fff; color: #111827;
+        font: 600 14px/1 system-ui, sans-serif; cursor: pointer; pointer-events: auto;
+        box-shadow: 0 4px 14px rgba(59, 130, 246, 0.25), 0 20px 40px rgba(59, 130, 246, 0.15); }
+      button:hover { background: #eff6ff; }
+      button::before { content: ""; width: 10px; height: 10px; border-radius: 2px; background: #3b82f6; }
+      @keyframes pulse { 0%, 100% { opacity: 0.6; } 50% { opacity: 1; } }
+      @keyframes ripple { to { transform: scale(2.4); opacity: 0; } }
+      @media (prefers-reduced-motion: reduce) { .glow { animation: none; } .ripple { display: none; } .cursor { transition: none; } }
+    `);
+    root.adoptedStyleSheets = [sheet];
+    const make = (tag, className, parent) => parent.appendChild(Object.assign(document.createElement(tag), { className }));
+    const frame = make("div", "frame", root);
+    make("div", "glow", frame);
+    const cursor = make("div", "cursor", frame);
+    make("div", "ring", cursor);
+    make("div", "dot", cursor);
+    const stop = make("button", "", frame);
+    stop.textContent = "Stop pi";
+    stop.tabIndex = -1;
+    const x = innerWidth / 2;
+    const y = innerHeight / 2;
+    cursor.style.transform = `translate(${x}px, ${y}px)`;
+    document.documentElement.appendChild(host);
+    host.getBoundingClientRect();
+    frame.classList.add("on");
+    const self = {
+      host, frame, cursor, stop, x, y,
+      ripple: () => make("div", "ripple", cursor).addEventListener("animationend", event => event.target.remove()),
+      remove: () => {
+        clearTimeout(self.timer);
+        if (globalThis.piOverlay === self) delete globalThis.piOverlay;
+        frame.classList.remove("on");
+        setTimeout(() => host.remove(), 300);
+      },
+    };
+    stop.addEventListener("click", event => {
+      if (!event.isTrusted) return;
+      globalThis[binding]?.("");
+      self.remove();
+    });
+    return self;
+  }
+}
+
 async function reply(tabId, text) {
   const tab = await chrome.tabs.get(tabId);
   return { url: tab.url || tab.pendingUrl || "", text };
@@ -439,6 +556,7 @@ function snapshot(nodes, lines, found) {
 }
 
 async function detachAll() {
+  await Promise.all([...attached].map(tabId => overlay(tabId, "hide")));
   attached.clear();
   refs.clear();
   logs.clear();
@@ -455,6 +573,7 @@ chrome.debugger.onEvent.addListener(({ tabId }, method, params) => {
   else if (method === "Page.frameDetached") refs.get(tabId)?.delete(params.frameId);
   else if (method === "Page.javascriptDialogOpening") dialogs.set(tabId, params.type);
   else if (method === "Page.javascriptDialogClosed") dialogs.delete(tabId);
+  else if (method === "Runtime.bindingCalled" && params.name === STOP_BINDING && socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ event: "stop" }));
 });
 chrome.debugger.onDetach.addListener(({ tabId }, reason) => {
   attached.delete(tabId);
@@ -468,7 +587,13 @@ chrome.debugger.onDetach.addListener(({ tabId }, reason) => {
 chrome.tabs.onUpdated.addListener(async (tabId, { groupId }) => {
   if (groupId === undefined || !attached.has(tabId)) return;
   const group = groupId === chrome.tabGroups.TAB_GROUP_ID_NONE ? undefined : await chrome.tabGroups.get(groupId);
-  if (group?.title !== GROUP) { attached.delete(tabId); refs.delete(tabId); logs.delete(tabId); dialogs.delete(tabId); chrome.debugger.detach({ tabId }).catch(() => {}); }
+  if (group?.title === GROUP) return;
+  await overlay(tabId, "hide");
+  attached.delete(tabId);
+  refs.delete(tabId);
+  logs.delete(tabId);
+  dialogs.delete(tabId);
+  chrome.debugger.detach({ tabId }).catch(() => {});
 });
 chrome.alarms.create("connect", { periodInMinutes: ALARM_MINUTES });
 chrome.alarms.onAlarm.addListener(connect);

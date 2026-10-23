@@ -47,6 +47,17 @@ test("a call waits for Chrome, round-trips results and errors", async () => {
   await assert.rejects(server.call("fail", {}), /boom/);
 });
 
+test("a stop event from Chrome reaches onStop", async () => {
+  const port = await freePort();
+  let stops = 0;
+  const server = bridge(port, { onStop: () => stops++ });
+  await server.listen();
+  const socket = await chrome(port);
+  socket.send(JSON.stringify({ event: "stop" }));
+  assert.deepEqual(await server.call("echo", {}), { method: "echo", params: {} });
+  assert.equal(stops, 1);
+});
+
 test("a call fails when Chrome never connects", async () => {
   const server = bridge(await freePort(), { connectTimeout: 20 });
   await assert.rejects(server.call("echo", {}), /not connected/);

@@ -102,6 +102,8 @@ The tool only exists in interactive sessions. Print mode, JSON/RPC mode, and sub
 
 Chrome shows a "Pi Browser started debugging this browser" bar while the agent is attached. It goes away when Pi exits. Clicking **Cancel** on the bar takes control away from the agent: Pi Browser refuses every action until you click its toolbar icon.
 
+A tab the agent is using glows blue at its edges. A blue dot slides to each element the agent clicks, types into, or scrolls to, and pulses on a click. **Stop pi** at the bottom aborts the agent's turn. All three disappear when the turn ends and are left out of screenshots. The page's own scripts can't see or press them.
+
 Once the agent uses `console` on a tab, Chrome reports that tab's console to the debugger, which some sites detect as automation and answer with a challenge. Other actions don't turn this on.
 
 ## Safety

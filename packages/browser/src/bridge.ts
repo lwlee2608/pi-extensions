@@ -16,6 +16,7 @@ export interface BridgeOptions {
   callTimeout?: number;
   requestTimeout?: number;
   onRelease?: () => void;
+  onStop?: () => void;
 }
 
 export interface Owner {
@@ -157,8 +158,9 @@ export class Bridge {
   }
 
   private receive(raw: string): void {
-    let message: { id?: number; result?: unknown; error?: string };
+    let message: { id?: number; result?: unknown; error?: string; event?: string };
     try { message = JSON.parse(raw); } catch { return; }
+    if (message.event === "stop") { this.options.onStop?.(); return; }
     const call = message.id === undefined ? undefined : this.pending.get(message.id);
     if (!call) return;
     if (message.error === undefined) call.resolve(message.result);
