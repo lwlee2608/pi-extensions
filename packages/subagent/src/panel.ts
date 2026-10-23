@@ -8,8 +8,8 @@ export function display(text: string): string {
 }
 const spinner = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
 const linger = 5000;
-const active = ["working", "blocked", "queued"];
-function reminded(worker: Readonly<Snapshot>): boolean { return !!worker.recoverable && !worker.stopped; }
+export const active = ["working", "blocked", "queued"];
+export function reminded(worker: Readonly<Snapshot>): boolean { return !!worker.recoverable && !worker.stopped; }
 function shown(worker: Readonly<Snapshot>, now: number): boolean {
   return active.includes(worker.state) || reminded(worker) || (!!worker.result && now - worker.result.endedAt < linger);
 }
@@ -27,16 +27,15 @@ export function line(text: string, last: boolean): string {
   return (last ? lines.at(-1) : lines[0]) ?? "";
 }
 type Mark = [Parameters<Paint["fg"]>[0], string];
-export function mark(state: Snapshot["state"], outcome: Outcome | undefined, now: number): Mark {
+function mark(state: Snapshot["state"], outcome: Outcome | undefined, now: number): Mark {
   if (state === "working") return ["accent", spinner[Math.floor(now / 100) % spinner.length]];
   if (state === "blocked") return ["warning", "?"];
   if (state === "queued") return ["dim", "○"];
   return outcome === "completed" ? ["success", "✓"] : outcome === "failed" ? ["error", "✗"] : outcome === "interrupted" ? ["warning", "⊘"] : ["dim", "○"];
 }
-function icon(worker: Snapshot, now: number): Mark {
+export function icon(worker: Snapshot, now: number): Mark {
   return reminded(worker) && !active.includes(worker.state) ? ["warning", "↻"] : mark(worker.state, worker.result?.outcome, now);
 }
-export function stepMark(step: Step, now: number): Mark { return mark(step.result ? "closed" : step.state, step.result?.outcome, now); }
 export interface Node { root: Snapshot; title: string; members: Snapshot[]; steps: Step[] }
 export function tree(workers: Snapshot[], steps: Step[]): Node[] {
   const byId = new Map(workers.map(w => [w.workerId, w])), nodes = new Map<string, Node>();
@@ -56,38 +55,57 @@ export function span(node: Node, now: number): number {
   const ends = [...node.steps, ...node.members].flatMap(r => r.result ? [r.result.endedAt] : []);
   return (node.members.some(m => active.includes(m.state)) || !ends.length ? now : Math.max(...ends)) - start;
 }
-export function stepCost(step: Step, worker?: Snapshot): number { return step.result ? step.result.usage.cost.total : worker?.usage?.cost.total ?? 0; }
+function stepCost(step: Step, worker?: Snapshot): number { return step.result ? step.result.usage.cost.total : worker?.usage?.cost.total ?? 0; }
 export function cost(node: Node): number {
   return node.steps.length ? node.steps.reduce((sum, s) => sum + stepCost(s, node.members.find(m => m.workerId === s.workerId)), 0)
     : node.members.reduce((sum, m) => sum + ((m.result?.usage ?? m.usage)?.cost.total ?? 0), 0);
 }
+const order = { blocked: 0, working: 1, queued: 2, idle: 3, closed: 4 };
+const budget = 8;
+export function byState(a: Snapshot, b: Snapshot): number { return order[a.state] - order[b.state] || b.startedAt - a.startedAt; }
+export function elapsed(worker: Snapshot, now: number): number { return (active.includes(worker.state) ? now : worker.result?.endedAt ?? now) - worker.startedAt; }
+function detail(worker: Snapshot): Mark {
+  const question = worker.questions?.find(q => q.state === "pending");
+  if (question) return ["warning", `asks: ${question.question} · /subagents → r`];
+  if (worker.error) return ["error", worker.error];
+  if (reminded(worker)) return ["warning", `saved conversation${worker.questions?.some(q => q.state === "cancelled") ? "; pending questions cancelled" : ""} · /subagents → c`];
+  return ["dim", active.includes(worker.state) ? [worker.activity, line(worker.output, true)].filter(Boolean).join(" · ") : line(worker.output, false) || worker.activity];
+}
+function group(node: Node, members: Snapshot[], agents: Map<string, string>, now: number, theme: Paint): string[] {
+  const total = cost(node), [color, symbol] = icon([...members].sort(byState)[0], now);
+  const head = `${theme.fg(color, symbol)} ${theme.fg("accent", display(node.title))} ${theme.fg("dim", `· ${[duration(span(node, now)), ...(total ? [`$${total.toFixed(2)}`] : [])].join(" · ")}`)}`;
+  const cells = members.map(m => {
+    const agent = display(agents.get(m.runId) ?? ""), label = display(m.label);
+    return [label === node.title || label === agent ? "" : truncateToWidth(label, 32, "…"), agent, duration(elapsed(m, now)), m.context ? `ctx ${tokens(m.context)}` : ""];
+  });
+  const widths = cells[0].map((_, j) => Math.max(...cells.map(c => visibleWidth(c[j]))));
+  const tones = ["text", "muted", "dim", "dim"] as const;
+  return [head, ...members.map((member, i) => {
+    const [mc, ms] = icon(member, now), [tone, text] = detail(member);
+    const cols = cells[i].flatMap((cell, j) => {
+      const space = " ".repeat(widths[j] - visibleWidth(cell));
+      return widths[j] ? [theme.fg(tones[j], j === 2 ? space + cell : cell + space)] : [];
+    });
+    return `${theme.fg("dim", i === members.length - 1 ? "  └ " : "  ├ ")}${theme.fg(mc, ms)} ${[...cols, theme.fg(tone, display(text))].join("  ")}`;
+  })];
+}
 export function panelLines(workers: Snapshot[], width: number, now = Date.now(), theme: Paint = plain, steps: Step[] = []): string[] {
   if (width < 1) return [];
-  const order = { blocked: 0, working: 1, queued: 2, idle: 3, closed: 4 };
-  const entries = tree(workers, steps).flatMap(node => {
-    const visible = node.members.filter(w => shown(w, now)).sort((a, b) => order[a.state] - order[b.state] || b.startedAt - a.startedAt);
-    return visible.length ? [{ node, lead: visible[0] }] : [];
-  }).sort((a, b) => order[a.lead.state] - order[b.lead.state]);
-  const rows = entries.slice(0, 4).flatMap(({ node, lead: worker }) => {
-    const total = cost(node);
-    const meta = [duration(span(node, now)), ...(worker.context ? [`ctx ${tokens(worker.context)}`] : []), ...(total ? [`$${total.toFixed(2)}`] : [])].join(" · ");
-    const [color, symbol] = icon(worker, now);
-    const head = `${theme.fg(color, symbol)} ${theme.fg("accent", display(node.title))} ${theme.fg("dim", `· ${meta}`)}`;
-    const parts = node.steps.map(step => { const [tone, mark] = stepMark(step, now), agent = display(step.agent); return { text: `${theme.fg(tone, mark)} ${theme.fg("muted", agent)}`, width: visibleWidth(`${mark} ${agent}`) }; });
-    const fits = (n: number) => parts.slice(-n).reduce((sum, p) => sum + p.width + 3, n < parts.length ? `+${parts.length - n}`.length + 3 : 0) <= width - visibleWidth(head);
-    let kept = parts.length;
-    while (kept > 1 && !fits(kept)) kept--;
-    const chain = parts.length > 1 ? `${theme.fg("dim", " · ")}${[...(kept < parts.length ? [theme.fg("dim", `+${parts.length - kept}`)] : []), ...parts.slice(-kept).map(p => p.text)].join(theme.fg("dim", " › "))}` : "";
-    const question = worker.questions?.find(q => q.state === "pending");
-    const running = active.includes(worker.state);
-    const [tone, detail] = question ? ["warning", `reply ${question.questionId}: ${question.question}`] as const
-      : worker.error ? ["error", worker.error] as const
-      : reminded(worker) ? ["warning", `recover ${worker.workerId} · saved conversation${worker.questions?.some(q => q.state === "cancelled") ? "; pending questions cancelled" : ""}`] as const
-      : ["muted", running ? [worker.activity, line(worker.output, true)].filter(Boolean).join(" · ") : line(worker.output, false) || worker.activity] as const;
-    return [`${head}${chain}`,
-      `${theme.fg("dim", "  └ ")}${theme.fg(tone, display(detail))}`];
+  const agents = new Map(steps.map(s => [s.runId, s.agent]));
+  const groups = tree(workers, steps).flatMap(node => {
+    const members = node.members.filter(w => shown(w, now));
+    return members.length ? [{ node, members, rank: Math.min(...members.map(m => order[m.state])) }] : [];
   });
-  if (entries.length > 4) rows.push(theme.fg("muted", `+${entries.length - 4} more workers · subagent status for details`));
+  const queued = groups.filter(g => g.members.every(m => m.state === "queued"));
+  const entries = groups.filter(g => !queued.includes(g)).map(g => ({ rank: g.rank, count: 1, lines: group(g.node, g.members, agents, now, theme) }));
+  if (queued.length) entries.push({ rank: order.queued, count: queued.length, lines: [theme.fg("dim", display(`○ ${queued.length} queued: ${queued.map(g => g.node.title).join(", ")}`))] });
+  const rows: string[] = [];
+  let hidden = 0;
+  for (const entry of entries.sort((a, b) => a.rank - b.rank)) {
+    if (hidden || (rows.length && rows.length + entry.lines.length > budget)) hidden += entry.count;
+    else rows.push(...entry.lines);
+  }
+  if (hidden) rows.push(theme.fg("muted", `+${hidden} more · /subagents`));
   return rows.map(row => truncateToWidth(row, width));
 }
 export function attachPanel(manager: Manager, ui: ExtensionUIContext): () => void {

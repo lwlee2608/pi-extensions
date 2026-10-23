@@ -1,9 +1,16 @@
 import { open } from "node:fs/promises";
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, Input, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
-import type { Manager, Snapshot, Step } from "./manager.ts";
-import { cost, display, duration, line, span, stepCost, stepMark, tree } from "./panel.ts";
+import type { Manager, Snapshot } from "./manager.ts";
+import { active, byState, display, duration, elapsed, icon, reminded, tree } from "./panel.ts";
 
+const prefix = "Delegated input (literal task or guidance):\n\n";
+function first(text: string): string { return text.trim().split("\n")[0] ?? ""; }
+function brief(args: unknown): string {
+  const values = args && typeof args === "object" ? args as Record<string, unknown> : {};
+  const main = ["command", "path", "pattern", "question", "url", "query"].map(key => values[key]).find(v => typeof v === "string") ?? Object.values(values).find(v => typeof v === "string");
+  return typeof main === "string" ? first(main) : "";
+}
 export async function transcriptTail(path: string): Promise<string> {
   const file = await open(path, "r");
   try {
@@ -13,13 +20,21 @@ export async function transcriptTail(path: string): Promise<string> {
     let text = buffer.subarray(0, bytesRead).toString("utf8");
     if (start) text = text.slice(text.indexOf("\n") + 1);
     const lines: string[] = start ? ["[Older output omitted here; full private transcript at the session path]"] : [];
-    for (const line of text.split("\n")) {
-      if (!line) continue;
+    for (const record of text.split("\n")) {
+      if (!record) continue;
       try {
-        const entry = JSON.parse(line), message = entry.message;
+        const entry = JSON.parse(record), message = entry.message;
         if (entry.type !== "message" || !message || message.role === "system") continue;
-        const content = typeof message.content === "string" ? message.content : Array.isArray(message.content) ? message.content.map((block: { type: string; text?: string; thinking?: string; name?: string; arguments?: unknown }) => block.type === "text" ? block.text : block.type === "thinking" ? "[thinking]" : block.type === "toolCall" ? `[${block.name}] ${JSON.stringify(block.arguments)}` : "[image]").join("\n") : "";
-        lines.push(`${message.role}${message.toolName ? ` (${message.toolName})` : ""}: ${content}${message.errorMessage ? `\nError: ${message.errorMessage}` : ""}`);
+        const blocks: { type: string; text?: string; name?: string; arguments?: unknown }[] = typeof message.content === "string" ? [{ type: "text", text: message.content }] : Array.isArray(message.content) ? message.content : [];
+        const body = blocks.filter(b => b.type === "text").map(b => b.text ?? "").join("\n");
+        if (message.role === "user") lines.push("Task", ...body.replace(prefix, "").split("\n").map(l => `  ${l}`));
+        else if (message.role === "toolResult") lines.push(`  ${message.isError ? "✗" : "✓"} ${first(body)}`.trimEnd());
+        else for (const block of blocks) {
+          if (block.type === "text") lines.push(block.text ?? "");
+          else if (block.type === "toolCall") lines.push(`● ${block.name} ${brief(block.arguments)}`.trimEnd());
+          else if (block.type === "image") lines.push("[image]");
+        }
+        if (message.errorMessage) lines.push(`Error: ${message.errorMessage}`);
       } catch { /* A live session can end in an incomplete record. */ }
     }
     return lines.join("\n").slice(-64 * 1024);
@@ -53,16 +68,16 @@ export class Inspector {
   private editing?: { input: Input; workerId: string; runId: string; kind: "task" | "steer" | "reply"; questionId?: string };
   private confirming?: string;
   private busy = false;
-  private flow = false;
-  private step?: string;
-  private flowOffset = 0;
+  private info = false;
+  private listOffset = 0;
   constructor(manager: Manager, theme: Pick<Theme, "fg">, render: () => void, height: () => number, done: () => void) {
     this.manager = manager; this.theme = theme; this.requestRender = render; this.height = height; this.done = done;
     this.unsubscribe = manager.onChange(() => this.update());
     this.update();
   }
+  private workers(): Snapshot[] { return tree(this.manager.status(), this.manager.history()).flatMap(node => node.members); }
   private worker(): Snapshot | undefined {
-    const workers = this.manager.status();
+    const workers = this.workers();
     const selected = workers.find(w => w.workerId === this.selected) ?? workers[0];
     this.selected = selected?.workerId;
     return selected;
@@ -117,14 +132,13 @@ export class Inspector {
       else if (matchesKey(data, "n")) { this.confirming = undefined; this.requestRender(); }
       return;
     }
-    if (this.flow) { this.flowInput(data); this.requestRender(); return; }
-    const workers = this.manager.status(), worker = this.worker();
+    const workers = this.workers(), worker = this.worker();
     if (!worker) return;
     const direction = matchesKey(data, "up") ? -1 : matchesKey(data, "down") ? 1 : 0;
     if (direction) {
       const index = workers.findIndex(w => w.workerId === worker.workerId);
       this.select(workers[Math.max(0, Math.min(workers.length - 1, index + direction))].workerId);
-    } else if (matchesKey(data, "f")) { this.flow = true; this.step = worker.runId; }
+    } else if (matchesKey(data, "i")) this.info = !this.info;
     else if (matchesKey(data, "pageUp")) { this.follow = false; this.offset = Math.max(0, this.offset - this.capacity); }
     else if (matchesKey(data, "pageDown")) this.offset += this.capacity;
     else if (matchesKey(data, "end")) this.follow = true;
@@ -146,69 +160,68 @@ export class Inspector {
     this.requestRender();
   }
   private select(workerId: string): void {
+    if (workerId === this.selected) return;
     this.selected = workerId;
     this.follow = true; this.offset = 0; this.transcript = "Loading…"; this.generation++; this.update();
   }
-  private flowInput(data: string): void {
-    const steps = tree(this.manager.status(), this.manager.history()).flatMap(n => n.steps);
-    const index = steps.findIndex(s => s.runId === this.step);
-    const direction = matchesKey(data, "up") ? -1 : matchesKey(data, "down") ? 1 : 0;
-    if (direction && steps.length) this.step = steps[Math.max(0, Math.min(steps.length - 1, index + direction))].runId;
-    else if (matchesKey(data, "enter") || matchesKey(data, "f")) {
-      this.flow = false;
-      const target = steps[index]?.workerId;
-      if (target && target !== this.selected) this.select(target);
+  private list(width: number, rows: number, now: number): string[] {
+    const agents = new Map(this.manager.history().map(s => [s.runId, s.agent])), lines: string[] = [];
+    let chosen = 0;
+    const row = (worker: Snapshot, name: string, indent: string) => {
+      const selected = worker.workerId === this.selected, [color, symbol] = icon(worker, now), time = duration(elapsed(worker, now));
+      const label = truncateToWidth(display(name), Math.max(0, width - indent.length - visibleWidth(time) - 5), "…", true);
+      if (selected) chosen = lines.length;
+      lines.push(`${selected ? this.theme.fg("accent", "▸") : " "} ${indent}${this.theme.fg(color, symbol)} ${selected ? this.theme.fg("accent", label) : label} ${this.theme.fg("dim", time)}`);
+    };
+    for (const node of tree(this.manager.status(), this.manager.history())) {
+      if (node.members.length === 1) { row(node.members[0], node.title, ""); continue; }
+      const [color, symbol] = icon([...node.members].sort(byState)[0], now);
+      lines.push(`  ${this.theme.fg(color, symbol)} ${display(node.title)}`);
+      for (const member of node.members) row(member, member.label === node.title ? agents.get(member.runId) ?? member.label : member.label, "  ");
     }
+    if (chosen < this.listOffset) this.listOffset = chosen;
+    else if (chosen >= this.listOffset + rows) this.listOffset = chosen - rows + 1;
+    this.listOffset = Math.max(0, Math.min(this.listOffset, lines.length - rows));
+    const body = lines.slice(this.listOffset, this.listOffset + rows);
+    while (body.length < rows) body.push("");
+    return body.map(l => fit(l, width));
   }
-  private renderFlow(width: number, height: number): string[] {
-    const now = Date.now(), workers = this.manager.status(), lines: string[] = [];
-    let chosen = 0, selected: Step | undefined;
-    for (const node of tree(workers, this.manager.history())) {
-      lines.push(this.theme.fg("accent", display(`${node.title} · ${node.root.workerId} · ${node.steps.length} runs · ${duration(span(node, now))} · $${cost(node).toFixed(2)}`)));
-      node.steps.forEach((step, i) => {
-        if (step.runId === this.step) { chosen = lines.length; selected = step; }
-        const [color, symbol] = stepMark(step, now);
-        const meta = [duration((step.result?.endedAt ?? now) - step.startedAt), `$${stepCost(step, node.members.find(m => m.workerId === step.workerId)).toFixed(2)}`,
-          ...(step.workerId === node.root.workerId ? [] : [step.workerId])].join(" · ");
-        lines.push(`${step === selected ? "▸" : " "} ${i === node.steps.length - 1 ? "└─" : "├─"} ${this.theme.fg(color, symbol)} ${display(step.agent).padEnd(8)} ${display(step.label)} ${this.theme.fg("dim", `· ${meta}`)}`);
-      });
-    }
-    const capacity = Math.max(1, height - 4);
-    if (chosen < this.flowOffset) this.flowOffset = chosen;
-    else if (chosen >= this.flowOffset + capacity) this.flowOffset = chosen - capacity + 1;
-    this.flowOffset = Math.max(0, Math.min(this.flowOffset, lines.length - capacity));
-    const body = lines.slice(this.flowOffset, this.flowOffset + capacity);
-    while (body.length < capacity) body.push("");
-    const preview = selected?.result ? line(selected.result.text, false) : line(workers.find(w => w.workerId === selected?.workerId)?.output ?? "", true);
-    return [this.theme.fg("accent", "Subagents · flow · ↑↓ run · Enter details · f worker view · Esc close"), ...body,
-      this.theme.fg("muted", "─".repeat(width)), display(preview), this.theme.fg("muted", display(this.notice))].map(l => fit(l, width));
-  }
-  render(width: number): string[] {
-    if (width < 1) return [];
-    const height = Math.max(1, this.height());
-    const worker = this.worker(), workers = this.manager.status();
-    if (height < 10) return [fit("Subagents · enlarge terminal · Esc close", width)];
-    if (this.flow) return this.renderFlow(width, height);
-    const head = ["Subagents · ↑↓ worker · PgUp/PgDn transcript · End live · f flow · Esc close"];
-    if (!worker) return [...head, "No workers in this parent session."].map(line => fit(display(line), width));
-    const index = workers.findIndex(w => w.workerId === worker.workerId);
-    const pending = worker.questions?.find(q => q.state === "pending");
-    head.push(`${index + 1}/${workers.length} · ${worker.label} · ${worker.state} · ${worker.activity}`,
-      `${worker.model}:${worker.effort} · PID ${worker.pid ?? "not spawned"}`, worker.cwd,
-      `Session: ${worker.sessionFile ?? "not yet persisted"}`,
-      pending ? `Question ${pending.questionId}: ${pending.question}` : `${worker.workerId} · ${worker.runId}`);
-    const error = worker.error ?? worker.result?.error;
-    if (error) head.push(`Error: ${error}`);
-    const text = `${this.transcript}\n\nLive: ${worker.output}${worker.toolOutput ? `\nTool output: ${worker.toolOutput}` : ""}`;
-    const lines = text.split("\n").flatMap(line => wrapTextWithAnsi(display(line), Math.max(1, width)));
-    this.capacity = Math.max(1, height - head.length - 3);
+  private pane(worker: Snapshot, width: number, rows: number, now: number): string[] {
+    const agent = this.manager.history().find(s => s.runId === worker.runId)?.agent, spent = (worker.result?.usage ?? worker.usage)?.cost.total ?? 0;
+    const head = [this.theme.fg("accent", display([worker.label, ...(agent ? [agent] : []), worker.state, duration(elapsed(worker, now)), ...(spent ? [`$${spent.toFixed(2)}`] : [])].join(" · ")))];
+    const question = worker.questions?.find(q => q.state === "pending"), error = worker.error ?? worker.result?.error, running = active.includes(worker.state);
+    if (question) head.push(this.theme.fg("warning", display(`? asks: ${question.question} · r reply`)));
+    if (error) head.push(this.theme.fg("error", display(`Error: ${error}`)));
+    if (reminded(worker) && !running) head.push(this.theme.fg("warning", "Saved conversation · c recover"));
+    if (this.info) head.push(...[`${worker.model}:${worker.effort} · PID ${worker.pid ?? "not spawned"}`, worker.cwd, `Session: ${worker.sessionFile ?? "not yet persisted"}`,
+      `${worker.workerId} · ${worker.runId}`].flatMap(l => wrapTextWithAnsi(display(l), Math.max(1, width))).map(l => this.theme.fg("dim", l)));
+    head.push(this.theme.fg("dim", "─".repeat(width)));
+    const text = [this.transcript];
+    if (running && worker.output.trim() && !this.transcript.trimEnd().endsWith(worker.output.trim())) text.push(worker.output);
+    if (running && worker.activity.startsWith("tool:") && worker.toolOutput?.trim()) text.push(`  │ ${worker.toolOutput.trim().split("\n").at(-1)}`);
+    const lines = text.join("\n").split("\n").flatMap(l => wrapTextWithAnsi(display(l), Math.max(1, width)));
+    if (running) { const [color, symbol] = icon(worker, now); lines.push(`${this.theme.fg(color, symbol)} ${this.theme.fg("dim", display(worker.activity))}`); }
+    this.capacity = Math.max(1, rows - head.length);
     const last = Math.max(0, lines.length - this.capacity);
     this.offset = this.follow ? last : Math.max(0, Math.min(this.offset, last));
     const body = lines.slice(this.offset, this.offset + this.capacity);
     while (body.length < this.capacity) body.push("");
+    return [...head, ...body].slice(0, rows).map(l => fit(l, width));
+  }
+  render(width: number): string[] {
+    if (width < 1) return [];
+    const height = Math.max(1, this.height());
+    if (height < 10) return [fit("Subagents · enlarge terminal · Esc close", width)];
+    const now = Date.now(), worker = this.worker();
+    const keys = this.editing ? this.notice : "↑↓ select · PgUp/PgDn scroll · i info · m task · r reply · s stop · c recover · Esc";
+    const title = `${this.theme.fg("accent", "Subagents")}${" ".repeat(Math.max(2, width - 9 - visibleWidth(keys)))}${this.theme.fg("dim", display(keys))}`;
+    if (!worker) return [title, "No workers in this parent session."].map(line => fit(line, width));
+    const rows = height - 3, side = width >= 60 ? Math.min(32, Math.floor(width * 0.3)) : 0;
+    const pane = this.pane(worker, side ? width - side - 3 : width, rows, now);
+    const body = side ? this.list(side, rows, now).map((line, i) => `${line}${this.theme.fg("dim", " │ ")}${pane[i]}`) : pane;
     if (this.editing) this.editing.input.focused = this.focused;
-    const control = this.editing ? editorDisplay(this.editing.input.render(width)[0]) : this.confirming ? "Stop this worker? y confirm · n/Esc cancel (edits are preserved)" : "m task/steer · r reply · s stop · c recover · f flow";
-    return [...head.map(line => this.theme.fg("accent", display(line))), ...body, this.theme.fg("muted", "─".repeat(width)), control, this.theme.fg("muted", display(this.notice))].map(line => fit(line, width));
+    const control = this.editing ? editorDisplay(this.editing.input.render(width)[0]) : this.confirming ? "Stop this worker? y confirm · n/Esc cancel (edits are preserved)" : this.theme.fg("muted", display(this.notice));
+    return [title, ...body, this.theme.fg("dim", "─".repeat(width)), control].map(line => fit(line, width));
   }
   invalidate(): void {}
   dispose(): void { this.disposed = true; this.generation++; clearTimeout(this.timer); this.unsubscribe(); }

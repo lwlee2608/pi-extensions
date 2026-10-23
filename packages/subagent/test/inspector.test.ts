@@ -54,7 +54,7 @@ test("inspector renders live Unicode output, replies, confirms stop and closes w
     inspector.dispose();
   } finally { inspector?.dispose(); await f.cleanup(); }
 });
-test("inspector flow view nests reviewer runs and jumps to the selected worker", { timeout: 25_000 }, async () => {
+test("inspector lists nested workers under their group and shows the selected transcript", { timeout: 25_000 }, async () => {
   const f = await fixture(); let inspector: Inspector | undefined;
   try {
     const root = f.manager.start(f.launch, "ROOT_TASK", "retained", "owctl phase 1");
@@ -62,16 +62,16 @@ test("inspector flow view nests reviewer runs and jumps to the selected worker",
     const child = f.manager.start(f.launch, "REVIEW_TASK", "once", "owctl review 1", root.workerId);
     await f.manager.wait([child.runId]);
     inspector = new Inspector(f.manager, theme, () => {}, () => 24, () => {});
-    inspector.handleInput("f");
-    const flow = inspector.render(100);
-    assert.match(flow[0], /flow/);
-    assert.match(flow[1], new RegExp(`^owctl phase 1 · ${root.workerId} · 2 runs`));
-    assert.match(flow[2], /^▸ ├─ ✓ fixture  owctl phase 1 · /);
-    assert.match(flow[3], new RegExp(`^  └─ ✓ fixture  owctl review 1 · .* · ${child.workerId}`));
-    inspector.handleInput("\x1b[B");
-    assert.match(inspector.render(100)[3], /^▸ └─/);
-    for (const width of [1, 5, 20, 80]) for (const line of inspector.render(width)) assert.ok(visibleWidth(line) <= width);
-    inspector.handleInput("\r");
-    assert.match(inspector.render(100).join("\n"), new RegExp(`${child.workerId} · ${child.runId}`));
+    const list = inspector.render(100);
+    assert.match(list[1], /^  ✓ owctl phase 1 +│ owctl phase 1 · fixture · idle · /);
+    assert.match(list[2], /^▸   ✓ fixture +\d+s │ ─+$/);
+    assert.match(list[3], /^    ✓ owctl review 1 +\d+s │ /);
+    inspector.handleInput("\x1b[B"); inspector.handleInput("i");
+    while (!/REVIEW_TASK/.test(inspector.render(100).join("\n"))) await new Promise(resolve => setTimeout(resolve, 20));
+    const selected = inspector.render(100).join("\n");
+    assert.match(selected, /\n▸   ✓ owctl review 1 /);
+    assert.match(selected, /owctl review 1 · fixture · closed /); assert.ok(selected.includes(child.workerId) && selected.includes(child.runId));
+    assert.match(selected, /│ Task +\n.*│   REVIEW_TASK/);
+    for (const width of [1, 5, 20, 59, 60, 80]) for (const line of inspector.render(width)) assert.ok(visibleWidth(line) <= width);
   } finally { inspector?.dispose(); await f.cleanup(); }
 });
