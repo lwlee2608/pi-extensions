@@ -86,53 +86,40 @@ export function names(nodes: Node[]): Map<string, string> {
 export function named(node: Node, member: Snapshot, labels: Map<string, string>): string {
   return member.workerId === node.root.workerId && member.label !== node.title ? display(member.label) : labels.get(member.workerId) ?? display(member.label);
 }
-const tones = ["text", "muted", "dim", "dim", "dim"] as const;
-interface Row { prefix: string; mark: Mark; cells: string[]; detail: Mark }
-function row(prefix: string, worker: Snapshot, name: string, agent: string, now: number, total = 0): Row {
-  return { prefix, mark: icon(worker, now), detail: detail(worker),
-    cells: [truncateToWidth(name, 32, "…"), agent, duration(elapsed(worker, now)), worker.context ? `ctx ${tokens(worker.context)}` : "", total ? `$${total.toFixed(2)}` : ""] };
-}
-function table(rows: Row[], theme: Paint): string[] {
-  const widths = tones.map((_, j) => Math.max(0, ...rows.map(r => visibleWidth(r.cells[j]))));
-  return rows.map(r => {
-    const cols = r.cells.flatMap((cell, j) => {
+const tones = ["text", "muted", "dim", "dim"] as const;
+function group(node: Node, members: Snapshot[], title: string, labels: Map<string, string>, agents: Map<string, string>, now: number, theme: Paint): string[] {
+  const total = cost(node), [color, symbol] = icon([...members].sort(byState)[0], now);
+  const head = `${theme.fg(color, symbol)} ${theme.fg("accent", title)} ${theme.fg("dim", `· ${[duration(span(node, now)), ...(total ? [`$${total.toFixed(2)}`] : [])].join(" · ")}`)}`;
+  const cells = members.map(m => {
+    const full = named(node, m, labels), name = full === title ? "" : full, agent = agents.get(m.runId) ?? "";
+    return [truncateToWidth(name, 32, "…"), name.startsWith(agent) ? "" : agent, duration(elapsed(m, now)), m.context ? `ctx ${tokens(m.context)}` : ""];
+  });
+  const widths = tones.map((_, j) => Math.max(...cells.map(c => visibleWidth(c[j]))));
+  return [head, ...members.map((member, i) => {
+    const [mc, ms] = icon(member, now), [tone, text] = detail(member);
+    const cols = cells[i].flatMap((cell, j) => {
       const space = " ".repeat(widths[j] - visibleWidth(cell));
       return widths[j] ? [theme.fg(tones[j], j === 2 ? space + cell : cell + space)] : [];
     });
-    return `${r.prefix}${theme.fg(r.mark[0], r.mark[1])} ${[...cols, theme.fg(r.detail[0], display(r.detail[1]))].join("  ")}`;
-  });
+    return `${theme.fg("dim", i === members.length - 1 ? "  └ " : "  ├ ")}${theme.fg(mc, ms)} ${[...cols, theme.fg(tone, display(text))].join("  ")}`;
+  })];
 }
 export function panelLines(workers: Snapshot[], width: number, now = Date.now(), theme: Paint = plain, steps: Step[] = []): string[] {
   if (width < 1) return [];
   const agents = new Map(steps.map(s => [s.runId, display(s.agent)])), nodes = tree(workers, steps), labels = names(nodes);
   const groups = nodes.flatMap(node => {
     const members = node.members.filter(w => shown(w, now));
-    return members.length ? [{ node, members, rank: Math.min(...members.map(m => order[m.state])) }] : [];
-  });
-  const queued = groups.filter(g => g.members.every(m => m.state === "queued")), singles: Row[] = [];
-  const entries = groups.filter(g => !queued.includes(g)).map(({ node, members, rank }) => {
-    const title = labels.get(node.root.workerId)!;
-    const agent = (m: Snapshot, name: string) => { const value = agents.get(m.runId) ?? ""; return name.startsWith(value) ? "" : value; };
-    if (members.length === 1) {
-      const [member] = members, name = named(node, member, labels);
-      const single = row("", member, member.workerId === node.root.workerId ? name : `${title} › ${name}`, agent(member, name), now, cost(node));
-      singles.push(single);
-      return { rank, count: 1, single };
-    }
-    const total = cost(node), [color, symbol] = icon([...members].sort(byState)[0], now);
-    const head = `${theme.fg(color, symbol)} ${theme.fg("accent", title)} ${theme.fg("dim", `· ${[duration(span(node, now)), ...(total ? [`$${total.toFixed(2)}`] : [])].join(" · ")}`)}`;
-    const rows = members.map((m, i) => { const name = named(node, m, labels); return row(theme.fg("dim", i === members.length - 1 ? "  └ " : "  ├ "), m, name === title ? "" : name, agent(m, name === title ? "" : name), now); });
-    return { rank, count: 1, lines: [head, ...table(rows, theme)] };
-  });
-  const aligned = new Map(table(singles, theme).map((text, i) => [singles[i], text]));
-  if (queued.length) entries.push({ rank: order.queued, count: queued.length, lines: [theme.fg("dim", `○ ${queued.length} queued: ${queued.map(g => labels.get(g.node.root.workerId)).join(", ")}`)] });
+    return members.length ? [{ node, members, title: labels.get(node.root.workerId)!, rank: Math.min(...members.map(m => order[m.state])) }] : [];
+  }).sort((a, b) => a.rank - b.rank);
+  const queued = groups.filter(g => g.members.every(m => m.state === "queued"));
   const lines: string[] = [];
   let hidden = 0;
-  for (const entry of entries.sort((a, b) => a.rank - b.rank)) {
-    const text = entry.single ? [aligned.get(entry.single)!] : entry.lines!;
-    if (hidden || (lines.length && lines.length + text.length > budget)) hidden += entry.count;
+  for (const { node, members, title } of groups.filter(g => !queued.includes(g))) {
+    const text = group(node, members, title, labels, agents, now, theme);
+    if (hidden || (lines.length && lines.length + text.length > budget)) hidden++;
     else lines.push(...text);
   }
+  if (queued.length) lines.push(theme.fg("dim", `○ ${queued.length} queued: ${queued.map(g => g.title).join(", ")}`));
   if (hidden) lines.push(theme.fg("muted", `+${hidden} more · /subagents`));
   return lines.map(line => truncateToWidth(line, width));
 }
