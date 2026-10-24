@@ -91,7 +91,7 @@ test("nested workers show one row per active member under their group", () => {
   for (const width of [1, 10, 80]) for (const theme of [undefined, colored]) for (const line of panelLines([root, child], width, 104_000, theme, steps)) assert.ok(visibleWidth(line) <= width);
 });
 
-test("finished members stay while an overlapping group member is active", () => {
+test("finished members stay while an overlapping member is active, then the group closes at once", () => {
   const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
   const ended = (endedAt: number) => ({ state: "closed" as const, result: { outcome: "completed" as const, text: "", endedAt, usage } });
   const root: Snapshot = { ...worker, workerId: "w-root", label: "Phase 1", state: "idle", startedAt: 0 };
@@ -100,7 +100,9 @@ test("finished members stay while an overlapping group member is active", () => 
   const busy: Snapshot = { ...worker, workerId: "w-busy", label: "busy reviewer", parentWorkerId: "w-root", startedAt: 10_000 };
   const text = panelLines([root, old, done, busy], 200, 600_000).join("\n");
   assert.match(text, /done reviewer/); assert.match(text, /busy reviewer/); assert.doesNotMatch(text, /old round/);
-  assert.deepEqual(panelLines([root, old, done, { ...busy, ...ended(30_000) }], 200, 600_000), []);
+  const finished = [root, old, done, { ...busy, ...ended(30_000) }];
+  assert.match(panelLines(finished, 200, 59_000).join("\n"), /old round[\s\S]*done reviewer[\s\S]*busy reviewer/);
+  assert.deepEqual(panelLines(finished, 200, 60_000), []);
 });
 
 test("unlabeled workers with the same name are numbered in start order", () => {

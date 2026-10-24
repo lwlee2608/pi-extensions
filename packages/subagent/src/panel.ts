@@ -13,6 +13,12 @@ export function reminded(worker: Readonly<Snapshot>): boolean { return !!worker.
 function shown(worker: Readonly<Snapshot>, now: number): boolean {
   return active.includes(worker.state) || reminded(worker) || (!!worker.result && now - worker.result.endedAt < linger);
 }
+function visible(members: Snapshot[], now: number): Snapshot[] {
+  const live = members.filter(w => active.includes(w.state)), end = Math.max(...members.map(w => w.result?.endedAt ?? -Infinity));
+  if (!live.length && now - end >= linger) return members.filter(reminded);
+  const anchor = live.length ? live : members.filter(w => w.result?.endedAt === end), at = live.length ? now : end;
+  return members.filter(w => active.includes(w.state) || reminded(w) || (!!w.result && (at - w.result.endedAt < linger || anchor.some(a => a.startedAt <= w.result!.endedAt))));
+}
 type Paint = Pick<Theme, "fg">;
 const plain: Paint = { fg: (_color, text) => text };
 export function duration(ms: number): string {
@@ -108,8 +114,7 @@ export function panelLines(workers: Snapshot[], width: number, now = Date.now(),
   if (width < 1) return [];
   const agents = new Map(steps.map(s => [s.runId, display(s.agent)])), nodes = tree(workers, steps), labels = names(nodes);
   const groups = nodes.flatMap(node => {
-    const live = node.members.filter(w => active.includes(w.state));
-    const members = node.members.filter(w => shown(w, now) || (!!w.result && live.some(a => a.startedAt <= w.result!.endedAt)));
+    const members = visible(node.members, now);
     return members.length ? [{ node, members, title: labels.get(node.root.workerId)!, rank: Math.min(...members.map(m => order[m.state])) }] : [];
   });
   const queued = groups.filter(g => g.members.every(m => m.state === "queued"));
