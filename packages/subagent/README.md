@@ -33,7 +33,7 @@ Pi starts the workers, waits for them, and brings their results back. A compact 
 Things to know:
 
 - Each worker starts with fresh context. It does not see your conversation, only the task Pi gives it.
-- A worker can ask Pi a question mid-task. Pi answers it, or you can answer from `/subagents`.
+- A worker can ask Pi a question mid-task. Pi answers it, or you can answer from the [inspector](#inspector).
 - By default a worker exits after one task. Ask Pi to keep it if you want to send follow-up tasks.
 - Stopping a worker never deletes its edits or transcript.
 - Worktrees and Git are up to you (or Pi). This extension never creates or removes them.
@@ -98,7 +98,7 @@ Optional. Create `~/.pi/agent/pi-subagent/config.json`:
 
 ## Inspector
 
-`/subagents` opens a live view: workers on the left, grouped with the reviewers nested under them, and the selected worker's transcript on the right.
+Press ↓ on an empty prompt while the panel is showing, or run `/subagents`, to open a live view: workers on the left, grouped with the reviewers nested under them, and the selected worker's transcript on the right.
 
 | Key | Action |
 | --- | --- |

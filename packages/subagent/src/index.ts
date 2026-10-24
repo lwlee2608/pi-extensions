@@ -24,7 +24,7 @@ export default function (pi: ExtensionAPI): void {
     if (closed) throw new Error("Subagent runtime closed during initialization");
     manager = new Manager({ root: join(getAgentDir(), "pi-subagent"), parentId: ctx.sessionManager.getSessionId(), maxWorkers: config.maxWorkers, maxActive: config.maxActive,
       config: () => loadConfig(getAgentDir(), () => parentExtensions(pi, ctx, getAgentDir())) });
-    if (ctx.mode === "tui") detachPanel = attachPanel(manager, ctx.ui);
+    if (ctx.mode === "tui") detachPanel = attachPanel(manager, ctx.ui, () => { inspect(ctx).catch(error => ctx.ui.notify(String(error), "error")); });
     return manager;
   })().catch(error => { initialization = undefined; throw error; });
   pi.on("session_start", async (_event, ctx) => {
@@ -37,19 +37,20 @@ export default function (pi: ExtensionAPI): void {
     try { await initialization; } catch { /* Failed initialization owns no child. */ }
     await manager?.shutdown();
   });
+  const inspect = async (ctx: ExtensionContext): Promise<void> => {
+    if (ctx.mode !== "tui" || inspectorOpen) return;
+    inspectorOpen = true;
+    try {
+      const active = await getManager(ctx);
+      await ctx.ui.custom<void>((tui, theme, _keys, done) => {
+        closeInspector = () => done();
+        return new Inspector(active, theme, () => tui.requestRender(), () => tui.terminal.rows, () => done());
+      }, { overlay: true, overlayOptions: { width: "100%", maxHeight: "100%", anchor: "top-left", margin: 0 } });
+    } finally { inspectorOpen = false; closeInspector = undefined; }
+  };
   pi.registerCommand("subagents", {
     description: "Inspect live and saved workers; message, reply, stop or recover",
-    async handler(_args, ctx) {
-      if (ctx.mode !== "tui" || inspectorOpen) return;
-      inspectorOpen = true;
-      try {
-        const active = await getManager(ctx);
-        await ctx.ui.custom<void>((tui, theme, _keys, done) => {
-          closeInspector = () => done();
-          return new Inspector(active, theme, () => tui.requestRender(), () => tui.terminal.rows, () => done());
-        }, { overlay: true, overlayOptions: { width: "100%", maxHeight: "100%", anchor: "top-left", margin: 0 } });
-      } finally { inspectorOpen = false; closeInspector = undefined; }
-    },
+    handler: (_args, ctx) => inspect(ctx),
   });
   pi.registerTool({
     name: "subagent", label: "Subagent", description, parameters, exposure: "model-only", executionMode: "parallel",

@@ -1,5 +1,5 @@
 import { stripVTControlCharacters } from "node:util";
-import { truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
+import { matchesKey, truncateToWidth, visibleWidth, type Component, type TUI } from "@earendil-works/pi-tui";
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { Manager, Outcome, Snapshot, Step } from "./manager.ts";
 
@@ -121,25 +121,33 @@ export function panelLines(workers: Snapshot[], width: number, now = Date.now(),
   }
   if (queued.length) lines.push(theme.fg("dim", `○ ${queued.length} queued: ${queued.map(g => g.title).join(", ")}`));
   if (hidden) lines.push(theme.fg("muted", `+${hidden} more · /subagents`));
+  if (lines.length) lines[0] += theme.fg("dim", " · ↓ inspect");
   return lines.map(line => truncateToWidth(line, width));
 }
-export function attachPanel(manager: Manager, ui: ExtensionUIContext): () => void {
+export function attachPanel(manager: Manager, ui: ExtensionUIContext, inspect: () => void): () => void {
   let render: (() => void) | undefined;
+  let host: (TUI & { getFocusedComponent?(): Component | null }) | undefined;
   let scheduled: NodeJS.Timeout | undefined;
   let disposed = false;
   ui.setWidget("pi-subagent", (tui, theme: Theme): Component => {
-    render = () => tui.requestRender();
+    host = tui; render = () => tui.requestRender();
     return { render: width => panelLines(manager.status(), width, Date.now(), theme, manager.history()), invalidate() {} };
   }, { placement: "aboveEditor" });
   const update = () => {
     if (!disposed && !scheduled) scheduled = setTimeout(() => { scheduled = undefined; render?.(); }, 80);
   };
   const unsubscribe = manager.onChange(update);
+  const unlisten = ui.onTerminalInput(data => {
+    const editor = host?.getFocusedComponent?.() as { getText?(): string } | null | undefined;
+    if (!matchesKey(data, "down") || editor?.getText?.() !== "" || !manager.some(w => shown(w, Date.now()))) return;
+    inspect();
+    return { consume: true };
+  });
   let tick = 0;
   const clock = setInterval(() => {
     const now = Date.now();
     if (manager.some(w => w.state === "working") || (++tick % 10 === 0 && manager.some(w => shown(w, now - 1000)))) update();
   }, 100);
   clock.unref();
-  return () => { disposed = true; unsubscribe(); clearInterval(clock); clearTimeout(scheduled); ui.setWidget("pi-subagent", undefined); };
+  return () => { disposed = true; unsubscribe(); unlisten(); clearInterval(clock); clearTimeout(scheduled); ui.setWidget("pi-subagent", undefined); };
 }
