@@ -8,12 +8,6 @@ Phone notifications for Pi runs you choose to watch. Off by default, TUI only; n
 pi install npm:@lwlee2608/pi-notify
 ```
 
-Or try the source from this repository:
-
-```sh
-pi -e ./packages/notify/src/index.ts
-```
-
 Requires Node.js 22.19+ and Pi 1.0.0. Run `/reload` after installing.
 
 ## Configure
