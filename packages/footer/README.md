@@ -9,22 +9,8 @@ A muted, two-line footer for [Pi](https://pi.dev). Enabled automatically in inte
 
 ## Install
 
-Once published:
-
 ```sh
 pi install npm:@lwlee2608/pi-footer
-```
-
-From this repository, try it for one session:
-
-```sh
-pi -e ./packages/footer/src/index.ts
-```
-
-Or install the local package:
-
-```sh
-pi install ./packages/footer
 ```
 
 Run `/reload` after installation. Requires Node.js 22.19 or newer and Pi 1.0.0.
