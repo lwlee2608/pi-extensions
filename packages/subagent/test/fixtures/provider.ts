@@ -1,7 +1,60 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { createAssistantMessageEventStream, type AssistantMessage, type ToolCall } from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream, type AssistantMessage, type Message, type TextContent, type ToolCall } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { setTimeout as delay } from "node:timers/promises";
+
+type Stream = ReturnType<typeof createAssistantMessageEventStream>;
+function emit(stream: Stream, message: AssistantMessage, blocks: (TextContent | ToolCall)[]): "toolUse" | "stop" {
+  for (const block of blocks) {
+    const contentIndex = message.content.push(block) - 1;
+    if (block.type === "text") {
+      stream.push({ type: "text_start", contentIndex, partial: message });
+      stream.push({ type: "text_delta", contentIndex, delta: block.text, partial: message });
+      stream.push({ type: "text_end", contentIndex, content: block.text, partial: message });
+    } else { stream.push({ type: "toolcall_start", contentIndex, partial: message }); stream.push({ type: "toolcall_end", contentIndex, toolCall: block, partial: message }); }
+  }
+  return blocks.some(b => b.type === "toolCall") ? "toolUse" : "stop";
+}
+const say = (text: string): TextContent => ({ type: "text", text });
+const call = (name: string, args: object): ToolCall => ({ type: "toolCall", id: `${name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name, arguments: JSON.parse(JSON.stringify(args)) });
+const bash = (text: string, seconds: number, output: string): [string, ToolCall] => [text, call("bash", { command: `sleep ${seconds}; echo '${output}'` })];
+function script(text: string): { steps: [string, ToolCall][]; final: string } | undefined {
+  if (text.includes("BUILD_PHASE")) return { steps: [
+    bash("Reading the phase tasks in plans/auth.md", 2, "4 tasks, Verify: npm test"),
+    ...text.includes("ASK") ? [["Two stores fit the plan; asking before I pick one", call("ask_parent", { question: "Store sessions in Redis or Postgres?" })] as [string, ToolCall]] : [],
+    bash("Implementing the phase", text.includes("ASK") ? 4 : 7, "edited 3 files"),
+    bash("Running checks", 4, "42 tests pass"),
+  ], final: "Phase built and verified. PR opened against integrate/auth." };
+  if (text.includes("REVIEW_PR")) return { steps: [bash("Reading the PR diff", 3, "+120 -14 across 3 files"), bash("Checking error paths and tests", 4, "done")],
+    final: text.includes("CLEAN") ? "No findings. Ready to merge." : "1 finding. Medium, likely, worth fixing: expired sessions are accepted on refresh." };
+  if (text.includes("FIX_FINDINGS")) return { steps: [bash("Applying the review fix", 3, "edited 1 file"), bash("Re-running checks", 3, "43 tests pass")], final: "Fixed the finding in a separate commit and pushed." };
+}
+const phases = [{ label: "Phase 1", task: "BUILD_PHASE 1: session store", start: "Phase 1 has no blockers. Starting its worker." },
+  { label: "Phase 2", task: "BUILD_PHASE 2 ASK: login API", start: "Phase 1 merged. Phase 2 was blocked by it; starting its worker." }];
+function orchestrate(messages: Message[]): (TextContent | ToolCall)[] {
+  const turn = messages.slice(messages.findLastIndex(m => m.role === "user") + 1);
+  const results = new Map(turn.flatMap(m => m.role === "toolResult" ? [[m.toolCallId, JSON.parse(m.content.find(c => c.type === "text")?.text ?? "null")]] : []));
+  const calls = turn.flatMap(m => m.role === "assistant" ? m.content.flatMap(c => c.type === "toolCall" ? [{ args: c.arguments, result: results.get(c.id) }] : []) : []);
+  const last = calls.at(-1), stops = calls.filter(c => c.args.action === "stop").length, phase = phases[stops];
+  const current = calls.slice(calls.findLastIndex(c => c.args.action === "stop") + 1), worker = current.find(c => c.args.agent === "worker")?.result;
+  const subagent = (args: object) => call("subagent", args);
+  switch (last?.args.action) {
+    case "start": case "message": return [subagent({ action: "wait", runIds: [last.result.runId] })];
+    case "reply": return [subagent(calls.findLast(c => c.args.action === "wait")!.args)];
+    case "wait": if (last.result.reason === "attention") return [say(`${phase.label} asks which session store to use. The plan locks Redis.`),
+      ...last.result.pendingQuestionIds.map((questionId: string) => subagent({ action: "reply", questionId, message: "Redis. The plan locks it under Decisions." }))];
+  }
+  if (!phase) return [say("Both phases merged into integrate/auth. Demo passed; the final PR to main is yours to merge.")];
+  const review = (clean: boolean) => subagent({ action: "start", agent: "reviewer", lifetime: "once", parentWorkerId: worker.workerId, task: `REVIEW_PR${clean ? " CLEAN" : ""}: review the ${phase.label} PR` });
+  switch (current.filter(c => c.args.action === "wait" && c.result.reason === "completed").length) {
+    case 0: return [say(phase.start), subagent({ action: "start", agent: "worker", lifetime: "retained", label: phase.label, task: phase.task })];
+    case 1: return [say(`${phase.label} PR is open. Review round 1.`), review(false)];
+    case 2: return [say(`Relaying round 1 findings to the ${phase.label} worker.`),
+      subagent({ action: "message", workerId: worker.workerId, mode: "task", label: `${phase.label} round 1`, message: "FIX_FINDINGS: expired sessions are accepted on refresh" })];
+    case 3: return [say("Fix pushed. Review round 2."), review(true)];
+    default: return [say(`Round 2 is clean. Merging ${phase.label} and retiring its worker.`), subagent({ action: "stop", workerId: worker.workerId })];
+  }
+}
 
 export default function (pi: ExtensionAPI): void {
   pi.registerCommand("fixture-command", { description: "Must not run for literal tasks", handler: async () => { throw new Error("Slash command dispatched unexpectedly"); } });
@@ -77,6 +130,11 @@ export default function (pi: ExtensionAPI): void {
               message.content.push(call); stream.push({ type: "toolcall_start", contentIndex: 0, partial: message });
               stream.push({ type: "toolcall_end", contentIndex: 0, toolCall: call, partial: message }); message.stopReason = "toolUse";
             } else { message.content.push({ type: "text", text: "Open /subagents to inspect, message, reply, stop, or recover the retained workers." }); message.stopReason = "stop"; }
+          } else if (text.includes("BUILD_UI")) {
+            message.stopReason = emit(stream, message, orchestrate(context.messages));
+          } else if (script(text) && context.messages.at(-1)?.role !== "assistant") {
+            const { steps, final } = script(text)!, step = steps[context.messages.slice(context.messages.findLastIndex(m => m.role === "user") + 1).filter(m => m.role === "toolResult").length];
+            message.stopReason = emit(stream, message, step ? [say(step[0]), step[1]] : [say(final)]);
           } else if (text.includes("PARENT_SMOKE")) {
             const results = context.messages.filter(m => m.role === "toolResult" && m.toolName === "subagent");
             const first = results[0];
