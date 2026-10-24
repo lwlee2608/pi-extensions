@@ -41,7 +41,7 @@ Run `/reload` in an existing Pi session after installation. Requires Node.js 22.
 [`packages/code-blocks`](packages/code-blocks) hides Markdown code fences and uses the theme’s accent color for plain-text blocks. It patches a private Pi renderer method and is **opt-in**, not part of the root package’s automatic extension list.
 
 ```sh
-pi -e ./packages/code-blocks/src/index.ts
+pi install npm:@lwlee2608/pi-code-blocks
 ```
 
 ## Local development

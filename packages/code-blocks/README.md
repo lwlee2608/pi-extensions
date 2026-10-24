@@ -2,26 +2,24 @@
 
 An experimental Pi extension that hides code-block fences and colors plain-text blocks with the current theme’s accent color. Recognized code languages keep Pi’s syntax highlighting. The accent is theme-dependent, not always blue.
 
-## Try it
+## Install
 
-From this repository:
+```sh
+pi install npm:@lwlee2608/pi-code-blocks
+```
+
+Run `/reload` afterward, or start a new session. No command or settings are needed.
+
+To try it from this repository without installing:
 
 ```sh
 pi -e ./packages/code-blocks/src/index.ts
 ```
 
-For persistent use, install the local package with an absolute path:
+To remove it:
 
 ```sh
-pi install /absolute/path/to/pi-extensions/packages/code-blocks
-```
-
-Run `/reload` afterward, or start a new session. No command or settings are needed. This package is not yet published to npm.
-
-To remove the local installation:
-
-```sh
-pi remove /absolute/path/to/pi-extensions/packages/code-blocks
+pi remove npm:@lwlee2608/pi-code-blocks
 ```
 
 Restart Pi after removal so all cached output uses the default renderer.
@@ -37,7 +35,7 @@ Restart Pi after removal so all cached output uses the default renderer.
 
 The extension patches the private `Markdown.prototype.renderToken` method in TUI sessions. It checks the expected rendering behavior before installation and leaves the default renderer in place with a warning if that check fails. It restores the original method on reload/shutdown, unless another extension has since replaced it.
 
-This is not a public Pi API. Compatibility checks cannot catch every future change. Tested with Pi 1.0.0, including the installed bundled CLI. If an update breaks it, disable the extension and restart Pi. Other extensions that patch the same renderer may conflict.
+This is not a public Pi API. Compatibility checks cannot catch every future change. Tested with Pi 1.0.0, including the installed bundled CLI; unit tests also pass against pi-tui 1.4.0. If an update breaks it, disable the extension and restart Pi. Other extensions that patch the same renderer may conflict.
 
 ## Development
 
