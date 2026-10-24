@@ -25,7 +25,8 @@ test("multi-worker panel is bounded, prioritizes questions and shows overflow", 
   const workers: Snapshot[] = Array.from({ length: 8 }, (_, i) => ({ ...worker, workerId: `w-${i}`, label: `worker ${i}` }));
   workers[7] = { ...workers[7], state: "blocked", questions: [{ questionId: "q-one", workerId: "w-7", runId: "r-one", generation: "g", requestId: "request", question: "Choose file", state: "pending" }] };
   const lines = panelLines(workers, 100, 1000);
-  assert.equal(lines.length, 9); assert.match(lines[0], /^\? worker 7/); assert.match(lines[1], /asks: Choose file · \/subagents → r$/);
+  assert.equal(lines.length, 9); assert.deepEqual(lines.slice(0, 8).filter(l => /^\S/.test(l)).map(l => l.split(" · ")[0]), ["⠋ worker 0", "⠋ worker 1", "⠋ worker 2", "? worker 7"]);
+  assert.match(lines[7], /asks: Choose file · \/subagents → r$/);
   assert.equal(lines.at(-1), "+4 more · /subagents");
   const waiting = [...workers.slice(0, 4), { ...worker, workerId: "w-q", label: "later", state: "queued" as const }];
   assert.equal(panelLines(waiting, 100, 1000).at(-1), "○ 1 queued: later");

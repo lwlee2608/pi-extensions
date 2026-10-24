@@ -111,15 +111,16 @@ export function panelLines(workers: Snapshot[], width: number, now = Date.now(),
     const live = node.members.filter(w => active.includes(w.state));
     const members = node.members.filter(w => shown(w, now) || (!!w.result && live.some(a => a.startedAt <= w.result!.endedAt)));
     return members.length ? [{ node, members, title: labels.get(node.root.workerId)!, rank: Math.min(...members.map(m => order[m.state])) }] : [];
-  }).sort((a, b) => a.rank - b.rank);
+  });
   const queued = groups.filter(g => g.members.every(m => m.state === "queued"));
-  const lines: string[] = [];
-  let hidden = 0;
-  for (const { node, members, title } of groups.filter(g => !queued.includes(g))) {
-    const text = group(node, members, title, labels, agents, now, theme);
-    if (hidden || (lines.length && lines.length + text.length > budget)) hidden++;
-    else lines.push(...text);
+  const rendered = groups.filter(g => !queued.includes(g)).map(g => ({ ...g, text: group(g.node, g.members, g.title, labels, agents, now, theme) }));
+  const kept = new Set<typeof rendered[number]>();
+  let used = 0, hidden = 0;
+  for (const g of [...rendered].sort((a, b) => a.rank - b.rank)) {
+    if (hidden || (used && used + g.text.length > budget)) hidden++;
+    else { kept.add(g); used += g.text.length; }
   }
+  const lines = rendered.filter(g => kept.has(g)).flatMap(g => g.text);
   if (queued.length) lines.push(theme.fg("dim", `○ ${queued.length} queued: ${queued.map(g => g.title).join(", ")}`));
   if (hidden) lines.push(theme.fg("muted", `+${hidden} more · /subagents`));
   if (lines.length) lines[0] += theme.fg("dim", " · ↓ inspect");
