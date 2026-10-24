@@ -14,7 +14,7 @@
   "bugs": "https://github.com/lwlee2608/pi-extensions/issues",
   "keywords": ["pi-package", "pi-extension", "subagents"],
   "files": ["src", "agents"],
-  "pi": { "extensions": ["./src/index.ts"] },
+  "pi": { "extensions": ["./src/index.ts"], "video": "https://raw.githubusercontent.com/lwlee2608/pi-extensions/main/packages/subagent/media/inspector.mp4" },
   "engines": { "node": ">=22.19.0" },
   "os": ["linux", "darwin"],
   "scripts": { "check": "tsc --noEmit", "test": "node --test test/*.test.ts" },

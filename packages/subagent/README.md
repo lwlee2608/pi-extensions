@@ -30,6 +30,8 @@ Start a worker in ../my-worktree to implement the plan, then keep it around for 
 
 Pi starts the workers, waits for them, and brings their results back. A compact panel above the editor shows progress while they run.
 
+![Subagent panel showing a phased build with worker and reviewer rounds](https://raw.githubusercontent.com/lwlee2608/pi-extensions/main/packages/subagent/media/panel.gif)
+
 Things to know:
 
 - Each worker starts with fresh context. It does not see your conversation, only the task Pi gives it.
@@ -99,6 +101,8 @@ Optional. Create `~/.pi/agent/pi-subagent/config.json`:
 ## Inspector
 
 Press ↓ on an empty prompt while the panel is showing, or run `/subagents`, to open a live view: workers on the left, grouped with the reviewers nested under them, and the selected worker's transcript on the right.
+
+![Subagent inspector showing the worker tree and a live transcript](https://raw.githubusercontent.com/lwlee2608/pi-extensions/main/packages/subagent/media/inspector.gif)
 
 | Key | Action |
 | --- | --- |
