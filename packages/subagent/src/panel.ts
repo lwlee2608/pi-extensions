@@ -138,8 +138,8 @@ export function attachPanel(manager: Manager, ui: ExtensionUIContext, inspect: (
   };
   const unsubscribe = manager.onChange(update);
   const unlisten = ui.onTerminalInput(data => {
-    const editor = host?.getFocusedComponent?.() as { getText?(): string } | null | undefined;
-    if (!matchesKey(data, "down") || editor?.getText?.() !== "" || !manager.some(w => shown(w, Date.now()))) return;
+    const editor = host?.getFocusedComponent?.() as { getText?(): string; isShowingAutocomplete?(): boolean } | null | undefined;
+    if (!matchesKey(data, "down") || editor?.getText?.() !== "" || editor.isShowingAutocomplete?.() || !manager.some(w => shown(w, Date.now()))) return;
     inspect();
     return { consume: true };
   });

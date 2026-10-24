@@ -33,11 +33,12 @@ const phases = [{ label: "Phase 1", task: "BUILD_PHASE 1: session store", start:
   { label: "Phase 2", task: "BUILD_PHASE 2 ASK: login API", start: "Phase 1 merged. Phase 2 was blocked by it; starting its worker." }];
 function orchestrate(messages: Message[]): (TextContent | ToolCall)[] {
   const turn = messages.slice(messages.findLastIndex(m => m.role === "user") + 1);
-  const results = new Map(turn.flatMap(m => m.role === "toolResult" ? [[m.toolCallId, JSON.parse(m.content.find(c => c.type === "text")?.text ?? "null")]] : []));
+  const results = new Map(turn.flatMap(m => m.role === "toolResult" && !m.isError ? [[m.toolCallId, JSON.parse(m.content.find(c => c.type === "text")?.text ?? "null")]] : []));
   const calls = turn.flatMap(m => m.role === "assistant" ? m.content.flatMap(c => c.type === "toolCall" ? [{ args: c.arguments, result: results.get(c.id) }] : []) : []);
   const last = calls.at(-1), stops = calls.filter(c => c.args.action === "stop").length, phase = phases[stops];
   const current = calls.slice(calls.findLastIndex(c => c.args.action === "stop") + 1), worker = current.find(c => c.args.agent === "worker")?.result;
   const subagent = (args: object) => call("subagent", args);
+  if (last && !last.result) return [say(`The ${last.args.action} call failed, so the build stops here.`)];
   switch (last?.args.action) {
     case "start": case "message": return [subagent({ action: "wait", runIds: [last.result.runId] })];
     case "reply": return [subagent(calls.findLast(c => c.args.action === "wait")!.args)];
