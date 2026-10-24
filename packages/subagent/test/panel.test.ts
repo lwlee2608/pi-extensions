@@ -54,6 +54,9 @@ test("finished worker shows outcome icon, cost, context and first plain output l
 test("invalid action and launch configuration fail before dispatch", async () => {
   assert.throws(() => validateAction({ action: "wait", runIds: [] }), /Invalid/);
   assert.throws(() => validateAction({ action: "start", agent: "../escape", task: "x" }), /Invalid/);
+  const start: { action: string; task: string; agent?: string } = { action: "start", task: "x" };
+  validateAction(start);
+  assert.equal(start.agent, "worker");
   assert.throws(() => validateAction({ action: "message", workerId: "w-one", message: "x", mode: "steer", label: "bad" }), /relabel/);
   const f = await fixture();
   try {
