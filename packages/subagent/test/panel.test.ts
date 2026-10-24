@@ -39,8 +39,8 @@ test("finished worker shows outcome icon, cost, context and first plain output l
   const done: Snapshot = { ...worker, state: "closed", activity: "completed", output: "**Reviewed:** PR #133 (`e13ee6d`)\nmore", context: 82_400, result: { outcome: "completed", text: "", endedAt: 123_000, usage } };
   assert.deepEqual(panelLines([done], 120, 124_000), ["✓ 界面 😀 · 2m03s · $0.42 · ↓ inspect", "  └ ✓ 2m03s  ctx 82k  Reviewed: PR #133 (e13ee6d)"]);
   assert.match(panelLines([{ ...done, result: { ...done.result!, outcome: "failed" }, error: "boom" }], 120, 124_000).join("\n"), /^✗ .*\n  └ ✗ .*  boom$/);
-  assert.deepEqual(panelLines([done], 120, 128_000), []);
-  assert.deepEqual(panelLines([{ ...done, state: "idle" }], 120, 128_000), []);
+  assert.deepEqual(panelLines([done], 120, 153_000), []);
+  assert.deepEqual(panelLines([{ ...done, state: "idle" }], 120, 153_000), []);
   assert.deepEqual(panelLines([{ ...done, recoverable: true }], 120, 999_000), ["↻ 界面 😀 · 2m03s · $0.42 · ↓ inspect", "  └ ↻ 2m03s  ctx 82k  saved conversation · /subagents → c"]);
   const cancelled = { ...done, recoverable: true, questions: [{ questionId: "q-one", workerId: "w-one", runId: "r-one", generation: "g", requestId: "request", question: "Which?", state: "cancelled" as const }] };
   assert.match(panelLines([cancelled], 120, 999_000)[1], /saved conversation; pending questions cancelled · \/subagents → c$/);
@@ -88,6 +88,18 @@ test("nested workers show one row per active member under their group", () => {
   assert.deepEqual(panelLines(queued, 200, 104_000, undefined, steps), ["○ 2 queued: Phase 1, Phase 2 · ↓ inspect"]);
   const colored = { fg: (color: string, text: string) => `\x1b[3${color.length % 8}m${text}\x1b[0m` };
   for (const width of [1, 10, 80]) for (const theme of [undefined, colored]) for (const line of panelLines([root, child], width, 104_000, theme, steps)) assert.ok(visibleWidth(line) <= width);
+});
+
+test("finished members stay while an overlapping group member is active", () => {
+  const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+  const ended = (endedAt: number) => ({ state: "closed" as const, result: { outcome: "completed" as const, text: "", endedAt, usage } });
+  const root: Snapshot = { ...worker, workerId: "w-root", label: "Phase 1", state: "idle", startedAt: 0 };
+  const old: Snapshot = { ...worker, workerId: "w-old", label: "old round", parentWorkerId: "w-root", startedAt: 1_000, ...ended(5_000) };
+  const done: Snapshot = { ...worker, workerId: "w-done", label: "done reviewer", parentWorkerId: "w-root", startedAt: 10_000, ...ended(20_000) };
+  const busy: Snapshot = { ...worker, workerId: "w-busy", label: "busy reviewer", parentWorkerId: "w-root", startedAt: 10_000 };
+  const text = panelLines([root, old, done, busy], 200, 600_000).join("\n");
+  assert.match(text, /done reviewer/); assert.match(text, /busy reviewer/); assert.doesNotMatch(text, /old round/);
+  assert.deepEqual(panelLines([root, old, done, { ...busy, ...ended(30_000) }], 200, 600_000), []);
 });
 
 test("unlabeled workers with the same name are numbered in start order", () => {

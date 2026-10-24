@@ -7,7 +7,7 @@ export function display(text: string): string {
   return stripVTControlCharacters(text.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "")).replace(/[\x00-\x1f\x7f-\x9f\u2028\u2029\u202a-\u202e\u2066-\u2069]/g, " ");
 }
 const spinner = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
-const linger = 5000;
+const linger = 30_000;
 export const active = ["working", "blocked", "queued"];
 export function reminded(worker: Readonly<Snapshot>): boolean { return !!worker.recoverable && !worker.stopped; }
 function shown(worker: Readonly<Snapshot>, now: number): boolean {
@@ -108,7 +108,8 @@ export function panelLines(workers: Snapshot[], width: number, now = Date.now(),
   if (width < 1) return [];
   const agents = new Map(steps.map(s => [s.runId, display(s.agent)])), nodes = tree(workers, steps), labels = names(nodes);
   const groups = nodes.flatMap(node => {
-    const members = node.members.filter(w => shown(w, now));
+    const live = node.members.filter(w => active.includes(w.state));
+    const members = node.members.filter(w => shown(w, now) || (!!w.result && live.some(a => a.startedAt <= w.result!.endedAt)));
     return members.length ? [{ node, members, title: labels.get(node.root.workerId)!, rank: Math.min(...members.map(m => order[m.state])) }] : [];
   }).sort((a, b) => a.rank - b.rank);
   const queued = groups.filter(g => g.members.every(m => m.state === "queued"));
