@@ -12,7 +12,7 @@ Run `/reload` in an existing Pi session after installation.
 
 Previously published as `pi-model-plus`. To migrate, run `pi remove npm:pi-model-plus` and install the scoped package; saved bookmarks are kept.
 
-Requires Node.js 22.19 or newer. Developed and checked against `@earendil-works/pi-coding-agent` 1.0.0.
+Requires Node.js 22.19 or newer and Pi 1.0.0.
 
 ## Use
 
@@ -60,19 +60,6 @@ Bookmarks are saved across projects and sessions at:
 Pi's `PI_CODING_AGENT_DIR` override is respected. Only provider and model IDs are stored, not credentials or conversation data. Separate Pi processes lock updates to avoid losing bookmarks. File replacement is atomic; malformed files are reported rather than overwritten.
 
 Adding/removing bookmarks and setting the default require interactive terminal mode. RPC clients with selection dialogs can use `/model-plus` to switch between existing favorites, but do not get the menu shortcuts. The model browser lists the current model catalog for configured providers; open `/model` first if you need Pi to refresh that catalog.
-
-## Local development
-
-From the repository root:
-
-```sh
-npm ci --ignore-scripts
-npm run check
-npm test
-pi -e ./packages/model-plus/src/index.ts
-```
-
-No build step is required. Pi loads the TypeScript source. See the [repository README](https://github.com/lwlee2608/pi-extensions#publishing) for releases.
 
 ## License
 
