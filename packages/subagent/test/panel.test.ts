@@ -25,7 +25,8 @@ test("multi-worker panel is bounded, prioritizes questions and shows overflow", 
   const workers: Snapshot[] = Array.from({ length: 8 }, (_, i) => ({ ...worker, workerId: `w-${i}`, label: `worker ${i}` }));
   workers[7] = { ...workers[7], state: "blocked", questions: [{ questionId: "q-one", workerId: "w-7", runId: "r-one", generation: "g", requestId: "request", question: "Choose file", state: "pending" }] };
   const lines = panelLines(workers, 100, 1000);
-  assert.equal(lines.length, 9); assert.match(lines[0], /^\? worker 7/); assert.match(lines[1], /asks: Choose file · \/subagents → r$/);
+  assert.equal(lines.length, 9); assert.deepEqual(lines.slice(0, 8).filter(l => /^\S/.test(l)).map(l => l.split(" · ")[0]), ["⠋ worker 0", "⠋ worker 1", "⠋ worker 2", "? worker 7"]);
+  assert.match(lines[7], /asks: Choose file · \/subagents → r$/);
   assert.equal(lines.at(-1), "+4 more · /subagents");
   const waiting = [...workers.slice(0, 4), { ...worker, workerId: "w-q", label: "later", state: "queued" as const }];
   assert.equal(panelLines(waiting, 100, 1000).at(-1), "○ 1 queued: later");
@@ -37,11 +38,11 @@ test("multi-worker panel is bounded, prioritizes questions and shows overflow", 
 test("finished worker shows outcome icon, cost, context and first plain output line, then hides", () => {
   const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 648184, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.4213 } };
   const done: Snapshot = { ...worker, state: "closed", activity: "completed", output: "**Reviewed:** PR #133 (`e13ee6d`)\nmore", context: 82_400, result: { outcome: "completed", text: "", endedAt: 123_000, usage } };
-  assert.deepEqual(panelLines([done], 120, 124_000), ["✓ 界面 😀 · 2m03s · $0.42", "  └ ✓ 2m03s  ctx 82k  Reviewed: PR #133 (e13ee6d)"]);
+  assert.deepEqual(panelLines([done], 120, 124_000), ["✓ 界面 😀 · 2m03s · $0.42 · ↓ inspect", "  └ ✓ 2m03s  ctx 82k  Reviewed: PR #133 (e13ee6d)"]);
   assert.match(panelLines([{ ...done, result: { ...done.result!, outcome: "failed" }, error: "boom" }], 120, 124_000).join("\n"), /^✗ .*\n  └ ✗ .*  boom$/);
-  assert.deepEqual(panelLines([done], 120, 128_000), []);
-  assert.deepEqual(panelLines([{ ...done, state: "idle" }], 120, 128_000), []);
-  assert.deepEqual(panelLines([{ ...done, recoverable: true }], 120, 999_000), ["↻ 界面 😀 · 2m03s · $0.42", "  └ ↻ 2m03s  ctx 82k  saved conversation · /subagents → c"]);
+  assert.deepEqual(panelLines([done], 120, 153_000), []);
+  assert.deepEqual(panelLines([{ ...done, state: "idle" }], 120, 153_000), []);
+  assert.deepEqual(panelLines([{ ...done, recoverable: true }], 120, 999_000), ["↻ 界面 😀 · 2m03s · $0.42 · ↓ inspect", "  └ ↻ 2m03s  ctx 82k  saved conversation · /subagents → c"]);
   const cancelled = { ...done, recoverable: true, questions: [{ questionId: "q-one", workerId: "w-one", runId: "r-one", generation: "g", requestId: "request", question: "Which?", state: "cancelled" as const }] };
   assert.match(panelLines([cancelled], 120, 999_000)[1], /saved conversation; pending questions cancelled · \/subagents → c$/);
   assert.match(panelLines([{ ...done, recoverable: true, stopped: true }], 120, 124_000)[0], /^✓ /);
@@ -75,7 +76,7 @@ test("nested workers show one row per active member under their group", () => {
     { runId: "r-3", workerId: "w-child", label: "Review phase 1", startedAt: 60_000, agent: "reviewer", parentWorkerId: "w-root", state: "working" },
   ];
   assert.deepEqual(panelLines([root, child], 200, 104_000, undefined, steps), [
-    "⠋ Phase 1 · 1m44s · $1.70",
+    "⠋ Phase 1 · 1m44s · $1.70 · ↓ inspect",
     "  ├ ⠋ Phase 1 round 1  worker    1m04s  ctx 90k  tool: edit · fixing",
     "  └ ⠋ Review phase 1   reviewer    44s  ctx 41k  tool: bash · gh pr diff 69",
   ]);
@@ -83,11 +84,25 @@ test("nested workers show one row per active member under their group", () => {
   assert.match(panelLines([root, asking], 200, 104_000, undefined, steps).join("\n"), /^\? Phase 1.*\n.*\n  └ \? Review phase 1 .*asks: Which file\? · \/subagents → r$/);
   const orphan = { ...child, parentWorkerId: "w-missing" };
   assert.match(panelLines([orphan], 200, 104_000, undefined, steps.slice(2))[0], /^⠋ Review phase 1 · 44s/);
-  assert.deepEqual(panelLines([{ ...root, state: "idle" as const }, child], 200, 104_000, undefined, steps), ["⠋ Phase 1 · 1m44s · $1.70", "  └ ⠋ Review phase 1  reviewer  44s  ctx 41k  tool: bash · gh pr diff 69"]);
+  assert.deepEqual(panelLines([{ ...root, state: "idle" as const }, child], 200, 104_000, undefined, steps), ["⠋ Phase 1 · 1m44s · $1.70 · ↓ inspect", "  └ ⠋ Review phase 1  reviewer  44s  ctx 41k  tool: bash · gh pr diff 69"]);
   const queued = [{ ...root, state: "idle" as const, result: steps[0].result }, { ...child, state: "queued" as const }, { ...worker, workerId: "w-q", label: "Phase 2", state: "queued" as const }];
-  assert.deepEqual(panelLines(queued, 200, 104_000, undefined, steps), ["○ 2 queued: Phase 1, Phase 2"]);
+  assert.deepEqual(panelLines(queued, 200, 104_000, undefined, steps), ["○ 2 queued: Phase 1, Phase 2 · ↓ inspect"]);
   const colored = { fg: (color: string, text: string) => `\x1b[3${color.length % 8}m${text}\x1b[0m` };
   for (const width of [1, 10, 80]) for (const theme of [undefined, colored]) for (const line of panelLines([root, child], width, 104_000, theme, steps)) assert.ok(visibleWidth(line) <= width);
+});
+
+test("finished members stay while an overlapping member is active, then the group closes at once", () => {
+  const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+  const ended = (endedAt: number) => ({ state: "closed" as const, result: { outcome: "completed" as const, text: "", endedAt, usage } });
+  const root: Snapshot = { ...worker, workerId: "w-root", label: "Phase 1", state: "idle", startedAt: 0 };
+  const old: Snapshot = { ...worker, workerId: "w-old", label: "old round", parentWorkerId: "w-root", startedAt: 1_000, ...ended(5_000) };
+  const done: Snapshot = { ...worker, workerId: "w-done", label: "done reviewer", parentWorkerId: "w-root", startedAt: 10_000, ...ended(20_000) };
+  const busy: Snapshot = { ...worker, workerId: "w-busy", label: "busy reviewer", parentWorkerId: "w-root", startedAt: 10_000 };
+  const text = panelLines([root, old, done, busy], 200, 600_000).join("\n");
+  assert.match(text, /done reviewer/); assert.match(text, /busy reviewer/); assert.doesNotMatch(text, /old round/);
+  const finished = [root, old, done, { ...busy, ...ended(30_000) }];
+  assert.match(panelLines(finished, 200, 59_000).join("\n"), /old round[\s\S]*done reviewer[\s\S]*busy reviewer/);
+  assert.deepEqual(panelLines(finished, 200, 60_000), []);
 });
 
 test("unlabeled workers with the same name are numbered in start order", () => {

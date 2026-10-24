@@ -1,5 +1,5 @@
 import { stripVTControlCharacters } from "node:util";
-import { truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
+import { matchesKey, truncateToWidth, visibleWidth, type Component, type TUI } from "@earendil-works/pi-tui";
 import type { ExtensionUIContext, Theme } from "@earendil-works/pi-coding-agent";
 import type { Manager, Outcome, Snapshot, Step } from "./manager.ts";
 
@@ -7,11 +7,17 @@ export function display(text: string): string {
   return stripVTControlCharacters(text.replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "")).replace(/[\x00-\x1f\x7f-\x9f\u2028\u2029\u202a-\u202e\u2066-\u2069]/g, " ");
 }
 const spinner = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
-const linger = 5000;
+const linger = 30_000;
 export const active = ["working", "blocked", "queued"];
 export function reminded(worker: Readonly<Snapshot>): boolean { return !!worker.recoverable && !worker.stopped; }
 function shown(worker: Readonly<Snapshot>, now: number): boolean {
   return active.includes(worker.state) || reminded(worker) || (!!worker.result && now - worker.result.endedAt < linger);
+}
+function visible(members: Snapshot[], now: number): Snapshot[] {
+  const live = members.filter(w => active.includes(w.state)), end = Math.max(...members.map(w => w.result?.endedAt ?? -Infinity));
+  if (!live.length && now - end >= linger) return members.filter(reminded);
+  const anchor = live.length ? live : members.filter(w => w.result?.endedAt === end), at = live.length ? now : end;
+  return members.filter(w => active.includes(w.state) || reminded(w) || (!!w.result && (at - w.result.endedAt < linger || anchor.some(a => a.startedAt <= w.result!.endedAt))));
 }
 type Paint = Pick<Theme, "fg">;
 const plain: Paint = { fg: (_color, text) => text };
@@ -108,38 +114,47 @@ export function panelLines(workers: Snapshot[], width: number, now = Date.now(),
   if (width < 1) return [];
   const agents = new Map(steps.map(s => [s.runId, display(s.agent)])), nodes = tree(workers, steps), labels = names(nodes);
   const groups = nodes.flatMap(node => {
-    const members = node.members.filter(w => shown(w, now));
+    const members = visible(node.members, now);
     return members.length ? [{ node, members, title: labels.get(node.root.workerId)!, rank: Math.min(...members.map(m => order[m.state])) }] : [];
-  }).sort((a, b) => a.rank - b.rank);
+  });
   const queued = groups.filter(g => g.members.every(m => m.state === "queued"));
-  const lines: string[] = [];
-  let hidden = 0;
-  for (const { node, members, title } of groups.filter(g => !queued.includes(g))) {
-    const text = group(node, members, title, labels, agents, now, theme);
-    if (hidden || (lines.length && lines.length + text.length > budget)) hidden++;
-    else lines.push(...text);
+  const rendered = groups.filter(g => !queued.includes(g)).map(g => ({ ...g, text: group(g.node, g.members, g.title, labels, agents, now, theme) }));
+  const kept = new Set<typeof rendered[number]>();
+  let used = 0, hidden = 0;
+  for (const g of [...rendered].sort((a, b) => a.rank - b.rank)) {
+    if (hidden || (used && used + g.text.length > budget)) hidden++;
+    else { kept.add(g); used += g.text.length; }
   }
+  const lines = rendered.filter(g => kept.has(g)).flatMap(g => g.text);
   if (queued.length) lines.push(theme.fg("dim", `○ ${queued.length} queued: ${queued.map(g => g.title).join(", ")}`));
   if (hidden) lines.push(theme.fg("muted", `+${hidden} more · /subagents`));
+  if (lines.length) lines[0] += theme.fg("dim", " · ↓ inspect");
   return lines.map(line => truncateToWidth(line, width));
 }
-export function attachPanel(manager: Manager, ui: ExtensionUIContext): () => void {
+export function attachPanel(manager: Manager, ui: ExtensionUIContext, inspect: () => void): () => void {
   let render: (() => void) | undefined;
+  let host: (TUI & { getFocusedComponent?(): Component | null }) | undefined;
   let scheduled: NodeJS.Timeout | undefined;
   let disposed = false;
   ui.setWidget("pi-subagent", (tui, theme: Theme): Component => {
-    render = () => tui.requestRender();
+    host = tui; render = () => tui.requestRender();
     return { render: width => panelLines(manager.status(), width, Date.now(), theme, manager.history()), invalidate() {} };
   }, { placement: "aboveEditor" });
   const update = () => {
     if (!disposed && !scheduled) scheduled = setTimeout(() => { scheduled = undefined; render?.(); }, 80);
   };
   const unsubscribe = manager.onChange(update);
+  const unlisten = ui.onTerminalInput(data => {
+    const editor = host?.getFocusedComponent?.() as { getText?(): string; isShowingAutocomplete?(): boolean } | null | undefined;
+    if (!matchesKey(data, "down") || editor?.getText?.() !== "" || editor.isShowingAutocomplete?.() || !manager.some(w => shown(w, Date.now()))) return;
+    inspect();
+    return { consume: true };
+  });
   let tick = 0;
   const clock = setInterval(() => {
     const now = Date.now();
     if (manager.some(w => w.state === "working") || (++tick % 10 === 0 && manager.some(w => shown(w, now - 1000)))) update();
   }, 100);
   clock.unref();
-  return () => { disposed = true; unsubscribe(); clearInterval(clock); clearTimeout(scheduled); ui.setWidget("pi-subagent", undefined); };
+  return () => { disposed = true; unsubscribe(); unlisten(); clearInterval(clock); clearTimeout(scheduled); ui.setWidget("pi-subagent", undefined); };
 }

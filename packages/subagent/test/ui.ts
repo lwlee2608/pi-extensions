@@ -15,7 +15,7 @@ await writeFile(join(agentDir, "agents/worker.md"), "---\nname: worker\ndescript
 await writeFile(join(agentDir, "pi-subagent/config.json"), JSON.stringify({ extensions: { fixture: provider } }));
 await writeFile(join(agentDir, "settings.json"), JSON.stringify({ retry: { enabled: false }, compaction: { enabled: false } }));
 const mode = process.argv[2] === "regular" ? "regular" : "fullscreen";
-console.log(`Offline fixture: ${root}\nType PARENT_UI, then /subagents. No paid calls or global settings. Exit Pi normally to clean up.`);
+console.log(`Offline fixture: ${root}\nType BUILD_UI for a two-phase build with worker and reviewer rounds, or PARENT_UI for a question flow. Press ↓ on an empty prompt to inspect. No paid calls or global settings. Exit Pi normally to clean up.`);
 const child = spawn(process.execPath, [join(getPackageDir(), "dist/cli.js"), "--tui-mode", mode, "--no-extensions", "--no-approve", "--offline",
   "--provider", "subagent-offline", "--model", "fixture", "--thinking", "off", "--tools", "subagent", "--extension", provider,
   "--extension", fileURLToPath(new URL("../src/index.ts", import.meta.url)),
