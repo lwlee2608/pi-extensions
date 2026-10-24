@@ -27,7 +27,7 @@ const actionSchema = Type.Union([
 // action-specific union locally before touching a worker.
 export const parameters = Type.Object({
   action: Type.Union([Type.Literal("start"), Type.Literal("message"), Type.Literal("wait"), Type.Literal("status"), Type.Literal("stop"), Type.Literal("reply"), Type.Literal("recover")]),
-  agent: Type.Optional(text), task: Type.Optional(text), label, cwd: Type.Optional(text), model: Type.Optional(text),
+  agent: Type.Optional(Type.String({ ...text, description: "Profile for start; defaults to worker" })), task: Type.Optional(text), label, cwd: Type.Optional(text), model: Type.Optional(text),
   effort: Type.Optional(effortSchema), lifetime: Type.Optional(Type.Union([Type.Literal("once"), Type.Literal("retained")])),
   agentScope: Type.Optional(Type.Union([Type.Literal("user"), Type.Literal("project"), Type.Literal("both")])),
   workerId: Type.Optional(id), parentWorkerId: Type.Optional(id), message: Type.Optional(text), questionId: Type.Optional(id), cancelled: Type.Optional(Type.Literal(true)),
@@ -38,6 +38,8 @@ export const parameters = Type.Object({
 export type Action = Static<typeof actionSchema>;
 export type Start = Extract<Action, { action: "start" }>;
 export function validateAction(value: unknown): asserts value is Action {
+  const raw = value as { action?: unknown; agent?: unknown } | null;
+  if (raw?.action === "start") raw.agent ??= "worker";
   if (!Check(actionSchema, value)) throw new Error("Invalid subagent action or arguments. Supported actions: start/message/wait/status/stop/reply/recover.");
   const action = value as Action;
   if (action.action === "message" && action.mode === "steer" && action.label !== undefined) throw new Error("Steering cannot relabel a run.");
