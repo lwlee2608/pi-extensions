@@ -275,13 +275,12 @@ function readopt(id) {
     const { ended = {} } = await chrome.storage.session.get("ended");
     if (!links.has(id) || ended[id] === undefined) return;
     const { [id]: groupId, ...rest } = ended;
-    await chrome.storage.session.set({ ended: rest });
     const group = await chrome.tabGroups.get(groupId).catch(() => undefined);
-    if (!group) return;
+    if (!group) return chrome.storage.session.set({ ended: rest });
     const owned = await groups();
     const used = await liveColors(owned);
     await chrome.tabGroups.update(groupId, { title: group.title.replace(/ \(ended\)$/, ""), color: used.includes(group.color) ? freeColor(used) : group.color });
-    await chrome.storage.session.set({ groups: { ...owned, [id]: groupId } });
+    await chrome.storage.session.set({ ended: rest, groups: { ...owned, [id]: groupId } });
   });
 }
 
