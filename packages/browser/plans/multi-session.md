@@ -38,7 +38,7 @@
 - **Phase count** — 4, sequential: phases share `chrome/background.js` and `src/host.ts`
 
 ## Progress
-Active: 3 · 16/27 tasks
+Active: 3 · 21/27 tasks
 
 ### Phase 1 — One session drives Chrome with no TCP port open
 Today's single-session browser works exactly as before, but over the native host and a 0600 Unix socket, so nothing can squat a port.
@@ -83,11 +83,16 @@ A second pi session gets its own `pi · <name>` group in a distinct color and wo
 ### Phase 3 — See which group is yours, and keep it after exit
 `/browser` tells you your group and browser, the overlay names the session, and an exited session's tabs stay put as `(ended)`.
 **Blocked by:** 2
-- [ ] Print "Your group: pi · foo (red)" and the connected browser in `/browser` (`src/index.ts`)
-- [ ] Name the session on the overlay's Stop button (`chrome/background.js`)
-- [ ] Retitle a session's group `pi · <name> (ended)` and untrack it when its socket closes (`chrome/background.js`)
-- [ ] Re-adopt the group when a session with the same id connects again (`chrome/background.js`)
-- [ ] Add e2e cases for exit retitle and resume re-adopt, and unit tests for `/browser` output (`test/`)
+- [x] Print "Your group: pi · foo (red)" and the connected browser in `/browser` (`src/index.ts`)
+- [x] Name the session on the overlay's Stop button (`chrome/background.js`)
+- [x] Retitle a session's group `pi · <name> (ended)` and untrack it when its socket closes (`chrome/background.js`)
+- [x] Re-adopt the group when a session with the same id connects again (`chrome/background.js`)
+- [x] Add e2e cases for exit retitle and resume re-adopt, and unit tests for `/browser` output (`test/`)
+- Note: `/browser` asks the extension with a `status` call over the existing frames; the browser name comes from `navigator.userAgentData.brands`, so Chrome for Testing reports itself as Chromium. An extension not yet reloaded answers "Unknown browser action: status" until phase 4's handshake
+- Note: an ended group moves from `groups` to an `ended` map in `chrome.storage.session`, which frees its color; re-adopt runs when the session connects again, keeping its color unless a live group took it. Ending and re-adopting run in one queue that every call waits on, so an old close cannot retitle a session that already reconnected
+- Note: the overlay's Stop button reads `Stop pi · <name>`, taken from the tab's group title on each paint
+- Note: a session that exits while the service worker is down never ends: its group keeps its live title and color until the browser restarts. Ties into phase 4's worker-wake problem; a later fix could, at connect, mark ended any tracked id that does not reconnect within a few seconds
+- Note: `listenSocket` probe-connects before removing a socket file, so a second pi with the same session id fails with an error naming the path and the first keeps its socket. The first pi briefly takes the probe for a host, so a call of its own that is waiting for Chrome at that instant fails with "disconnected". The refused pi probes again on every call, and the probe→rm is not atomic, so two same-id pis starting together can still race; a real fix needs a lock file
 **Verify:** `npm run e2e`: after a session shuts down its group title ends in `(ended)` and its tabs remain; reconnecting with the same session id acts in that same group. `npm test` checks `/browser` prints group, color and browser.
 
 ### Phase 4 — macOS install, clear errors, and release notes

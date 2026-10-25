@@ -1,5 +1,5 @@
 import { chmod, mkdir, rm, utimes } from "node:fs/promises";
-import { createServer, type Socket } from "node:net";
+import { connect, createServer, type Socket } from "node:net";
 import { dirname } from "node:path";
 import { decoder, encode } from "./host.js";
 
@@ -37,9 +37,16 @@ interface Pending {
   reject: (error: Error) => void;
 }
 
+function answers(path: string): Promise<boolean> {
+  return new Promise(resolve => {
+    const socket = connect(path, () => { socket.destroy(); resolve(true); }).once("error", () => resolve(false));
+  });
+}
+
 export async function listenSocket(path: string, handlers: Handlers): Promise<() => void> {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   await chmod(dirname(path), 0o700);
+  if (await answers(path)) throw new Error(`Another pi process with this session is using the browser socket ${path}.`);
   await rm(path, { force: true });
   let live: Socket | undefined;
   const server = createServer(socket => {

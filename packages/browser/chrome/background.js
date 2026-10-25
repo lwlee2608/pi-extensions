@@ -149,6 +149,11 @@ const handlers = {
     }
   },
 
+  async status(_, caller) {
+    const group = await groupOf(caller);
+    return { browser: browserName(), group: group && { title: group.title, color: group.color } };
+  },
+
   async idle(_, caller) {
     await Promise.all((await piTabs(caller)).filter(tab => attached.has(tab.id)).map(tab => overlay(tab.id, "hide")));
     return {};
@@ -178,11 +183,13 @@ const session = {
   open(peer) {
     links.set(peer.id, peer);
     chrome.action.setTitle({ title: "Pi Browser: connected" });
+    readopt(peer.id).catch(() => {});
   },
   async message(peer, { id, method, params, name }) {
     let reply;
     try {
-      await allowed();
+      await queues.get("groups");
+      if (method !== "status") await allowed();
       if (!Object.hasOwn(handlers, method)) throw new Error(`Unknown browser action: ${method}`);
       reply = { id, result: await handlers[method](params ?? {}, { id: peer.id, name }) };
     } catch (error) {
@@ -195,7 +202,10 @@ const session = {
     links.delete(peer.id);
     if (!links.size) chrome.action.setTitle({ title: "Pi Browser: not connected" });
     const tabs = await piTabs({ id: peer.id });
-    if (!links.has(peer.id)) await Promise.all(tabs.map(tab => detach(tab.id)));
+    if (links.has(peer.id)) return;
+    await end(peer.id);
+    if (links.has(peer.id)) return;
+    await Promise.all(tabs.map(tab => detach(tab.id)));
   },
 };
 
@@ -237,8 +247,41 @@ async function groups() {
 async function groupOf({ id, name }) {
   const groupId = (await groups())[id];
   const group = groupId === undefined ? undefined : await chrome.tabGroups.get(groupId).catch(() => undefined);
-  if (group && name && group.title !== `pi · ${name}`) await chrome.tabGroups.update(group.id, { title: `pi · ${name}` });
+  if (group && name && group.title !== `pi · ${name}` && (await groups())[id] === group.id && links.has(id)) return chrome.tabGroups.update(group.id, { title: `pi · ${name}` });
   return group;
+}
+
+async function liveColors(owned) {
+  return (await chrome.tabGroups.query({})).filter(group => Object.values(owned).includes(group.id)).map(group => group.color);
+}
+
+function freeColor(used) {
+  return COLORS.find(color => !used.includes(color)) ?? COLORS[used.length % COLORS.length];
+}
+
+function end(id) {
+  return serial("groups", async () => {
+    if (links.has(id)) return;
+    const { [id]: groupId, ...owned } = await groups();
+    const group = groupId === undefined ? undefined : await chrome.tabGroups.get(groupId).catch(() => undefined);
+    const { ended = {} } = await chrome.storage.session.get("ended");
+    await chrome.storage.session.set({ groups: owned, ended: group ? { ...ended, [id]: groupId } : ended });
+    if (group) await chrome.tabGroups.update(groupId, { title: `${group.title} (ended)` });
+  });
+}
+
+function readopt(id) {
+  return serial("groups", async () => {
+    const { ended = {} } = await chrome.storage.session.get("ended");
+    if (!links.has(id) || ended[id] === undefined) return;
+    const { [id]: groupId, ...rest } = ended;
+    const group = await chrome.tabGroups.get(groupId).catch(() => undefined);
+    if (!group) return chrome.storage.session.set({ ended: rest });
+    const owned = await groups();
+    const used = await liveColors(owned);
+    await chrome.tabGroups.update(groupId, { title: group.title.replace(/ \(ended\)$/, ""), color: used.includes(group.color) ? freeColor(used) : group.color });
+    await chrome.storage.session.set({ ended: rest, groups: { ...owned, [id]: groupId } });
+  });
 }
 
 async function piTabs(caller) {
@@ -257,14 +300,13 @@ async function piTab(caller, tabId) {
 
 function openTab(caller) {
   return serial("groups", async () => {
+    if (!links.has(caller.id)) throw new Error("This pi session disconnected from the browser.");
     const group = await groupOf(caller);
     const tab = await chrome.tabs.create({ url: "about:blank", active: false, windowId: group?.windowId });
     const groupId = await chrome.tabs.group({ tabIds: [tab.id], groupId: group?.id });
     if (!group) {
       const owned = await groups();
-      const live = (await chrome.tabGroups.query({})).filter(group => Object.values(owned).includes(group.id));
-      const color = COLORS.find(color => !live.some(group => group.color === color)) ?? COLORS[live.length % COLORS.length];
-      await chrome.tabGroups.update(groupId, { title: `pi · ${caller.name}`, color });
+      await chrome.tabGroups.update(groupId, { title: `pi · ${caller.name}`, color: freeColor(await liveColors(owned)) });
       await chrome.storage.session.set({ groups: { ...owned, [caller.id]: groupId } });
     }
     current.set(caller.id, tab.id);
@@ -282,6 +324,7 @@ async function attach(tabId) {
   if (attached.has(tabId)) return;
   await allowed();
   const { groupId } = await chrome.tabs.get(tabId);
+  if (!Object.values(await groups()).includes(groupId)) throw new Error(`Tab ${tabId} is not in a live pi group.`);
   await chrome.debugger.attach({ tabId }, "1.3").catch(error => { if (!/already attached/i.test(error.message)) throw error; });
   logs.set(tabId, { console: [], network: [], requests: new Map(), partial: true });
   await chrome.debugger.sendCommand({ tabId }, "Page.enable");
@@ -451,17 +494,19 @@ function overlay(tabId, command, at) {
     : Promise.reject(new Error(`Tab ${tabId} was released.`));
   const run = async () => {
     await attach(tabId);
+    const { groupId } = await chrome.tabs.get(tabId);
+    const group = await chrome.tabGroups.get(groupId).catch(() => undefined);
     const { frameTree } = await send("Page.getFrameTree");
     const { executionContextId } = await send("Page.createIsolatedWorld", { frameId: frameTree.frame.id, worldName: OVERLAY_WORLD });
     await send("Runtime.addBinding", { name: STOP_BINDING, executionContextName: OVERLAY_WORLD });
-    const args = JSON.stringify([command, at ?? null, { move: CURSOR_MOVE_MS, idle: OVERLAY_IDLE_MS, binding: STOP_BINDING }]);
+    const args = JSON.stringify([command, at ?? null, { move: CURSOR_MOVE_MS, idle: OVERLAY_IDLE_MS, binding: STOP_BINDING, label: `Stop ${group?.title ?? "pi"}` }]);
     await send("Runtime.evaluate", { contextId: executionContextId, expression: `(${paint})(...${args})`, awaitPromise: true });
   };
   const wait = new Promise(resolve => setTimeout(resolve, OVERLAY_WAIT_MS));
   return Promise.race([run().catch(() => {}), wait]);
 }
 
-function paint(command, at, { move, idle, binding }) {
+function paint(command, at, { move, idle, binding, label }) {
   let ui = globalThis.piOverlay;
   if (!ui?.host.isConnected) {
     if (command === "hide" || command === "conceal") return;
@@ -472,6 +517,7 @@ function paint(command, at, { move, idle, binding }) {
   ui.timer = setTimeout(ui.remove, idle);
   ui.frame.classList.toggle("concealed", command === "conceal");
   ui.stop.style.pointerEvents = command === "aim" ? "none" : "";
+  ui.stop.textContent = label;
   const moved = at && (at.x !== ui.x || at.y !== ui.y);
   if (moved) {
     ui.x = at.x;
@@ -517,7 +563,6 @@ function paint(command, at, { move, idle, binding }) {
     make("div", "ring", cursor);
     make("div", "dot", cursor);
     const stop = make("button", "", frame);
-    stop.textContent = "Stop pi";
     stop.tabIndex = -1;
     const x = innerWidth / 2;
     const y = innerHeight / 2;
@@ -587,6 +632,12 @@ async function pressKeys(tabId, { modifiers, key }) {
     held &= ~MODIFIERS[name][0];
     await send("keyUp", { key: name, code: `${name}Left`, keyCode: MODIFIERS[name][1], modifiers: held });
   }
+}
+
+function browserName() {
+  const brands = navigator.userAgentData?.brands ?? [];
+  const brand = brands.find(({ brand }) => !/not.a.brand|^chromium$/i.test(brand)) ?? brands.find(({ brand }) => brand === "Chromium");
+  return brand ? `${brand.brand} ${brand.version}` : "an unknown browser";
 }
 
 function describe(tab) {
