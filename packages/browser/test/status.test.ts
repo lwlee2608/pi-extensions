@@ -4,7 +4,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import type { Handlers } from "../src/bridge.ts";
 import { browserExtension } from "../src/index.ts";
 
-function browser(reply?: { result: object } | { error: string }): () => Promise<string> {
+function browser(reply?: { result: object } | { error: string }, platform: NodeJS.Platform = "linux"): () => Promise<string> {
   const handlers = new Map<string, (event: unknown, ctx: ExtensionContext) => void>();
   let command: (args: string, ctx: ExtensionContext) => Promise<void>;
   const pi = {
@@ -21,7 +21,7 @@ function browser(reply?: { result: object } | { error: string }): () => Promise<
     }
     return () => {};
   };
-  browserExtension({ transport, connectTimeout: 10, callTimeout: 100 })(pi);
+  browserExtension({ transport, platform, connectTimeout: 10, callTimeout: 100 })(pi);
   const notes: string[] = [];
   const ctx = { hasUI: true, cwd: "/work/demo", ui: { notify: (text: string) => notes.push(text) }, sessionManager: { getSessionId: () => "id", getSessionName: () => "foo" } } as unknown as ExtensionContext;
   handlers.get("session_start")!({}, ctx);
@@ -55,4 +55,8 @@ test("/browser says how to reconnect when no browser is connected", async () => 
   const text = await browser()();
   assert.match(text, /^Chrome: not connected\. Click the Pi Browser toolbar icon/m);
   assert.doesNotMatch(text, /Your group/);
+});
+
+test("/browser on Windows says it is not supported until the port transport", async () => {
+  assert.match(await browser({ result: { browser: "Google Chrome 156" } }, "win32")(), /^The browser is not supported on Windows until the port transport lands/);
 });

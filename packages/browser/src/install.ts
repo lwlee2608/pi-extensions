@@ -17,7 +17,12 @@ export function detectBrowserDirs(home = homedir(), platform = process.platform,
   return (BROWSERS[platform] ?? []).map(name => join(root, name)).filter(dir => existsSync(dir));
 }
 
-export async function installHost(browserDirs: string[], sessions: string, node = process.execPath, script = HOST_SCRIPT): Promise<void> {
+export function nodePath(execPath = process.execPath, standalone = Boolean(process.versions.bun) || process.getBuiltinModule("node:sea")?.isSea() === true): string {
+  if (standalone) throw new Error(`The browser's native host runs on Node.js, but this pi runs as ${execPath}, which is not Node. Install pi with npm on Node.js 22.19+ to use the browser.`);
+  return execPath;
+}
+
+export async function installHost(browserDirs: string[], sessions: string, node = nodePath(), script = HOST_SCRIPT): Promise<void> {
   for (const browser of browserDirs) {
     const dir = join(browser, "NativeMessagingHosts");
     const wrapper = join(dir, `${HOST}.sh`);

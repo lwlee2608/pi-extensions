@@ -7,7 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { Bridge, listenSocket } from "../src/bridge.ts";
 import { decoder, encode } from "../src/host.js";
-import { detectBrowserDirs, HOST, installHost, ORIGIN } from "../src/install.ts";
+import { detectBrowserDirs, HOST, installHost, nodePath, ORIGIN } from "../src/install.ts";
 
 const home = await mkdtemp(join(tmpdir(), "pi-browser-install-"));
 test.after(() => rm(home, { recursive: true, force: true }));
@@ -45,6 +45,12 @@ test("installs into each detected macOS browser under Application Support", asyn
     assert.equal(manifest.path, join(dir, "NativeMessagingHosts", `${HOST}.sh`));
     assert.match(await readFile(manifest.path, "utf8"), /^exec '\/opt\/homebrew\/bin\/node' /m);
   }
+});
+
+test("a pi that is not running on Node refuses to pin itself as the host's Node", () => {
+  assert.equal(nodePath("/usr/bin/node", false), "/usr/bin/node");
+  assert.throws(() => nodePath("/usr/local/bin/pi", true), /runs as \/usr\/local\/bin\/pi, which is not Node\. Install pi with npm/);
+  assert.equal(nodePath(), process.execPath);
 });
 
 test("the installed wrapper runs the host through a symlinked package, and it relays a call from the session to Chrome's stdio", async () => {

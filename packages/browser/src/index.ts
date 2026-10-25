@@ -73,7 +73,7 @@ export function truncate(text: string, tail = false): string {
   return tail ? `${note}\n\n${result.content}` : `${result.content}\n\n${note}`;
 }
 
-export function browserExtension({ browserDirs, ...overrides }: Partial<BridgeOptions> & { browserDirs?: string[] } = {}): (pi: ExtensionAPI) => void {
+export function browserExtension({ browserDirs, platform = process.platform, ...overrides }: Partial<BridgeOptions> & { browserDirs?: string[]; platform?: NodeJS.Platform } = {}): (pi: ExtensionAPI) => void {
   return pi => {
     let session: ExtensionContext | undefined;
     let used = false;
@@ -94,6 +94,7 @@ export function browserExtension({ browserDirs, ...overrides }: Partial<BridgeOp
 
     function use(ctx: ExtensionContext): Bridge {
       if (!ctx.hasUI) throw new Error("The browser needs an interactive pi session.");
+      if (platform === "win32") throw new Error("The browser is not supported on Windows until the port transport lands (https://github.com/lwlee2608/pi-extensions/issues/43).");
       return bridge;
     }
 
