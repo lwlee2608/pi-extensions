@@ -102,6 +102,20 @@ test("the socket replaces a stale one, is user-only in a user-only folder, and i
   await assert.rejects(new Promise((resolve, reject) => connect(path).once("connect", resolve).once("error", reject)), /ENOENT/);
 });
 
+test("a second pi with the same session fails clearly and leaves the live socket alone", async () => {
+  const path = join(dir, "sessions", `${++count}.sock`);
+  let probed!: () => void;
+  const probe = new Promise<void>(resolve => { probed = resolve; });
+  const server = new Bridge({ transport: handlers => listenSocket(path, { ...handlers, close: peer => { handlers.close(peer); probed(); } }), callTimeout: 1_000 });
+  const twin = new Bridge({ transport: handlers => listenSocket(path, handlers) });
+  bridges.push(server, twin);
+  await server.listen();
+  await assert.rejects(twin.listen(), /Another pi process with this session is using the browser socket .*\.sock/);
+  await probe;
+  await host(path);
+  assert.deepEqual(await server.call("echo", {}), { method: "echo", params: {} });
+});
+
 test("a bridge closed while it starts does not keep listening", async () => {
   const { server, path } = bridge();
   const listening = server.listen();
