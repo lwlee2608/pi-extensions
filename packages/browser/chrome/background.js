@@ -194,7 +194,8 @@ const session = {
     if (links.get(peer.id) !== peer) return;
     links.delete(peer.id);
     if (!links.size) chrome.action.setTitle({ title: "Pi Browser: not connected" });
-    await Promise.all((await piTabs({ id: peer.id })).map(tab => detach(tab.id)));
+    const tabs = await piTabs({ id: peer.id });
+    if (!links.has(peer.id)) await Promise.all(tabs.map(tab => detach(tab.id)));
   },
 };
 
