@@ -14,21 +14,30 @@ Let Pi use the Chrome you're already signed into. The agent opens pages, reads t
 ## How it works
 
 ```
- Pi session                          Chrome (your profile)
-┌────────────────────────────┐      ┌───────────────────────────┐
-│ browser tool, /browser     │  WS  │ Pi Browser extension      │
-│ approval prompts           │◄────►│ (unpacked MV3)            │
-│ bridge on 127.0.0.1        │      │ chrome.debugger (CDP)     │
-└────────────────────────────┘      └─────────────┬─────────────┘
-                                                  │
-                                           "pi" tab group
+ Pi session "api"            Pi session "docs"
+┌────────────────────┐      ┌────────────────────┐
+│ browser tool       │      │ browser tool       │
+│ approval prompts   │      │ approval prompts   │
+│ <session>.sock     │      │ <session>.sock     │
+└─────────┬──────────┘      └─────────┬──────────┘
+          └──────────────┬────────────┘
+                ┌────────┴────────┐
+                │   native host   │ started by Chrome
+                └────────┬────────┘
+                         │ stdio
+          ┌──────────────┴──────────────┐
+          │ Pi Browser extension (MV3)  │
+          │ chrome.debugger (CDP)       │
+          └──────┬───────────────┬──────┘
+                 │               │
+          "pi · api" group  "pi · docs" group
 ```
 
-The Pi extension runs a small WebSocket server on `127.0.0.1`. The companion Chrome extension connects to it and drives tabs through Chrome's debugger API. The agent only works in tabs it opens itself, collected in a tab group named **pi**. Your other tabs stay out of reach.
+Each Pi session listens on its own Unix socket under `~/.pi/agent/pi-browser/sessions/`. Chrome starts a small native messaging host that ships with this package; it finds every session's socket and relays between them and the companion extension, which drives tabs through Chrome's debugger API. No TCP port is opened. Each session works only in the tabs it opens itself, collected in its own tab group named **pi · <session name>**. Your other tabs, and other sessions' tabs, stay out of reach.
 
 ## Install
 
-**Requirements:** desktop Google Chrome 120+, Node.js 22.19+, Pi 1.0.0.
+**Requirements:** desktop Google Chrome 120+, Brave, or Chromium on Linux or macOS; Node.js 22.19+; Pi 1.0.0 installed with npm. Windows is not supported yet, and neither are Snap or Flatpak browsers, which can't start the native host.
 
 1. Install the Pi package:
 
@@ -38,11 +47,11 @@ The Pi extension runs a small WebSocket server on `127.0.0.1`. The companion Chr
 
    Run `/reload` if Pi is already open.
 
-2. Run `/browser` in Pi. It prints the path to the bundled Chrome extension and claims the browser for this session.
+2. Run `/browser` in Pi. It prints the path to the bundled Chrome extension and installs the native host: a manifest and a small launcher, pinned to the Node.js running Pi, in the `NativeMessagingHosts` folder of every Chrome, Brave, and Chromium profile folder it finds (`~/.config/...` on Linux, `~/Library/Application Support/...` on macOS). Pi rewrites them on each session's first browser use, so a Node.js upgrade heals itself.
 
 3. In Chrome, open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and select that path. On macOS, press **Cmd+Shift+G** in the folder picker to paste it.
 
-4. Run `/browser` again. It should report Chrome as connected. If not, click the Pi Browser toolbar icon to reconnect.
+4. Run `/browser` again. It should report Chrome as connected. If not, click the Pi Browser toolbar icon to reconnect; its tooltip says why if it can't start the native host.
 
 Then try a read-only first task:
 
@@ -52,13 +61,19 @@ Open https://example.com and tell me what the page says.
 
 > **Trust:** the companion has the `debugger` permission in the profile you load it into. Read [`chrome/`](chrome/) before loading it. Consider a separate Chrome profile if you don't want the agent anywhere near your main one.
 
+### Upgrading from 0.1
+
+- **Reload the extension.** Open `chrome://extensions` and click reload on Pi Browser after every package update. Until you do, Pi refuses the browser with "Pi Browser protocol versions do not match ... Reload the Pi Browser extension". Restart Pi too if it was open during the update.
+- **`/browser take` is gone.** Every session gets the browser at once, in its own tab group.
+- **No port.** The WebSocket bridge on `127.0.0.1:47823` is gone. The old `~/.pi/agent/pi-browser/secret` file is no longer used; you can delete it.
+
 ## Use
 
 The agent gets one `browser` tool:
 
 | Action | What it does |
 | --- | --- |
-| `tabs` | List tabs in the pi group. Other tabs are only counted, never listed. |
+| `tabs` | List tabs in your session's group. Other tabs are only counted, never listed. |
 | `navigate` | Load an `http`/`https` URL in the current pi tab, or a new one. Other schemes are refused. |
 | `read` | Page text plus numbered element refs from the accessibility tree. |
 | `click` | Click a ref with real mouse events. |
@@ -76,8 +91,7 @@ Page actions take an optional tab id and default to the current pi tab. Refs com
 
 | Command | Result |
 | --- | --- |
-| `/browser` | Extension path, connection state, and which session owns the browser. |
-| `/browser take` | Move the browser to this session. |
+| `/browser` | Extension path, connection state, the connected browser, and your group, like "Your group: pi · api (red)". |
 
 ### Site approval
 
@@ -92,48 +106,60 @@ Approval matches the exact hostname, so `github.com` doesn't cover `gist.github.
 
 A pi tab showing anything other than an `http`/`https` page, such as `about:blank`, `data:`, or `chrome:`, has no host to approve, so every action on it is refused and `tabs` shows only its scheme. That stops a page from writing into a blank tab it opened and having the agent read it unasked. Navigate the tab to use it again.
 
-### One session at a time
+### Several sessions at once
 
-The first Pi session to use the browser owns it; others get an "in use" error. Run `/browser take` in the session that should have it. Chrome reconnects to the new owner within about 30 seconds; click the Pi Browser toolbar icon to reconnect at once.
+Every Pi session that uses the browser gets its own tab group, titled `pi · <session name>` (or the working folder's name for an unnamed session), in a color no other live session uses. Sessions work at the same time without waiting for each other. A session sees and acts only on tabs in its own group, whatever tab id it sends, and `tabs` only counts the rest. Dragging a tab into another session's group hands it to that session. Renaming a session retitles its group on its next action.
+
+When a session exits, its tabs stay open and its group is retitled `pi · <name> (ended)`. Resuming that session takes the group back.
+
+If both Chrome and Brave run the extension, each session goes to whichever browser reached it first; `/browser` names it.
 
 The tool only exists in interactive sessions. Print mode, JSON/RPC mode, and subagent children never see it, because approvals need you.
 
 ### While the agent works
 
-Chrome shows a "Pi Browser started debugging this browser" bar while the agent is attached. It goes away when Pi exits. Clicking **Cancel** on the bar takes control away from the agent: Pi Browser refuses every action until you click its toolbar icon.
+Chrome shows a "Pi Browser started debugging this browser" bar while the agent is attached. It goes away when no Pi session is attached. Clicking **Cancel** on the bar takes control away from every session: Pi Browser refuses every action until you click its toolbar icon.
 
-A tab the agent is using glows blue at its edges. A blue dot slides to each element the agent clicks, types into, or scrolls to, and pulses on a click. **Stop pi** at the bottom aborts the agent's turn. All three disappear when the turn ends and are left out of screenshots. The page's own scripts can't see or press them.
+A tab the agent is using glows blue at its edges. A blue dot slides to each element the agent clicks, types into, or scrolls to, and pulses on a click. **Stop pi · <name>** at the bottom aborts that session's turn only. All three disappear when the turn ends and are left out of screenshots. The page's own scripts can't see or press them.
 
 Once the agent uses `console` on a tab, Chrome reports that tab's console to the debugger, which some sites detect as automation and answer with a challenge. Other actions don't turn this on.
 
-## Safety
+## Security
 
-- **Pi accepts only this extension.** The bridge listens on loopback and accepts only the companion's pinned extension ID, so web pages and other extensions can't reach it. A local program running as you could forge that, but such a program can already read your Chrome profile.
-- **The extension does not authenticate Pi.** While no Pi session holds the port, any local process that listens on `127.0.0.1:47823` can drive the extension, skipping Pi's site approval and eval confirmation. The extension still refuses anything but `http`/`https` on its own. This matters most on machines shared with other OS users or running untrusted local apps.
+**Threat model.** Pi Browser defends against web pages, other extensions, and other users on the same machine. It does not defend against programs running as you: those can already read your Chrome profile, cookies included, so no local check would stop them.
+
+- **Other OS users can't reach a session.** Each session's socket is readable and writable only by you (`0600`), inside a folder only you can enter (`0700`).
+- **Only this extension can start the host.** The native host manifest lists the companion's pinned extension ID in `allowed_origins`, so Chrome refuses to start it for web pages or any other extension. Nothing listens on a TCP port, so there is nothing for a web page or a local process to squat.
+- **Sessions can't impersonate each other.** The host labels every message with the socket it came in on, and the extension trusts only that label, never a session name in the message. A session can act only on tabs in its own group.
 - **Approved sites can steer the agent.** Approval is about where the agent may go, not what it reads there. Text on an approved site, such as an issue comment, an email, or a review, can contain instructions the agent may follow on that site. Use "always" only for sites whose content you trust, and watch the agent on sites with user-written content.
 - **Page content goes to your model provider**, like any other tool output.
 - **Network logs skip headers and bodies**, so tokens and cookies in them don't land in the transcript. URLs are kept whole, query strings included. Page text, console output, and eval results are returned as-is, only truncated.
-- **Only you can move the browser.** `/browser take` proves itself with a secret in `~/.pi/agent/pi-browser/secret`, readable only by you, so a web page can't make the owning session let go.
-- **The bridge exists only while a Pi session uses the browser.** It closes when Pi exits.
+- **A session's socket exists only while it uses the browser.** Pi removes it when the session exits.
 
 ## Limits
 
-- One Chrome profile at a time. A second connected Chrome is refused.
+- Linux and macOS only. Windows waits for a port-based transport ([#43](https://github.com/lwlee2608/pi-extensions/issues/43)).
+- Snap and Flatpak browsers can't start the native host. Use a browser installed from a `.deb`, `.rpm`, or the vendor's own package.
+- Pi must run on Node.js. A Bun-compiled or single-executable Pi can't pin a Node.js for the host and refuses the browser.
+- Each session goes to one browser: the first Chrome profile to reach it. Another profile with the extension is refused for that session until the first lets go.
+- The socket path, `~/.pi/agent/pi-browser/sessions/<session id>.sock`, must fit the OS limit (104 bytes on macOS, 108 on Linux). If `PI_CODING_AGENT_DIR` is very long, the browser fails with an error naming the path.
+- A session that exits while Chrome has the extension's worker asleep keeps its live group title until Chrome restarts.
 - Cross-origin iframes, native dialogs, file pickers, password-manager popups, passkeys, and CAPTCHAs are out of reach.
 - An action or `eval` that opens an `alert`, `confirm`, or `prompt` dialog fails at once and leaves the dialog for you to answer in Chrome; the tab is blocked until you do.
 - No hover and no wheel scrolling: Chrome doesn't answer those events in a tab that isn't in front. `scroll` brings a ref into view instead.
 - Chrome can't load this extension with `--load-extension` anymore; load it unpacked.
-- After updating the package, reload Pi Browser in `chrome://extensions`.
+- After updating the package, reload Pi Browser in `chrome://extensions`; Pi says so until you do.
 - Password-manager extensions such as LastPass inject frames into form pages, and Chrome then blocks the debugger on that tab ("Cannot access a chrome-extension:// URL of different extension"). Turn the extension off for that site, or use a Chrome profile without it ([#34](https://github.com/lwlee2608/pi-extensions/issues/34)).
 
 ## Troubleshooting
 
 | Symptom | Fix |
 | --- | --- |
-| "Chrome not connected" | Check that Pi Browser is enabled in `chrome://extensions`, then click its toolbar icon. |
-| "in use" | Another Pi session owns the browser. Run `/browser take`. |
+| "Chrome extension is not connected" | Check that Pi Browser is enabled in `chrome://extensions`, then click its toolbar icon. Hover the icon: if it says it can't start the native host, run `/browser` once to install it and click the icon again. |
+| "Pi Browser protocol versions do not match" | Reload Pi Browser in `chrome://extensions`. If that doesn't help, restart Pi. |
+| "Tab N is not in your group" | That tab belongs to another session or to none. Use your own pi tabs, or `navigate` with `newTab`. |
 | Agent says a ref is gone | The page changed, or Chrome restarted the extension. It should `read` again. |
 
 ## Development
 
-`npm run e2e -w packages/browser` loads `chrome/` into Chrome for Testing, headless with a temporary profile, and drives the tool against local fixture pages on its own port. The first run downloads Chrome for Testing to `~/.cache/pi-browser/` (or `$XDG_CACHE_HOME`). It runs locally only, not in CI.
+`npm run e2e -w packages/browser` loads `chrome/` into Chrome for Testing, headless with a temporary profile, and drives the tool against local fixture pages, with the native host manifest in that profile and its own sessions folder. The first run downloads Chrome for Testing to `~/.cache/pi-browser/` (or `$XDG_CACHE_HOME`). It runs locally only, not in CI.

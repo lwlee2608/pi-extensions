@@ -38,7 +38,7 @@
 - **Phase count** — 4, sequential: phases share `chrome/background.js` and `src/host.ts`
 
 ## Progress
-Active: 4 · 26/27 tasks
+Active: none · 27/27 tasks
 
 ### Phase 1 — One session drives Chrome with no TCP port open
 Today's single-session browser works exactly as before, but over the native host and a 0600 Unix socket, so nothing can squat a port.
@@ -105,7 +105,7 @@ macOS works, and every unsupported setup fails with a message saying what to do.
 - [x] Fail with an error naming the path when the socket path is over the OS limit (`src/bridge.ts`)
 - [x] Exchange a protocol version on connect and fail with "reload the Pi Browser extension" on mismatch (`src/bridge.ts`, `src/host.ts`, `chrome/background.js`)
 - [x] Explain a failed `connectNative` in the toolbar title, and mention Snap/Flatpak in `/browser` (`chrome/background.js`, `src/index.ts`)
-- [ ] Rewrite install and add a Security section, note the reload and that `/browser take` is gone; bump package and manifest minor version (`README.md`, `package.json`, `chrome/manifest.json`)
+- [x] Rewrite install and add a Security section, note the reload and that `/browser take` is gone; bump package and manifest minor version (`README.md`, `package.json`, `chrome/manifest.json`)
 - Note: the socket limit is the full `sun_path` size, 108 bytes on Linux and 104 on macOS; on Linux Node binds a 108-byte path fine but silently truncates a longer one, so without the check a 109-byte path binds the wrong file
 - Note: the handshake: the host announces its version to Chrome on start, pi's first frame on a new host is a `hello` call, and the extension answers with its own and the host's version. pi checks both; an error answer (an extension from before the handshake says "Unknown browser action: hello") counts as a mismatch. A mismatched host stays attached and every call fails at once until it disconnects, since closing it would make pi's touch-on-close wake the host to reconnect in a loop
 - Note: the host now tells Chrome `connected` only on pi's first frame, so a refused host sends nothing and the toolbar title no longer flickers; and a same-id pi's probe never finishes the handshake, so it no longer fails a call waiting for Chrome with "disconnected"
