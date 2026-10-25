@@ -33,7 +33,7 @@ Let Pi use the Chrome you're already signed into. The agent opens pages, reads t
           "pi · api" group  "pi · docs" group
 ```
 
-Each Pi session listens on its own Unix socket under `~/.pi/agent/pi-browser/sessions/`. Chrome starts a small native messaging host that ships with this package; it finds every session's socket and relays between them and the companion extension, which drives tabs through Chrome's debugger API. No TCP port is opened. Each session works only in the tabs it opens itself, collected in its own tab group named **pi · <session name>**. Your other tabs, and other sessions' tabs, stay out of reach.
+Each Pi session listens on its own Unix socket under `~/.pi/agent/pi-browser/sessions/`. Chrome starts a small native messaging host that ships with this package; it finds every session's socket and relays between them and the companion extension, which drives tabs through Chrome's debugger API. No TCP port is opened. Each session works only in the tabs in its own tab group, named **pi · <session name>**. Your other tabs, and other sessions' tabs, stay out of reach.
 
 ## Install
 
@@ -47,7 +47,7 @@ Each Pi session listens on its own Unix socket under `~/.pi/agent/pi-browser/ses
 
    Run `/reload` if Pi is already open.
 
-2. Run `/browser` in Pi. It prints the path to the bundled Chrome extension and installs the native host: a manifest and a small launcher, pinned to the Node.js running Pi, in the `NativeMessagingHosts` folder of every Chrome, Brave, and Chromium profile folder it finds (`~/.config/...` on Linux, `~/Library/Application Support/...` on macOS). Pi rewrites them on each session's first browser use, so a Node.js upgrade heals itself.
+2. Run `/browser` in Pi. It prints the path to the bundled Chrome extension and installs the native host: a manifest and a small launcher, pinned to the Node.js running Pi, in the `NativeMessagingHosts` folder of every Chrome, Brave, and Chromium user data folder it finds (`~/.config/...` on Linux, `~/Library/Application Support/...` on macOS). Pi rewrites them on each session's first browser use, so after a Node.js upgrade the host works again once a Pi session uses the browser and the extension reconnects, or you click its icon.
 
 3. In Chrome, open `chrome://extensions`, turn on **Developer mode**, click **Load unpacked**, and select that path. On macOS, press **Cmd+Shift+G** in the folder picker to paste it.
 
@@ -63,7 +63,7 @@ Open https://example.com and tell me what the page says.
 
 ### Upgrading from 0.1
 
-- **Reload the extension.** Open `chrome://extensions` and click reload on Pi Browser after every package update. Until you do, Pi refuses the browser with "Pi Browser protocol versions do not match ... Reload the Pi Browser extension". Restart Pi too if it was open during the update.
+- **Reload the extension.** Open `chrome://extensions` and click reload on Pi Browser after every package update. The 0.1 extension still looks for the old WebSocket bridge, so until you reload it, Pi reports Chrome as not connected and the toolbar icon does nothing. Restart Pi too if it was open during the update.
 - **`/browser take` is gone.** Every session gets the browser at once, in its own tab group.
 - **No port.** The WebSocket bridge on `127.0.0.1:47823` is gone. The old `~/.pi/agent/pi-browser/secret` file is no longer used; you can delete it.
 
@@ -126,7 +126,7 @@ Once the agent uses `console` on a tab, Chrome reports that tab's console to the
 
 ## Security
 
-**Threat model.** Pi Browser defends against web pages, other extensions, and other users on the same machine. It does not defend against programs running as you: those can already read your Chrome profile, cookies included, so no local check would stop them.
+**Threat model.** Pi Browser defends against web pages, other extensions, and other users on the same machine. It does not defend against programs running as you: those can already read your Chrome profile, cookies included, so no local check would stop them. A session's boundary is its tab group: a tab you drag into the group, or one a pi tab opens with `window.open`, joins it, and another extension with the `tabs` or `tabGroups` permission could move tabs into a pi group. Site approval still gates every action on those tabs.
 
 - **Other OS users can't reach a session.** Each session's socket is readable and writable only by you (`0600`), inside a folder only you can enter (`0700`).
 - **Only this extension can start the host.** The native host manifest lists the companion's pinned extension ID in `allowed_origins`, so Chrome refuses to start it for web pages or any other extension. Nothing listens on a TCP port, so there is nothing for a web page or a local process to squat.
@@ -148,14 +148,14 @@ Once the agent uses `console` on a tab, Chrome reports that tab's console to the
 - An action or `eval` that opens an `alert`, `confirm`, or `prompt` dialog fails at once and leaves the dialog for you to answer in Chrome; the tab is blocked until you do.
 - No hover and no wheel scrolling: Chrome doesn't answer those events in a tab that isn't in front. `scroll` brings a ref into view instead.
 - Chrome can't load this extension with `--load-extension` anymore; load it unpacked.
-- After updating the package, reload Pi Browser in `chrome://extensions`; Pi says so until you do.
+- After updating the package, reload Pi Browser in `chrome://extensions`. A stale extension shows up as not connected, or as a protocol mismatch when the update changed the protocol.
 - Password-manager extensions such as LastPass inject frames into form pages, and Chrome then blocks the debugger on that tab ("Cannot access a chrome-extension:// URL of different extension"). Turn the extension off for that site, or use a Chrome profile without it ([#34](https://github.com/lwlee2608/pi-extensions/issues/34)).
 
 ## Troubleshooting
 
 | Symptom | Fix |
 | --- | --- |
-| "Chrome extension is not connected" | Check that Pi Browser is enabled in `chrome://extensions`, then click its toolbar icon. Hover the icon: if it says it can't start the native host, run `/browser` once to install it and click the icon again. |
+| "Chrome extension is not connected" | Check that Pi Browser is enabled in `chrome://extensions`, and reload it there after an update. Then click its toolbar icon. Hover the icon: if it says it can't start the native host, run `/browser` once to install it and click the icon again. |
 | "Pi Browser protocol versions do not match" | Reload Pi Browser in `chrome://extensions`. If that doesn't help, restart Pi. |
 | "Tab N is not in your group" | That tab belongs to another session or to none. Use your own pi tabs, or `navigate` with `newTab`. |
 | Agent says a ref is gone | The page changed, or Chrome restarted the extension. It should `read` again. |
