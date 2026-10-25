@@ -57,6 +57,10 @@ Today's single-session browser works exactly as before, but over the native host
 - Note: the bridge still refuses a second host connection, as v1 did; the refused host retries every 5s, so it takes over once the first Chrome leaves, and a toolbar click with no session linked restarts the host at once. Phase 2 replaces this with first-claim-wins
 - Note: README still describes port 47823 and `/browser take` until phase 4 rewrites it; the `ws` dependency is gone and the e2e CDP client uses Node's built-in `WebSocket`
 - Note: e2e on this host still needs a local, uncommitted `--no-sandbox` (AppArmor), as in v1
+- Note: a first use after an install or upgrade can wait out the connect timeout: if the extension loaded before pi wrote the manifest (or a Node upgrade moved the pinned node), `connectNative` fails, the worker dies idle, and nothing wakes it. The not-connected errors now say to click the toolbar icon
+- Note: a second pi process with the same session id removes the live socket file at that path before binding, and the first pi's close then deletes the second's socket. Phase 3 resume should probe-connect before rm (`src/bridge.ts` `listenSocket`)
+- Note: under a Bun-compiled or SEA pi, `process.execPath` is not node, so the wrapper would pin the wrong binary. Phase 4 should refuse with a clear error (`src/install.ts`)
+- Note: phase 4's no-host task must design for the worker getting no wake-up after `connectNative` fails and the worker dies
 **Verify:** `npm run e2e` passes every existing case over the native host, plus a new case that asserts no TCP listener exists while the agent reads a page; `npm test` covers relay framing and stale-socket cleanup.
 
 ### Phase 2 — Two sessions drive their own groups at the same time

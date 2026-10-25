@@ -51,7 +51,7 @@ test("a stop event from Chrome reaches onStop", async () => {
 
 test("a call fails when Chrome never connects", async () => {
   const { server } = bridge({ connectTimeout: 20 });
-  await assert.rejects(server.call("echo", {}), /not connected/);
+  await assert.rejects(server.call("echo", {}), /not connected\. Click the Pi Browser toolbar icon/);
 });
 
 test("a second host connection is refused while one is live", async () => {

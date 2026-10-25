@@ -144,7 +144,7 @@ export class Bridge {
       };
       const abort = () => done(new Error("Aborted."));
       const timer = setTimeout(
-        () => done(new Error("Chrome extension is not connected. Run /browser for the extension folder, load it unpacked in chrome://extensions, and keep Chrome open.")),
+        () => done(new Error("Chrome extension is not connected. Click the Pi Browser toolbar icon in Chrome to reconnect. If it is not installed, run /browser for the extension folder and load it unpacked in chrome://extensions.")),
         this.options.connectTimeout ?? 35_000,
       );
       signal?.addEventListener("abort", abort, { once: true });

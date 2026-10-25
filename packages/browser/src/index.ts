@@ -95,7 +95,7 @@ export function browserExtension({ browserDirs, ...overrides }: Partial<BridgeOp
       const lines = [`Chrome extension folder: ${CHROME_DIR}`];
       const error = await bridge.listen().catch((error: Error) => error);
       if (error) return [...lines, error.message].join("\n");
-      lines.push(bridge.connected ? "Chrome: connected" : "Chrome: not connected. Load the folder unpacked in chrome://extensions, then click the Pi Browser toolbar icon.");
+      lines.push(bridge.connected ? "Chrome: connected" : "Chrome: not connected. Click the Pi Browser toolbar icon in Chrome to reconnect. If it is not installed, load the folder unpacked in chrome://extensions.");
       return lines.join("\n");
     }
 
