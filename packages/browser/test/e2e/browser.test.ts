@@ -500,6 +500,10 @@ test("the overlay's Stop button names its session and stops only the session tha
 test("an exited session's group is retitled ended, keeps its tabs, and is untracked", async () => {
   await until(async () => (await tabGroup(theirs)).title === "pi · renamed (ended)");
   assert.equal(await inWorker(`chrome.storage.session.get("groups").then(({ groups }) => "e2e-b" in groups)`), false);
+  const tabId = await inWorker(`chrome.tabs.query({ url: "${theirs}" }).then(([tab]) => tab.id)`);
+  await until(async () => !(await inWorker(`attached.has(${tabId})`)));
+  const attached = await inWorker(`attach(${tabId}).then(() => "attached", error => error.message)`);
+  assert.match(attached, /not in a live pi group/, "a call still in flight for the ended session cannot reattach the debugger");
 });
 
 test("a session reconnecting with the same id acts in its old group, under its title and a color no live group uses", async () => {

@@ -203,8 +203,9 @@ const session = {
     if (!links.size) chrome.action.setTitle({ title: "Pi Browser: not connected" });
     const tabs = await piTabs({ id: peer.id });
     if (links.has(peer.id)) return;
-    await Promise.all(tabs.map(tab => detach(tab.id)));
     await end(peer.id);
+    if (links.has(peer.id)) return;
+    await Promise.all(tabs.map(tab => detach(tab.id)));
   },
 };
 
@@ -324,6 +325,7 @@ async function attach(tabId) {
   if (attached.has(tabId)) return;
   await allowed();
   const { groupId } = await chrome.tabs.get(tabId);
+  if (!Object.values(await groups()).includes(groupId)) throw new Error(`Tab ${tabId} is not in a live pi group.`);
   await chrome.debugger.attach({ tabId }, "1.3").catch(error => { if (!/already attached/i.test(error.message)) throw error; });
   logs.set(tabId, { console: [], network: [], requests: new Map(), partial: true });
   await chrome.debugger.sendCommand({ tabId }, "Page.enable");
