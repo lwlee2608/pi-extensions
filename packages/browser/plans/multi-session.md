@@ -38,19 +38,25 @@
 - **Phase count** — 4, sequential: phases share `chrome/background.js` and `src/host.ts`
 
 ## Progress
-Active: 1 · 0/27 tasks
+Active: 1 · 8/27 tasks
 
 ### Phase 1 — One session drives Chrome with no TCP port open
 Today's single-session browser works exactly as before, but over the native host and a 0600 Unix socket, so nothing can squat a port.
 **Blocked by:** none
-- [ ] Add a transport seam between session logic and the connection, pi side (`src/bridge.ts`) and extension side (`chrome/background.js`)
-- [ ] Listen on a per-session Unix socket under the agent dir, 0600 in a 0700 folder, unlinking a stale one first and removing it on shutdown (`src/bridge.ts`)
-- [ ] Add the native host: relay framed stdio to session sockets, scan and watch the sessions folder, skip sockets that refuse (`src/host.ts`)
-- [ ] Install the host manifest and Node-pinned wrapper into detected Linux Chrome, Brave and Chromium config dirs on first use (`src/install.ts`)
-- [ ] Connect to the host with `connectNative`, reconnect with backoff, and add the `nativeMessaging` permission (`chrome/background.js`, `chrome/manifest.json`)
-- [ ] Remove port 47823, the take secret and HTTP endpoints, `/browser take`, keepalive and the reconnect alarm (`src/bridge.ts`, `src/index.ts`, `chrome/background.js`)
-- [ ] Run e2e over the native host with the manifest in the temp profile and its own sessions folder (`test/e2e/`)
-- [ ] Unit-test host relay and socket lifecycle with fake stdio and sockets (`test/`)
+- [x] Add a transport seam between session logic and the connection, pi side (`src/bridge.ts`) and extension side (`chrome/background.js`)
+- [x] Listen on a per-session Unix socket under the agent dir, 0600 in a 0700 folder, unlinking a stale one first and removing it on shutdown (`src/bridge.ts`)
+- [x] Add the native host: relay framed stdio to session sockets, scan and watch the sessions folder, skip sockets that refuse (`src/host.ts`)
+- [x] Install the host manifest and Node-pinned wrapper into detected Linux Chrome, Brave and Chromium config dirs on first use (`src/install.ts`)
+- [x] Connect to the host with `connectNative`, reconnect with backoff, and add the `nativeMessaging` permission (`chrome/background.js`, `chrome/manifest.json`)
+- [x] Remove port 47823, the take secret and HTTP endpoints, `/browser take`, keepalive and the reconnect alarm (`src/bridge.ts`, `src/index.ts`, `chrome/background.js`)
+- [x] Run e2e over the native host with the manifest in the temp profile and its own sessions folder (`test/e2e/`)
+- [x] Unit-test host relay and socket lifecycle with fake stdio and sockets (`test/`)
+- Note: the host is `src/host.js`, not `.ts`: Node refuses to strip types under `node_modules`, where pi installs packages, so a `.ts` host would only run from a checkout. Phases 2 and 4 edit `src/host.js`; it also holds the frame codec `src/bridge.ts` imports (`allowJs` in the package tsconfig)
+- Note: e2e proves headless Chrome for Testing 156 reads the host manifest from `<user-data-dir>/NativeMessagingHosts`
+- Note: with no alarm, a service worker stopped from outside restarts only on an event it listens to (tab update, toolbar click, browser startup via `runtime.onStartup`); the two e2e worker-restart cases now wake it by opening a tab
+- Note: the bridge still refuses a second host connection, as v1 did; the host then skips that socket until the sessions folder changes, so two Chromes don't reconnect in a loop. Phase 2 replaces this with first-claim-wins
+- Note: README still describes port 47823 and `/browser take` until phase 4 rewrites it; the `ws` dependency is gone and the e2e CDP client uses Node's built-in `WebSocket`
+- Note: e2e on this host still needs a local, uncommitted `--no-sandbox` (AppArmor), as in v1
 **Verify:** `npm run e2e` passes every existing case over the native host, plus a new case that asserts no TCP listener exists while the agent reads a page; `npm test` covers relay framing and stale-socket cleanup.
 
 ### Phase 2 — Two sessions drive their own groups at the same time

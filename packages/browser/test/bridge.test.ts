@@ -1,159 +1,97 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { mkdtemp, rm, stat } from "node:fs/promises";
-import { createServer, type Socket } from "node:net";
+import { existsSync } from "node:fs";
+import { chmod, mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
+import { connect, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { WebSocket } from "ws";
-import { Bridge, loadSecret, type BridgeOptions } from "../src/bridge.ts";
+import { Bridge, listenSocket, type BridgeOptions } from "../src/bridge.ts";
+import { decoder, encode } from "../src/host.js";
 
-const origin = "chrome-extension://enidoebkpjligpdgedlellobooiiljib";
 const dir = await mkdtemp(join(tmpdir(), "pi-browser-test-"));
 const bridges: Bridge[] = [];
+let count = 0;
 test.after(async () => { for (const bridge of bridges) bridge.close(); await rm(dir, { recursive: true, force: true }); });
 
-async function freePort(): Promise<number> {
-  const server = createServer().listen(0, "127.0.0.1");
-  await once(server, "listening");
-  const { port } = server.address() as { port: number };
-  server.close();
-  return port;
+function bridge(options: Partial<BridgeOptions> = {}): { server: Bridge; path: string } {
+  const path = join(dir, "sessions", `${++count}.sock`);
+  const server = new Bridge({ transport: handlers => listenSocket(path, handlers), connectTimeout: 1_000, callTimeout: 1_000, ...options });
+  bridges.push(server);
+  return { server, path };
 }
 
-function bridge(port: number, options: Partial<BridgeOptions> = {}): Bridge {
-  const bridge = new Bridge({ port, origin, secretPath: join(dir, "secret"), connectTimeout: 1_000, callTimeout: 1_000, ...options });
-  bridges.push(bridge);
-  return bridge;
-}
-
-async function chrome(port: number, from = origin): Promise<WebSocket> {
-  const socket = new WebSocket(`ws://127.0.0.1:${port}`, { origin: from });
-  socket.on("message", data => {
-    const { id, method, params } = JSON.parse(data.toString());
-    socket.send(JSON.stringify(method === "fail" ? { id, error: "boom" } : { id, result: { method, params } }));
-  });
-  await once(socket, "open");
+async function host(path: string): Promise<Socket> {
+  const socket = connect(path);
+  socket.on("data", decoder(({ id, method, params }: { id: number; method: string; params: object }) => {
+    socket.write(encode(method === "fail" ? { id, error: "boom" } : { id, result: { method, params } }));
+  }));
+  await once(socket, "connect");
   return socket;
 }
 
 test("a call waits for Chrome, round-trips results and errors", async () => {
-  const port = await freePort();
-  const server = bridge(port);
+  const { server, path } = bridge();
   const call = server.call("echo", { a: 1 });
   await server.listen();
-  await chrome(port);
+  await host(path);
   assert.deepEqual(await call, { method: "echo", params: { a: 1 } });
   await assert.rejects(server.call("fail", {}), /boom/);
 });
 
 test("a stop event from Chrome reaches onStop", async () => {
-  const port = await freePort();
   let stops = 0;
-  const server = bridge(port, { onStop: () => stops++ });
+  const { server, path } = bridge({ onStop: () => stops++ });
   await server.listen();
-  const socket = await chrome(port);
-  socket.send(JSON.stringify({ event: "stop" }));
+  const socket = await host(path);
+  socket.write(encode({ event: "stop" }));
   assert.deepEqual(await server.call("echo", {}), { method: "echo", params: {} });
   assert.equal(stops, 1);
 });
 
 test("a call fails when Chrome never connects", async () => {
-  const server = bridge(await freePort(), { connectTimeout: 20 });
+  const { server } = bridge({ connectTimeout: 20 });
   await assert.rejects(server.call("echo", {}), /not connected/);
 });
 
-test("a foreign origin is rejected", async () => {
-  const port = await freePort();
-  await bridge(port).listen();
-  for (const from of ["https://evil.example", "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]) {
-    const socket = new WebSocket(`ws://127.0.0.1:${port}`, { origin: from });
-    const [, response] = await once(socket, "unexpected-response");
-    assert.equal(response.statusCode, 401);
-  }
-});
-
-test("a second Chrome connection is refused while one is live", async () => {
-  const port = await freePort();
-  const server = bridge(port);
+test("a second host connection is refused while one is live", async () => {
+  const { server, path } = bridge();
   await server.listen();
-  await chrome(port);
-  const second = await chrome(port);
-  const [code, reason] = await once(second, "close");
-  assert.equal(code, 4409);
-  assert.match(reason.toString(), /already connected/);
+  await host(path);
+  const second = await host(path);
+  await once(second, "close");
   assert.deepEqual(await server.call("echo", {}), { method: "echo", params: {} });
 });
 
-test("a Chrome disconnect fails pending calls", async () => {
-  const port = await freePort();
-  const server = bridge(port);
+test("a host disconnect fails pending calls", async () => {
+  const { server, path } = bridge();
   await server.listen();
-  const socket = new WebSocket(`ws://127.0.0.1:${port}`, { origin });
-  socket.on("message", () => socket.close());
-  await once(socket, "open");
+  const socket = connect(path);
+  socket.on("data", () => socket.destroy());
+  await once(socket, "connect");
   await assert.rejects(server.call("echo", {}), /disconnected/);
 });
 
-test("a taken port reports in use and names /browser take", async () => {
-  const port = await freePort();
-  const holder = createServer().listen(port, "127.0.0.1");
-  await once(holder, "listening");
-  try { await assert.rejects(bridge(port).call("echo", {}), /in use.*\/browser take/); }
-  finally { holder.close(); }
-});
-
-test("take without the secret is refused and the owner keeps the browser", async () => {
-  const port = await freePort();
-  const owner = bridge(port);
-  await owner.listen();
-  await chrome(port);
-  const response = await fetch(`http://127.0.0.1:${port}/release`, { method: "POST", headers: { authorization: "Bearer wrong" } });
-  assert.equal(response.status, 403);
-  await assert.rejects(bridge(port, { secretPath: join(dir, "other-secret") }).take(), /refused the take \(HTTP 403\)/);
-  assert.ok(owner.listening);
-  assert.deepEqual(await owner.call("echo", {}), { method: "echo", params: {} });
-});
-
-test("take with the secret frees the port for the taker", async () => {
-  const port = await freePort();
-  let released = false;
-  const owner = bridge(port, { label: () => "first session", onRelease: () => { released = true; } });
-  await owner.listen();
-  const first = await chrome(port);
-  const taker = bridge(port);
-  assert.deepEqual(await taker.owner(), { label: "first session", connected: true });
-  first.removeAllListeners("message");
-  const pending = assert.rejects(owner.call("never", {}), /took the browser/);
-  assert.equal(await taker.take(), true);
-  await pending;
-  assert.ok(released && !owner.listening && taker.listening);
-  await once(first, "close");
-  await chrome(port);
-  assert.deepEqual(await taker.call("echo", {}), { method: "echo", params: {} });
-  await assert.rejects(owner.call("echo", {}), /in use/);
-  assert.equal(await taker.take(), false);
-});
-
-test("take and owner fail clearly when the holder of the port never answers", async () => {
-  const port = await freePort();
-  const sockets: Socket[] = [];
-  const holder = createServer(socket => sockets.push(socket)).listen(port, "127.0.0.1");
-  await once(holder, "listening");
-  try {
-    const taker = bridge(port, { requestTimeout: 50 });
-    await assert.rejects(taker.take(), /did not answer within 0.05s/);
-    await assert.rejects(taker.owner(), /did not answer/);
-  } finally {
-    for (const socket of sockets) socket.destroy();
-    holder.close();
-  }
-});
-
-test("the secret is created once, user-only", async () => {
-  const path = join(dir, "nested", "secret");
-  const [a, b] = await Promise.all([loadSecret(path), loadSecret(path)]);
-  assert.equal(a, b);
-  assert.match(a, /^[0-9a-f]{64}$/);
+test("the socket replaces a stale one, is user-only in a user-only folder, and is removed on close", async () => {
+  const { server, path } = bridge();
+  await mkdir(join(dir, "sessions"), { recursive: true });
+  await chmod(join(dir, "sessions"), 0o755);
+  await writeFile(path, "stale");
+  await server.listen();
+  assert.ok((await stat(path)).isSocket());
   assert.equal((await stat(path)).mode & 0o777, 0o600);
+  assert.equal((await stat(join(dir, "sessions"))).mode & 0o777, 0o700);
+  await host(path);
+  assert.ok(server.connected);
+  server.close();
+  assert.equal(existsSync(path), false);
+  await assert.rejects(new Promise((resolve, reject) => connect(path).once("connect", resolve).once("error", reject)), /ENOENT/);
+});
+
+test("a bridge closed while it starts does not keep listening", async () => {
+  const { server, path } = bridge();
+  const listening = server.listen();
+  server.close();
+  await assert.rejects(listening, /closed/);
+  assert.equal(existsSync(path), false);
 });

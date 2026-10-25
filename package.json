@@ -32,7 +32,6 @@
     "@earendil-works/pi-tui": "1.0.0",
     "@types/node": "22.20.4",
     "@types/proper-lockfile": "4.1.4",
-    "@types/ws": "8.18.2",
     "typebox": "1.1.37",
     "typescript": "5.9.3"
   }
