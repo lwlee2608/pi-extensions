@@ -40,9 +40,11 @@ test("the installed wrapper runs the host through a symlinked package, and it re
   const bridge = new Bridge({ transport: handlers => listenSocket(join(sessions, "a.sock"), handlers), connectTimeout: 5_000, callTimeout: 5_000 });
   await bridge.listen();
   const child = spawn(join(browser, "NativeMessagingHosts", `${HOST}.sh`), [`${ORIGIN}/`], { stdio: ["pipe", "pipe", "inherit"] });
-  child.stdout.on("data", decoder(({ id, method }: { id?: number; method?: string }) => { if (id) child.stdin.write(encode({ id, result: method })); }));
+  child.stdout.on("data", decoder(({ session, message }: { session: string; message?: { id: number; method: string } }) => {
+    if (message) child.stdin.write(encode({ session, message: { id: message.id, result: `${session} ${message.method}` } }));
+  }));
   try {
-    assert.equal(await bridge.call("echo", {}), "echo");
+    assert.equal(await bridge.call("echo", {}), "a echo");
   } finally {
     child.stdin.end();
     bridge.close();

@@ -26,53 +26,42 @@ export function decoder(receive) {
   };
 }
 
-export async function relay(dir, input, output, retryMs = 5_000) {
+export async function relay(dir, input, output) {
   await mkdir(dir, { recursive: true, mode: 0o700 });
-  let link;
+  const links = new Map();
   let ended = false;
-  let retry;
-  let queue = Promise.resolve();
   const send = message => output.write(encode(message));
 
-  const open = path => new Promise(resolve => {
+  const open = name => {
+    const session = name.slice(0, -".sock".length);
+    const path = join(dir, name);
     const socket = connect(path);
-    socket.on("error", error => {
-      console.error(`pi-browser host: ${path}: ${error.message}`);
-      resolve(false);
-    });
+    let linked = false;
+    links.set(session, socket);
+    socket.on("error", error => console.error(`pi-browser host: ${path}: ${error.message}`));
     socket.once("connect", () => {
-      link = socket;
-      send({ event: "connected" });
-      socket.on("data", decoder(send));
-      socket.once("close", () => {
-        link = undefined;
-        if (ended) return;
-        send({ event: "disconnected" });
-        scan(path);
-        clearTimeout(retry);
-        retry = setTimeout(scan, retryMs);
-      });
-      resolve(true);
+      linked = true;
+      send({ session, event: "connected" });
+      socket.on("data", decoder(message => send({ session, message })));
     });
-  });
-
-  const scan = skip => {
-    queue = queue.then(async () => {
-      for (const name of await readdir(dir).catch(() => [])) {
-        if (link || ended) return;
-        const path = join(dir, name);
-        if (name.endsWith(".sock") && path !== skip) await open(path);
-      }
+    socket.once("close", () => {
+      if (links.get(session) === socket) links.delete(session);
+      if (linked && !ended) send({ session, event: "disconnected" });
     });
   };
 
+  const scan = async () => {
+    for (const name of await readdir(dir).catch(() => [])) {
+      if (!ended && name.endsWith(".sock") && !links.has(name.slice(0, -".sock".length))) open(name);
+    }
+  };
+
   const watcher = watch(dir, () => scan());
-  input.on("data", decoder(message => link?.write(encode(message))));
+  input.on("data", decoder(({ session, message }) => links.get(session)?.write(encode(message))));
   input.once("end", () => {
     ended = true;
-    clearTimeout(retry);
     watcher.close();
-    link?.destroy();
+    for (const socket of links.values()) socket.destroy();
   });
   scan();
 }

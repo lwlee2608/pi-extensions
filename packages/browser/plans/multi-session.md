@@ -38,7 +38,7 @@
 - **Phase count** — 4, sequential: phases share `chrome/background.js` and `src/host.ts`
 
 ## Progress
-Active: 2 · 8/27 tasks
+Active: 2 · 16/27 tasks
 
 ### Phase 1 — One session drives Chrome with no TCP port open
 Today's single-session browser works exactly as before, but over the native host and a 0600 Unix socket, so nothing can squat a port.
@@ -66,14 +66,18 @@ Today's single-session browser works exactly as before, but over the native host
 ### Phase 2 — Two sessions drive their own groups at the same time
 A second pi session gets its own `pi · <name>` group in a distinct color and works alongside the first; neither can touch the other's tabs.
 **Blocked by:** 1
-- [ ] Relay several sockets at once, tagging each frame with the socket's session; each socket accepts only its first host (`src/host.ts`)
-- [ ] Map session to `groupId` in `chrome.storage.session` and find groups by id, not title (`chrome/background.js`)
-- [ ] Keep `current`, refs, logs, dialogs and debugger attach per session (`chrome/background.js`)
-- [ ] Refuse any tab outside the caller's group, whatever `tabId` is sent (`chrome/background.js`)
-- [ ] Title groups `pi · <session name>` with the first unused color, following renames on the next action (`chrome/background.js`, `src/index.ts`)
-- [ ] Serialize screenshots per window (`chrome/background.js`)
-- [ ] Send overlay Stop only to the session owning the tab (`chrome/background.js`)
-- [ ] Add e2e cases for two sessions: concurrent navigate and read, `tabs` lists only own tabs, another session's `tabId` is refused (`test/e2e/`)
+- [x] Relay several sockets at once, tagging each frame with the socket's session; each socket accepts only its first host (`src/host.ts`)
+- [x] Map session to `groupId` in `chrome.storage.session` and find groups by id, not title (`chrome/background.js`)
+- [x] Keep `current`, refs, logs, dialogs and debugger attach per session (`chrome/background.js`)
+- [x] Refuse any tab outside the caller's group, whatever `tabId` is sent (`chrome/background.js`)
+- [x] Title groups `pi · <session name>` with the first unused color, following renames on the next action (`chrome/background.js`, `src/index.ts`)
+- [x] Serialize screenshots per window (`chrome/background.js`)
+- [x] Send overlay Stop only to the session owning the tab (`chrome/background.js`)
+- [x] Add e2e cases for two sessions: concurrent navigate and read, `tabs` lists only own tabs, another session's `tabId` is refused (`test/e2e/`)
+- Note: the one-host rule lives in `listenSocket` (`src/bridge.ts`): it refuses a second host, and when its host leaves it touches the socket file so a refused host's folder watch rescans and takes over at once. The 5s retry is gone
+- Note: frames between host and extension are `{ session, message }` or `{ session, event }`; the host sets `session` from the socket, and pi's frame rides whole inside `message`, so pi cannot forge it. pi sends its session name as `name` on each call; an unnamed session uses its cwd folder name
+- Note: per-session tab state is keyed by tab, with the group recorded at attach; a tab that changes group is detached and its refs, logs and dialogs dropped, so the new owner starts fresh
+- Note: a refused host still sends `connected` then `disconnected` for that session, on every folder change; harmless (the losing browser has no tabs in that group), but the toolbar title flickers. The phase 4 handshake could make the refusal explicit
 **Verify:** `npm run e2e` two-session cases pass: both sessions read their own page concurrently, each `tabs` shows only its own tab, and session B acting on session A's `tabId` fails with "not in your group".
 
 ### Phase 3 — See which group is yours, and keep it after exit

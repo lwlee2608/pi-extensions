@@ -1,5 +1,5 @@
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, getAgentDir, truncateHead, truncateTail, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
 import { Approvals, confirmEval, hostOf, parse, type Choice } from "./approval.ts";
@@ -79,6 +79,7 @@ export function browserExtension({ browserDirs, ...overrides }: Partial<BridgeOp
         await installHost(browserDirs ?? detectBrowserDirs(), sessions);
         return listenSocket(join(sessions, `${session!.sessionManager.getSessionId()}.sock`), handlers);
       },
+      name: () => session!.sessionManager.getSessionName() ?? basename(session!.cwd),
       onStop: () => {
         session?.abort();
         session?.ui.notify("Stopped from Chrome.", "info");

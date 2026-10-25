@@ -21,10 +21,14 @@ function chrome(dir: string) {
   const input = new PassThrough();
   const output = new PassThrough();
   const events: string[] = [];
+  const frames: { session: string; message: any }[] = [];
   const waiters = new Set<() => void>();
-  output.on("data", decoder(({ id, method, event }: { id: number; method: string; event?: string }) => {
-    if (event) events.push(event);
-    else if (method !== "never") input.write(encode(method === "fail" ? { id, error: "boom" } : { id, result: method }));
+  output.on("data", decoder(({ session, event, message }: { session: string; event?: string; message: any }) => {
+    if (event) events.push(`${event} ${session}`);
+    else {
+      frames.push({ session, message });
+      if (message.method !== "never") input.write(encode({ session, message: message.method === "fail" ? { id: message.id, error: "boom" } : { id: message.id, result: `${session} ${message.method}` } }));
+    }
     for (const wake of waiters) wake();
   }));
   const until = (count: number) => new Promise<void>(resolve => {
@@ -32,7 +36,7 @@ function chrome(dir: string) {
     waiters.add(check);
     check();
   });
-  return { input, events, until, start: (retryMs?: number) => relay(dir, input, output, retryMs) };
+  return { input, events, frames, until, start: () => relay(dir, input, output) };
 }
 
 test("frames survive any chunking, and a bad frame is skipped", () => {
@@ -56,30 +60,33 @@ test("the host skips a socket that refuses, finds a session that starts later, a
   const browser = chrome(dir);
   await browser.start();
   const bridge = session(join(dir, "live.sock"));
-  assert.equal(await bridge.call("echo", {}), "echo");
+  assert.equal(await bridge.call("echo", {}), "live echo");
   await assert.rejects(bridge.call("fail", {}), /boom/);
-  assert.deepEqual(browser.events, ["connected"]);
+  assert.deepEqual(browser.events, ["connected live"]);
   browser.input.end();
 });
 
-test("the host tells Chrome when its session goes away and links the next one", async () => {
-  const dir = join(root, "next");
-  const first = session(join(dir, "a.sock"));
-  const second = session(join(dir, "b.sock"));
-  await first.listen();
-  await second.listen();
+test("the host relays several sessions at once, tagging each frame with the socket it came in on", async () => {
+  const dir = join(root, "many");
+  const a = session(join(dir, "a.sock"));
+  const b = session(join(dir, "b.sock"));
+  const forged = await listenSocket(join(dir, "c.sock"), { open: peer => peer.send({ session: "a", id: 1, method: "forged" }), message: () => {}, close: () => {} });
+  await a.listen();
+  await b.listen();
   const browser = chrome(dir);
   await browser.start();
-  await browser.until(1);
-  const [linked, other] = first.connected ? [first, second] : [second, first];
-  linked.close();
+  assert.deepEqual(await Promise.all([a.call("echo", {}), b.call("echo", {}), a.call("read", {})]), ["a echo", "b echo", "a read"]);
   await browser.until(3);
-  assert.deepEqual(browser.events, ["connected", "disconnected", "connected"]);
-  assert.equal(await other.call("echo", {}), "echo");
+  assert.deepEqual(browser.frames.find(frame => frame.message.method === "forged"), { session: "c", message: { session: "a", id: 1, method: "forged" } });
+  a.close();
+  await browser.until(4);
+  assert.equal(browser.events.at(-1), "disconnected a");
+  assert.equal(await b.call("echo", {}), "b echo");
+  forged();
   browser.input.end();
 });
 
-test("a host refused while another holds the session takes over once that one ends", async () => {
+test("first claim wins: a second host is refused while one holds the session, and takes over once that one ends", async () => {
   const dir = join(root, "takeover");
   const bridge = session(join(dir, "a.sock"));
   await bridge.listen();
@@ -87,27 +94,31 @@ test("a host refused while another holds the session takes over once that one en
   await first.start();
   await first.until(1);
   const second = chrome(dir);
-  await second.start(50);
+  await second.start();
   await second.until(2);
-  assert.deepEqual(second.events.slice(0, 2), ["connected", "disconnected"]);
+  assert.deepEqual(second.events, ["connected a", "disconnected a"]);
+  assert.equal(await bridge.call("echo", {}), "a echo");
+  assert.equal(second.frames.length, 0);
   const pending = assert.rejects(bridge.call("never", {}), /disconnected/);
   first.input.end();
   await pending;
-  assert.equal(await bridge.call("echo", {}), "echo");
-  assert.equal(second.events.at(-1), "connected");
+  assert.equal(await bridge.call("echo", {}), "a echo");
+  assert.equal(second.events.at(-1), "connected a");
   second.input.end();
 });
 
-test("Chrome closing the host's input drops the session link", async () => {
+test("Chrome closing the host's input drops every session link", async () => {
   const dir = join(root, "end");
-  const bridge = session(join(dir, "a.sock"));
-  await bridge.listen();
+  const a = session(join(dir, "a.sock"));
+  const b = session(join(dir, "b.sock"));
+  await a.listen();
+  await b.listen();
   const browser = chrome(dir);
   await browser.start();
-  await browser.until(1);
-  const pending = bridge.call("never", {});
+  await browser.until(2);
+  const pending = Promise.all([a, b].map(bridge => assert.rejects(bridge.call("never", {}), /disconnected/)));
   browser.input.end();
-  await assert.rejects(pending, /disconnected/);
-  assert.equal(bridge.connected, false);
-  assert.deepEqual(browser.events, ["connected"]);
+  await pending;
+  assert.equal(a.connected || b.connected, false);
+  assert.deepEqual(browser.events.toSorted(), ["connected a", "connected b"]);
 });

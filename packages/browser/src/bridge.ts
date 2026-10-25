@@ -1,5 +1,5 @@
-import { chmod, mkdir, rm } from "node:fs/promises";
-import { createServer } from "node:net";
+import { chmod, mkdir, rm, utimes } from "node:fs/promises";
+import { createServer, type Socket } from "node:net";
 import { dirname } from "node:path";
 import { decoder, encode } from "./host.js";
 
@@ -25,6 +25,7 @@ export type Transport = (handlers: Handlers) => Promise<() => void>;
 
 export interface BridgeOptions {
   transport: Transport;
+  name?: () => string;
   connectTimeout?: number;
   callTimeout?: number;
   onStop?: () => void;
@@ -40,11 +41,20 @@ export async function listenSocket(path: string, handlers: Handlers): Promise<()
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   await chmod(dirname(path), 0o700);
   await rm(path, { force: true });
+  let live: Socket | undefined;
   const server = createServer(socket => {
-    const peer = { send: (message: object) => void socket.write(encode(message)), close: () => socket.destroy() };
     socket.on("error", () => {});
+    if (live) { socket.destroy(); return; }
+    live = socket;
+    const peer = { send: (message: object) => void socket.write(encode(message)), close: () => socket.destroy() };
     socket.on("data", decoder((message: Message) => handlers.message(peer, message)));
-    socket.on("close", () => handlers.close(peer));
+    socket.on("close", () => {
+      live = undefined;
+      handlers.close(peer);
+      // Touching the socket wakes the dir watch of any host this one refused, so it takes over.
+      const now = new Date();
+      utimes(path, now, now).catch(() => {});
+    });
     handlers.open(peer);
   });
   await new Promise<void>((resolve, reject) => server.once("error", reject).listen(path, resolve));
@@ -100,7 +110,7 @@ export class Bridge {
         resolve: value => { finish(); resolve(value); },
         reject: error => { finish(); reject(error); },
       });
-      peer.send({ id, method, params });
+      peer.send({ id, method, params, name: this.options.name?.() });
     });
   }
 
