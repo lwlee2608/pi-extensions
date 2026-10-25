@@ -246,7 +246,7 @@ async function groups() {
 async function groupOf({ id, name }) {
   const groupId = (await groups())[id];
   const group = groupId === undefined ? undefined : await chrome.tabGroups.get(groupId).catch(() => undefined);
-  if (group && name && group.title !== `pi · ${name}`) return chrome.tabGroups.update(group.id, { title: `pi · ${name}` });
+  if (group && name && group.title !== `pi · ${name}` && (await groups())[id] === group.id && links.has(id)) return chrome.tabGroups.update(group.id, { title: `pi · ${name}` });
   return group;
 }
 
@@ -300,6 +300,7 @@ async function piTab(caller, tabId) {
 
 function openTab(caller) {
   return serial("groups", async () => {
+    if (!links.has(caller.id)) throw new Error("This pi session disconnected from the browser.");
     const group = await groupOf(caller);
     const tab = await chrome.tabs.create({ url: "about:blank", active: false, windowId: group?.windowId });
     const groupId = await chrome.tabs.group({ tabIds: [tab.id], groupId: group?.id });
