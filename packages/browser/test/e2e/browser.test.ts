@@ -501,7 +501,10 @@ test("network lists the page's fetch with its status, and never its headers or b
 
 test("network on a page loaded before the debugger reattached says it may be missing requests", async () => {
   const tabId = await inWorker(`chrome.tabs.query({ url: "${at("always", "debug.html")}" }).then(([tab]) => tab.id)`);
+  const page = await target(info => info.type === "page" && info.url === at("always", "debug.html"));
+  const detached = cdp.waitFor("Target.targetInfoChanged", ({ targetInfo }) => targetInfo.targetId === page.targetId && !targetInfo.attached);
   emit("session_shutdown");
+  await detached;
   ({ asked, confirmed, emit, call, browser } = session());
   assert.match(await browser({ action: "network", tabId }), /^No requests in tab \d+ since the debugger attached; reload the page to see all requests\.$/);
   await browser({ action: "navigate", url: at("always", "debug.html"), tabId });
