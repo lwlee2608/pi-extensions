@@ -189,7 +189,7 @@ const session = {
     let reply;
     try {
       await queues.get("groups");
-      await allowed();
+      if (method !== "status") await allowed();
       if (!Object.hasOwn(handlers, method)) throw new Error(`Unknown browser action: ${method}`);
       reply = { id, result: await handlers[method](params ?? {}, { id: peer.id, name }) };
     } catch (error) {

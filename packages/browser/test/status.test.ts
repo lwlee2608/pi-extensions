@@ -4,7 +4,7 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import type { Handlers } from "../src/bridge.ts";
 import { browserExtension } from "../src/index.ts";
 
-function browser(status?: object): () => Promise<string> {
+function browser(reply?: { result: object } | { error: string }): () => Promise<string> {
   const handlers = new Map<string, (event: unknown, ctx: ExtensionContext) => void>();
   let command: (args: string, ctx: ExtensionContext) => Promise<void>;
   const pi = {
@@ -15,8 +15,8 @@ function browser(status?: object): () => Promise<string> {
     setActiveTools: () => {},
   } as unknown as ExtensionAPI;
   const transport = async (bridge: Handlers) => {
-    if (status) {
-      const peer = { send: ({ id, method }: { id: number; method: string }) => queueMicrotask(() => bridge.message(peer, method === "status" ? { id, result: status } : { id, error: method })), close: () => {} };
+    if (reply) {
+      const peer = { send: ({ id, method }: { id: number; method: string }) => queueMicrotask(() => bridge.message(peer, method === "status" ? { id, ...reply } : { id, error: method })), close: () => {} };
       bridge.open(peer);
     }
     return () => {};
@@ -33,16 +33,22 @@ function browser(status?: object): () => Promise<string> {
 }
 
 test("/browser prints your group with its color and the connected browser", async () => {
-  const text = await browser({ browser: "Brave 141", group: { title: "pi · foo", color: "red" } })();
+  const text = await browser({ result: { browser: "Brave 141", group: { title: "pi · foo", color: "red" } } })();
   assert.match(text, /^Chrome extension folder: .*chrome\/$/m);
   assert.match(text, /^Connected browser: Brave 141$/m);
   assert.match(text, /^Your group: pi · foo \(red\)$/m);
 });
 
 test("/browser says plainly when the session has no group yet", async () => {
-  const text = await browser({ browser: "Google Chrome 156" })();
+  const text = await browser({ result: { browser: "Google Chrome 156" } })();
   assert.match(text, /^Connected browser: Google Chrome 156$/m);
   assert.match(text, /^Your group: none yet; it opens on the agent's first navigate\.$/m);
+});
+
+test("/browser keeps its other lines and shows the error when the status call fails", async () => {
+  const text = await browser({ error: "Unknown browser action: status" })();
+  assert.match(text, /^Chrome extension folder: .*chrome\/$/m);
+  assert.match(text, /^Chrome: connected, but its status failed: Unknown browser action: status$/m);
 });
 
 test("/browser says how to reconnect when no browser is connected", async () => {

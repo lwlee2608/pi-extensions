@@ -102,7 +102,9 @@ export function browserExtension({ browserDirs, ...overrides }: Partial<BridgeOp
       const error = await bridge.listen().catch((error: Error) => error);
       if (error) return [...lines, error.message].join("\n");
       if (!bridge.connected) return [...lines, "Chrome: not connected. Click the Pi Browser toolbar icon in Chrome to reconnect. If it is not installed, load the folder unpacked in chrome://extensions."].join("\n");
-      const { browser, group } = await bridge.call("status", {}) as Status;
+      const info = await bridge.call("status", {}).catch((error: Error) => error);
+      if (info instanceof Error) return [...lines, `Chrome: connected, but its status failed: ${info.message}`].join("\n");
+      const { browser, group } = info as Status;
       lines.push(`Connected browser: ${browser}`, group ? `Your group: ${group.title} (${group.color})` : "Your group: none yet; it opens on the agent's first navigate.");
       return lines.join("\n");
     }
