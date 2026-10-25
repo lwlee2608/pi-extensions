@@ -39,6 +39,20 @@ test("a call waits for Chrome, round-trips results and errors", async () => {
   await assert.rejects(server.call("fail", {}), /boom/);
 });
 
+test("each call carries the session's current name", async () => {
+  let name = "first";
+  const { server, path } = bridge({ name: () => name });
+  await server.listen();
+  const socket = connect(path);
+  const names: string[] = [];
+  socket.on("data", decoder((message: { id: number; name: string }) => { names.push(message.name); socket.write(encode({ id: message.id, result: null })); }));
+  await once(socket, "connect");
+  await server.call("echo", {});
+  name = "renamed";
+  await server.call("echo", {});
+  assert.deepEqual(names, ["first", "renamed"]);
+});
+
 test("a stop event from Chrome reaches onStop", async () => {
   let stops = 0;
   const { server, path } = bridge({ onStop: () => stops++ });

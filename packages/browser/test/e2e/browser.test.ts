@@ -42,9 +42,9 @@ const sessions = join(work, "agent", "pi-browser", "sessions");
 const profile = join(work, "profile");
 const options = { browserDirs: [profile], connectTimeout: 10_000, callTimeout: 10_000 };
 
-let stops = 0;
+const stopped: string[] = [];
 
-function session() {
+function session(id = "e2e", name = id) {
   const handlers = new Map<string, ((event: unknown, ctx: ExtensionContext) => unknown)[]>();
   const tools = new Map<string, any>();
   const asked: string[] = [];
@@ -68,7 +68,7 @@ function session() {
     if (typeof answer !== "string") throw new Error(`Unexpected prompt: ${title}`);
     return answer;
   };
-  const ctx = { hasUI: true, cwd: work, abort: () => { stops++; }, ui: { notify: () => {}, select }, sessionManager: { getSessionId: () => "e2e", getSessionName: () => "e2e" } } as unknown as ExtensionContext;
+  const ctx = { hasUI: true, cwd: work, abort: () => { stopped.push(id); }, ui: { notify: () => {}, select }, sessionManager: { getSessionId: () => id, getSessionName: () => name } } as unknown as ExtensionContext;
   const emit = (event: string) => { for (const handler of handlers.get(event) ?? []) handler({}, ctx); };
   browserExtension(options)(pi);
   emit("session_start");
@@ -81,7 +81,7 @@ function session() {
     }
   };
   const browser = async (params: object, ...replies: (string | boolean)[]): Promise<string> => (await call(params, ...replies)).content[0].text;
-  return { asked, confirmed, emit, call, browser };
+  return { asked, confirmed, emit, call, browser, rename: (next: string) => { name = next; } };
 }
 
 let { asked, confirmed, emit, call, browser } = session();
@@ -95,6 +95,7 @@ await cdp.send("Target.setDiscoverTargets", { discover: true });
 
 test.after(async () => {
   emit("session_shutdown");
+  second.emit("session_shutdown");
   await chrome.close();
   fixtureServer.closeAllConnections();
   fixtureServer.close();
@@ -203,7 +204,7 @@ test("navigate reaches Chrome through the extension and opens the page in a pi t
   assert.match(await browser({ action: "navigate", url: `${site}index.html` }, "Allow for this session"), /^Tab \d+: Pi fixture </);
   assert.deepEqual(asked.splice(0), [host]);
   const group = await inWorker(`chrome.tabs.query({ url: "${site}index.html" }).then(([tab]) => chrome.tabGroups.get(tab.groupId)).then(group => group.title)`);
-  assert.equal(group, "pi");
+  assert.equal(group, "pi · e2e");
 });
 
 test("read returns the page text and refs, including shadow DOM and same-origin frames", async () => {
@@ -241,7 +242,7 @@ test("no TCP port is open while the agent reads a page over the native host and 
 
 test("read refuses a tab outside the pi group", async () => {
   const tabId = await inWorker(`chrome.tabs.create({ url: "${site}other.html", active: false }).then(tab => tab.id)`);
-  await assert.rejects(browser({ action: "read", tabId }), new RegExp(`Tab ${tabId} is not in the pi tab group`));
+  await assert.rejects(browser({ action: "read", tabId }), new RegExp(`Tab ${tabId} is not in your group`));
 });
 
 test("tabs lists the pi tab and only counts the others", async () => {
@@ -249,7 +250,7 @@ test("tabs lists the pi tab and only counts the others", async () => {
   const text = await browser({ action: "tabs" });
   assert.match(text, /Pi fixture .*index\.html.*\(current\)/);
   assert.doesNotMatch(text, /other\.html|Other tab|about:blank/);
-  assert.match(text, new RegExp(`^${total - 1} other tabs are not in the pi group\\.$`, "m"));
+  assert.match(text, new RegExp(`^${total - 1} other tabs are not in your group\\.$`, "m"));
 });
 
 test("navigate refuses non-http schemes", async () => {
@@ -308,7 +309,8 @@ test("the pi overlay marks where the agent clicks, stays out of read and the pag
   await onPage(form, async sessionId => {
     for (const type of ["mousePressed", "mouseReleased"]) await cdp.send("Input.dispatchMouseEvent", { type, x: stopX, y: stopY, button: "left", clickCount: 1 }, sessionId);
   });
-  await until(async () => stops === 1);
+  await until(async () => stopped.length === 1);
+  assert.deepEqual(stopped, ["e2e"]);
   await until(async () => !(await inPage(form, overlay)));
 });
 
@@ -377,7 +379,7 @@ test("screenshot brings a pi tab behind another tab to the front and returns a C
 });
 
 test("a pi tab on a non-web page, like about:blank, is refused and listed by its scheme only", async () => {
-  const tabId = await inWorker("openTab().then(tab => tab.id)");
+  const tabId = await inWorker(`openTab({ id: "e2e", name: "e2e" }).then(tab => tab.id)`);
   for (const params of [{ action: "read", tabId }, { action: "click", tabId, ref: 1 }, { action: "screenshot", tabId }]) {
     await assert.rejects(browser(params), /only acts on http and https pages.*about: page/);
   }
@@ -414,6 +416,71 @@ test("always saves the host, and a fresh session does not ask for it", async () 
   assert.deepEqual(asked, []);
 });
 
+const second = session("e2e-b", "second");
+const theirs = at("always", "form.html");
+
+function groupOf(id: string): Promise<{ title: string; color: string }> {
+  return inWorker(`chrome.storage.session.get("groups").then(({ groups }) => chrome.tabGroups.get(groups["${id}"])).then(({ title, color }) => ({ title, color }))`);
+}
+
+test("two sessions navigate and read their own pages at the same time, each in its own labelled group", async () => {
+  const [page, other] = await Promise.all([
+    browser({ action: "navigate", url: at("always", "index.html") }).then(() => browser({ action: "read" })),
+    second.browser({ action: "navigate", url: theirs }).then(() => second.browser({ action: "read" })),
+  ]);
+  assert.match(page, /heading "Pi fixture heading"/);
+  assert.match(other, /textbox "Name"/);
+  const [mine, yours] = [await groupOf("e2e"), await groupOf("e2e-b")];
+  assert.equal(mine.title, "pi · e2e");
+  assert.equal(yours.title, "pi · second");
+  assert.notEqual(mine.color, yours.color);
+});
+
+test("each session's tabs lists only its own tabs", async () => {
+  const other = await second.browser({ action: "tabs" });
+  const [, tabId] = other.match(/^Tab (\d+): Pi form <.*> \(current\)$/m)!;
+  assert.equal(other.match(/^Tab /gm)!.length, 1);
+  const mine = await browser({ action: "tabs" });
+  assert.match(mine, /Pi fixture/);
+  assert.doesNotMatch(mine, new RegExp(`^Tab ${tabId}:|Pi form <http://always`, "m"));
+});
+
+test("a session acting on another session's tabId is refused, whatever the action", async () => {
+  const mine = await inWorker(`chrome.tabs.query({ url: "${at("always", "index.html")}" }).then(([tab]) => tab.id)`);
+  const yours = await inWorker(`chrome.tabs.query({ url: "${theirs}" }).then(([tab]) => tab.id)`);
+  for (const params of [{ action: "read" }, { action: "click", ref: 1 }, { action: "screenshot" }, { action: "eval", code: "1" }, { action: "navigate", url: theirs }]) {
+    await assert.rejects(second.browser({ ...params, tabId: mine }), new RegExp(`Tab ${mine} is not in your group`));
+    await assert.rejects(browser({ ...params, tabId: yours }), new RegExp(`Tab ${yours} is not in your group`));
+  }
+  assert.match(await second.browser({ action: "read" }), /textbox "Name"/);
+});
+
+test("screenshots from two sessions at once each capture their own tab", async () => {
+  const [mine, yours] = await Promise.all([call({ action: "screenshot" }), second.call({ action: "screenshot" })]);
+  const blue = ([, , r, g, b]: number[]) => Math.abs(r - 0x20) < 16 && Math.abs(g - 0x50) < 16 && Math.abs(b - 0xc0) < 16;
+  assert.ok(blue(await decode(yours.content[1])), "the second session's shot is its form");
+  assert.ok(!blue(await decode(mine.content[1])), "the first session's shot is its own page, not the form");
+});
+
+test("a renamed session's group title follows on its next action", async () => {
+  second.rename("renamed");
+  await second.browser({ action: "tabs" });
+  assert.equal((await groupOf("e2e-b")).title, "pi · renamed");
+});
+
+test("the overlay's Stop button stops only the session that owns the tab", async () => {
+  await inWorker(`chrome.tabs.query({ url: "${theirs}" }).then(([tab]) => chrome.tabs.update(tab.id, { active: true }))`);
+  await second.browser({ action: "read" });
+  const [x, y] = await inPage(theirs, "[innerWidth / 2, innerHeight - 34]");
+  await onPage(theirs, async sessionId => {
+    for (const type of ["mousePressed", "mouseReleased"]) await cdp.send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1 }, sessionId);
+  });
+  await until(async () => stopped.length === 2);
+  await browser({ action: "tabs" });
+  assert.deepEqual(stopped, ["e2e", "e2e-b"]);
+  second.emit("session_shutdown");
+});
+
 test("console returns the page's logged error and uncaught exception, and a navigation clears them", async () => {
   await browser({ action: "navigate", url: at("always", "debug.html") });
   const text = await browser({ action: "console" });
@@ -434,11 +501,21 @@ test("network lists the page's fetch with its status, and never its headers or b
 
 test("network on a page loaded before the debugger reattached says it may be missing requests", async () => {
   const tabId = await inWorker(`chrome.tabs.query({ url: "${at("always", "debug.html")}" }).then(([tab]) => tab.id)`);
+  const page = await target(info => info.type === "page" && info.url === at("always", "debug.html"));
+  const detached = cdp.waitFor("Target.targetInfoChanged", ({ targetInfo }) => targetInfo.targetId === page.targetId && !targetInfo.attached);
   emit("session_shutdown");
+  await detached;
   ({ asked, confirmed, emit, call, browser } = session());
   assert.match(await browser({ action: "network", tabId }), /^No requests in tab \d+ since the debugger attached; reload the page to see all requests\.$/);
   await browser({ action: "navigate", url: at("always", "debug.html"), tabId });
   assert.match(await browser({ action: "network", tabId }), /^\d+ requests in tab \d+ since its page loaded, oldest first:/);
+});
+
+test("a tab that changed group while the debugger attached starts fresh on its next action", async () => {
+  const tabId = await inWorker(`chrome.tabs.query({ url: "${at("always", "debug.html")}" }).then(([tab]) => tab.id)`);
+  assert.match(await browser({ action: "network", tabId }), /since its page loaded/);
+  await inWorker(`attached.set(${tabId}, -2)`);
+  assert.match(await browser({ action: "network", tabId }), /since the debugger attached/);
 });
 
 test("eval asks with its code shown even on an always host, returns the value, and fails when declined", async () => {
