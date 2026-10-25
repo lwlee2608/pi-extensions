@@ -22,6 +22,7 @@ jobs:
     outputs:
       workspaces: ${{ steps.diff.outputs.workspaces }}
       subagent: ${{ steps.diff.outputs.subagent }}
+      browser: ${{ steps.diff.outputs.browser }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -41,10 +42,11 @@ jobs:
           else
             dirs=$(git diff --name-only "$BASE...HEAD" | sed -nE 's#^packages/([A-Za-z0-9._-]+)/.*#\1#p' | sort -u)
           fi
-          workspaces="" subagent=false
+          workspaces="" subagent=false browser=false
           for dir in $dirs; do
             if [ -f "packages/$dir/package.json" ]; then workspaces="$workspaces --workspace=packages/$dir"; fi
             if [ "$dir" = subagent ]; then subagent=true; fi
+            if [ "$dir" = browser ]; then browser=true; fi
           done
           if [ "$GITHUB_REF_TYPE" = tag ] && [ -z "$workspaces" ]; then
             echo "::error::Tag $GITHUB_REF_NAME does not match any package under packages/."
@@ -52,6 +54,7 @@ jobs:
           fi
           echo "workspaces=$workspaces" >> "$GITHUB_OUTPUT"
           echo "subagent=$subagent" >> "$GITHUB_OUTPUT"
+          echo "browser=$browser" >> "$GITHUB_OUTPUT"
           echo "Packages:${workspaces:- none}"
 
   check:
@@ -101,12 +104,30 @@ jobs:
         env:
           PI_OFFLINE: "1"
 
+  browser-macos:
+    needs: changes
+    if: needs.changes.outputs.browser == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run check --workspace=@lwlee2608/pi-browser
+      - run: npm test --workspace=@lwlee2608/pi-browser
+
   publish:
-    needs: [check, subagent-macos]
+    needs: [check, subagent-macos, browser-macos]
     if: >-
       !cancelled() && startsWith(github.ref, 'refs/tags/') && contains(github.ref_name, '-v')
       && needs.check.result == 'success'
       && (needs.subagent-macos.result == 'success' || needs.subagent-macos.result == 'skipped')
+      && (needs.browser-macos.result == 'success' || needs.browser-macos.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
