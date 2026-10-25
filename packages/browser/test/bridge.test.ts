@@ -113,7 +113,7 @@ test("a host that never answers hello is dropped, not taken for a mismatch, and 
 
 test("a call fails when Chrome never connects", async () => {
   const { server } = bridge({ connectTimeout: 20 });
-  await assert.rejects(server.call("echo", {}), /not connected\. Click the Pi Browser toolbar icon/);
+  await assert.rejects(server.call("echo", {}), /not connected\. Click the Pi Browser toolbar icon.*reload Pi Browser in chrome:\/\/extensions after an update/);
 });
 
 test("a second host connection is refused while one is live", async () => {
