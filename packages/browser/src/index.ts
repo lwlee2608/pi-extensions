@@ -1,9 +1,10 @@
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, getAgentDir, truncateHead, truncateTail, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { basename, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
 import { Approvals, confirmEval, hostOf, parse, type Choice } from "./approval.ts";
-import { Bridge, ORIGIN, PORT, type BridgeOptions } from "./bridge.ts";
+import { Bridge, listenSocket, type BridgeOptions } from "./bridge.ts";
+import { detectBrowserDirs, installHost } from "./install.ts";
 
 const CHROME_DIR = fileURLToPath(new URL("../chrome/", import.meta.url));
 
@@ -67,17 +68,17 @@ export function truncate(text: string, tail = false): string {
   return tail ? `${note}\n\n${result.content}` : `${result.content}\n\n${note}`;
 }
 
-export function browserExtension(overrides: Partial<BridgeOptions> = {}): (pi: ExtensionAPI) => void {
+export function browserExtension({ browserDirs, ...overrides }: Partial<BridgeOptions> & { browserDirs?: string[] } = {}): (pi: ExtensionAPI) => void {
   return pi => {
     let session: ExtensionContext | undefined;
     let used = false;
     const approvals = new Approvals(join(getAgentDir(), "pi-browser", "config.json"));
+    const sessions = join(getAgentDir(), "pi-browser", "sessions");
     const bridge = new Bridge({
-      port: PORT,
-      origin: ORIGIN,
-      secretPath: join(getAgentDir(), "pi-browser", "secret"),
-      label: () => `${session?.sessionManager.getSessionName() ?? basename(session?.cwd ?? "pi")} (pid ${process.pid})`,
-      onRelease: () => session?.ui.notify("Another pi session took the browser.", "info"),
+      transport: async handlers => {
+        await installHost(browserDirs ?? detectBrowserDirs(), sessions);
+        return listenSocket(join(sessions, `${session!.sessionManager.getSessionId()}.sock`), handlers);
+      },
       onStop: () => {
         session?.abort();
         session?.ui.notify("Stopped from Chrome.", "info");
@@ -93,10 +94,8 @@ export function browserExtension(overrides: Partial<BridgeOptions> = {}): (pi: E
     async function status(bridge: Bridge): Promise<string> {
       const lines = [`Chrome extension folder: ${CHROME_DIR}`];
       const error = await bridge.listen().catch((error: Error) => error);
-      const owner = error ? await bridge.owner() : { label: "this session", connected: bridge.connected };
-      if (!owner) return [...lines, (error as Error).message].join("\n");
-      lines.push(`Owner: ${owner.label}${error ? ". Run /browser take to move it here." : ""}`);
-      lines.push(owner.connected ? "Chrome: connected" : "Chrome: not connected. Load the folder unpacked in chrome://extensions, then click the Pi Browser toolbar icon.");
+      if (error) return [...lines, error.message].join("\n");
+      lines.push(bridge.connected ? "Chrome: connected" : "Chrome: not connected. Click the Pi Browser toolbar icon in Chrome to reconnect. If it is not installed, load the folder unpacked in chrome://extensions.");
       return lines.join("\n");
     }
 
@@ -160,19 +159,11 @@ export function browserExtension(overrides: Partial<BridgeOptions> = {}): (pi: E
     });
 
     pi.registerCommand("browser", {
-      description: "Browser status, or take: move the browser to this session",
+      description: "Browser status",
       handler: async (args, ctx) => {
-        const command = args.trim();
-        if (command !== "" && command !== "take") { ctx.ui.notify("Usage: /browser [take]", "warning"); return; }
+        if (args.trim() !== "") { ctx.ui.notify("Usage: /browser", "warning"); return; }
         try {
-          if (command === "take") {
-            const moved = await use(ctx).take();
-            ctx.ui.notify(moved
-              ? "This session now owns the browser. Chrome reconnects within about 30s; click the Pi Browser toolbar icon to reconnect now."
-              : "This session already owns the browser.", "info");
-          } else {
-            ctx.ui.notify(await status(use(ctx)), "info");
-          }
+          ctx.ui.notify(await status(use(ctx)), "info");
         } catch (error) {
           ctx.ui.notify((error as Error).message, "warning");
         }

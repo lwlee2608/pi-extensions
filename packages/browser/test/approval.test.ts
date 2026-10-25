@@ -170,7 +170,7 @@ test("without a UI the tool is hidden and never reaches the bridge", async () =>
     setActiveTools: (tools: string[]) => { active = tools; },
   } as unknown as ExtensionAPI;
   const ctx = { hasUI: false } as ExtensionContext;
-  browserExtension({ port: 1, secretPath: join(dir, "secret") })(pi);
+  browserExtension({ browserDirs: [] })(pi);
   handlers.get("session_start")!({}, ctx);
   assert.deepEqual(active, ["read"]);
   active = ["read", "browser"];

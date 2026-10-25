@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, readlink, rm, stat } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -12,7 +12,6 @@ import { launchChrome } from "./chrome.ts";
 import { copyExtension } from "./extension.ts";
 
 const EXTENSION = "chrome-extension://enidoebkpjligpdgedlellobooiiljib/";
-const ALARM_MS = 1_000;
 const fixtures = fileURLToPath(new URL("fixtures/", import.meta.url));
 const work = await mkdtemp(join(tmpdir(), "pi-browser-e2e-"));
 
@@ -36,13 +35,12 @@ const fixtureServer = createServer(async (req, res) => {
   else res.writeHead(404).end();
 });
 const site = `http://127.0.0.1:${await listen(fixtureServer)}/`;
-const probe = createServer();
-const port = await listen(probe);
-probe.close();
 
 process.env.PI_CODING_AGENT_DIR = join(work, "agent");
 const configPath = join(work, "agent", "pi-browser", "config.json");
-const options = { port, secretPath: join(work, "secret"), connectTimeout: 10_000, callTimeout: 10_000 };
+const sessions = join(work, "agent", "pi-browser", "sessions");
+const profile = join(work, "profile");
+const options = { browserDirs: [profile], connectTimeout: 10_000, callTimeout: 10_000 };
 
 let stops = 0;
 
@@ -70,7 +68,7 @@ function session() {
     if (typeof answer !== "string") throw new Error(`Unexpected prompt: ${title}`);
     return answer;
   };
-  const ctx = { hasUI: true, cwd: work, abort: () => { stops++; }, ui: { notify: () => {}, select }, sessionManager: { getSessionName: () => "e2e" } } as unknown as ExtensionContext;
+  const ctx = { hasUI: true, cwd: work, abort: () => { stops++; }, ui: { notify: () => {}, select }, sessionManager: { getSessionId: () => "e2e", getSessionName: () => "e2e" } } as unknown as ExtensionContext;
   const emit = (event: string) => { for (const handler of handlers.get(event) ?? []) handler({}, ctx); };
   browserExtension(options)(pi);
   emit("session_start");
@@ -90,8 +88,8 @@ let { asked, confirmed, emit, call, browser } = session();
 const host = new URL(site).hostname;
 const at = (name: string, path = "other.html") => `http://${name}.test:${new URL(site).port}/${path}`;
 
-const extensionDir = await copyExtension(join(work, "extension"), { PORT: port, ALARM_MINUTES: ALARM_MS / 60_000, NAVIGATE_WAIT_MS: 300 });
-const chrome = await launchChrome(extensionDir, join(work, "profile"));
+const extensionDir = await copyExtension(join(work, "extension"), { RECONNECT_MS: 100, RECONNECT_MAX_MS: 200, NAVIGATE_WAIT_MS: 300 });
+const chrome = await launchChrome(extensionDir, profile);
 const { cdp } = chrome;
 await cdp.send("Target.setDiscoverTargets", { discover: true });
 
@@ -165,6 +163,35 @@ async function stopWorker(): Promise<void> {
   await stopped;
 }
 
+async function wakeWorker(): Promise<void> {
+  await cdp.send("Target.createTarget", { url: "about:blank", background: true });
+}
+
+async function hostPids(): Promise<number[]> {
+  const pids: number[] = [];
+  for (const pid of (await readdir("/proc")).filter(name => /^\d+$/.test(name))) {
+    const args = (await readFile(`/proc/${pid}/cmdline`, "utf8").catch(() => "")).split("\0");
+    if (args.includes(sessions) && args.some(arg => arg.endsWith("/src/host.js"))) pids.push(Number(pid));
+  }
+  return pids;
+}
+
+async function tcpListeners(pid: number): Promise<number[]> {
+  const sockets = new Set<string>();
+  for (const fd of await readdir(`/proc/${pid}/fd`)) {
+    const inode = (await readlink(`/proc/${pid}/fd/${fd}`).catch(() => "")).match(/^socket:\[(\d+)\]$/)?.[1];
+    if (inode) sockets.add(inode);
+  }
+  const ports: number[] = [];
+  for (const table of ["/proc/net/tcp", "/proc/net/tcp6"]) {
+    for (const line of (await readFile(table, "utf8")).trim().split("\n").slice(1)) {
+      const [, local, , state, , , , , , inode] = line.trim().split(/\s+/);
+      if (state === "0A" && sockets.has(inode)) ports.push(parseInt(local.split(":").at(-1)!, 16));
+    }
+  }
+  return ports;
+}
+
 test("a navigate to a new host asks first, and a denied one fails before Chrome loads it", async () => {
   await assert.rejects(browser({ action: "navigate", url: `${site}index.html` }, "Deny"), new RegExp(`did not allow the browser on ${host.replaceAll(".", "\\.")}`));
   assert.deepEqual(asked.splice(0), [host]);
@@ -200,6 +227,16 @@ test("a redirect to a new host asks again, and allow once covers only that actio
   assert.deepEqual(asked.splice(0), ["redirect.test", "redirect.test", "redirect.test", "redirect.test"]);
   assert.match(await browser({ action: "navigate", url: `${site}index.html` }), /Pi fixture/);
   assert.deepEqual(asked, []);
+});
+
+test("no TCP port is open while the agent reads a page over the native host and a user-only socket", { skip: process.platform !== "linux" && "reads /proc" }, async () => {
+  const reading = browser({ action: "read" });
+  const hosts = await hostPids();
+  assert.equal(hosts.length, 1, "Chrome runs the native host for the e2e sessions folder");
+  assert.deepEqual(await tcpListeners(hosts[0]), [], "the native host listens on no TCP port");
+  assert.deepEqual(await tcpListeners(process.pid), [Number(new URL(site).port)], "pi listens on no TCP port; only the fixture server does");
+  assert.equal((await stat(join(sessions, "e2e.sock"))).mode & 0o777, 0o600);
+  assert.match(await reading, /heading "Pi fixture heading"/);
 });
 
 test("read refuses a tab outside the pi group", async () => {
@@ -356,13 +393,14 @@ test("closing the bridge detaches the debugger from pi tabs", async () => {
   await detached;
 });
 
-test("the extension reconnects on its own after its service worker stops", async () => {
+test("the extension reconnects on its own when its stopped service worker wakes", async () => {
   await browser({ action: "tabs" });
   await stopWorker();
   const start = Date.now();
+  await wakeWorker();
   assert.match(await browser({ action: "tabs" }), /Pi fixture/);
   const elapsed = Date.now() - start;
-  assert.ok(elapsed < ALARM_MS + 1_000, `reconnected after ${elapsed}ms`);
+  assert.ok(elapsed < 2_000, `reconnected after ${elapsed}ms`);
 });
 
 test("always saves the host, and a fresh session does not ask for it", async () => {
@@ -430,8 +468,9 @@ test("after a debugging cancel every call fails at once, across a worker restart
   for (const restart of [false, true]) {
     if (restart) await stopWorker();
     const start = Date.now();
+    if (restart) await wakeWorker();
     await assert.rejects(browser({ action: "read" }), /canceled in Chrome.*toolbar icon/);
-    assert.ok(Date.now() - start < ALARM_MS + 1_000);
+    assert.ok(Date.now() - start < 2_000);
   }
   await inWorker(`chrome.storage.session.remove("canceled")`);
   assert.match(await browser({ action: "read" }), /heading/);

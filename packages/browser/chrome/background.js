@@ -1,6 +1,6 @@
-const PORT = 47823;
-const ALARM_MINUTES = 0.5;
-const KEEPALIVE_MS = 20_000;
+const HOST = "com.lwlee2608.pi_browser";
+const RECONNECT_MS = 1_000;
+const RECONNECT_MAX_MS = 15_000;
 const NAVIGATE_WAIT_MS = 20_000;
 const GROUP = "pi";
 const SCREENSHOT_QUALITY = 80;
@@ -165,33 +165,53 @@ const attached = new Set();
 const refs = new Map();
 const logs = new Map();
 const dialogs = new Map();
-let socket;
+let host;
+let retry;
+let delay = RECONNECT_MS;
+let link;
 let current;
 
-function connect() {
-  if (socket) return;
-  const ws = socket = new WebSocket(`ws://127.0.0.1:${PORT}`);
-  let keepalive;
-  ws.onopen = () => {
-    keepalive = setInterval(() => ws.send("{}"), KEEPALIVE_MS);
+const session = {
+  open(peer) {
+    link = peer;
     chrome.action.setTitle({ title: "Pi Browser: connected" });
-  };
-  ws.onmessage = async ({ data }) => {
-    const { id, method, params } = JSON.parse(data);
+  },
+  async message(peer, { id, method, params }) {
+    let reply;
     try {
       await allowed();
       if (!Object.hasOwn(handlers, method)) throw new Error(`Unknown browser action: ${method}`);
-      ws.send(JSON.stringify({ id, result: await handlers[method](params ?? {}) }));
+      reply = { id, result: await handlers[method](params ?? {}) };
     } catch (error) {
-      ws.send(JSON.stringify({ id, error: error?.message ?? String(error) }));
+      reply = { id, error: error?.message ?? String(error) };
     }
-  };
-  ws.onclose = ({ code, reason }) => {
-    clearInterval(keepalive);
-    if (socket === ws) socket = undefined;
-    chrome.action.setTitle({ title: code === 4409 ? `Pi Browser: ${reason}` : "Pi Browser: not connected" });
+    if (link === peer) peer.send(reply);
+  },
+  close(peer) {
+    if (link !== peer) return;
+    link = undefined;
+    chrome.action.setTitle({ title: "Pi Browser: not connected" });
     detachAll();
-  };
+  },
+};
+
+function connect() {
+  if (host) return;
+  clearTimeout(retry);
+  const port = host = chrome.runtime.connectNative(HOST);
+  let peer;
+  port.onMessage.addListener(message => {
+    delay = RECONNECT_MS;
+    if (message.event === "connected") session.open(peer = { send: reply => port.postMessage(reply) });
+    else if (message.event === "disconnected") { session.close(peer); peer = undefined; }
+    else if (peer) session.message(peer, message);
+  });
+  port.onDisconnect.addListener(() => {
+    if (peer) session.close(peer);
+    host = undefined;
+    retry = setTimeout(connect, delay);
+    delay = Math.min(delay * 2, RECONNECT_MAX_MS);
+  });
 }
 
 async function piTabs() {
@@ -581,7 +601,7 @@ chrome.debugger.onEvent.addListener(({ tabId }, method, params) => {
   else if (method === "Page.frameDetached") refs.get(tabId)?.delete(params.frameId);
   else if (method === "Page.javascriptDialogOpening") dialogs.set(tabId, params.type);
   else if (method === "Page.javascriptDialogClosed") dialogs.delete(tabId);
-  else if (method === "Runtime.bindingCalled" && params.name === STOP_BINDING && socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ event: "stop" }));
+  else if (method === "Runtime.bindingCalled" && params.name === STOP_BINDING) link?.send({ event: "stop" });
 });
 chrome.debugger.onDetach.addListener(({ tabId }, reason) => {
   attached.delete(tabId);
@@ -603,7 +623,13 @@ chrome.tabs.onUpdated.addListener(async (tabId, { groupId }) => {
   dialogs.delete(tabId);
   chrome.debugger.detach({ tabId }).catch(() => {});
 });
-chrome.alarms.create("connect", { periodInMinutes: ALARM_MINUTES });
-chrome.alarms.onAlarm.addListener(connect);
-chrome.action.onClicked.addListener(() => chrome.storage.session.remove("canceled").then(connect));
+chrome.runtime.onStartup.addListener(connect);
+chrome.action.onClicked.addListener(() => chrome.storage.session.remove("canceled").then(() => {
+  delay = RECONNECT_MS;
+  if (host && !link) {
+    host.disconnect();
+    host = undefined;
+  }
+  connect();
+}));
 connect();
