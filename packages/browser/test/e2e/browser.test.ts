@@ -508,6 +508,13 @@ test("network on a page loaded before the debugger reattached says it may be mis
   assert.match(await browser({ action: "network", tabId }), /^\d+ requests in tab \d+ since its page loaded, oldest first:/);
 });
 
+test("a tab that changed group while the debugger attached starts fresh on its next action", async () => {
+  const tabId = await inWorker(`chrome.tabs.query({ url: "${at("always", "debug.html")}" }).then(([tab]) => tab.id)`);
+  assert.match(await browser({ action: "network", tabId }), /since its page loaded/);
+  await inWorker(`attached.set(${tabId}, -2)`);
+  assert.match(await browser({ action: "network", tabId }), /since the debugger attached/);
+});
+
 test("eval asks with its code shown even on an always host, returns the value, and fails when declined", async () => {
   await browser({ action: "navigate", url: at("always", "debug.html"), newTab: true });
   assert.equal(await browser({ action: "eval", code: "document.title" }, true), "Pi debug");

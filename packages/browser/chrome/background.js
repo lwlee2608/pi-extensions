@@ -250,6 +250,7 @@ async function piTab(caller, tabId) {
   const tabs = await piTabs(caller);
   const tab = tabId === undefined ? tabs.find(tab => tab.id === current.get(caller.id)) ?? tabs.at(-1) : tabs.find(tab => tab.id === tabId);
   if (!tab) throw new Error(tabId === undefined ? "No pi tabs are open. Use navigate first." : `Tab ${tabId} is not in your group.`);
+  if (attached.has(tab.id) && attached.get(tab.id) !== tab.groupId) await detach(tab.id);
   current.set(caller.id, tab.id);
   return tab;
 }
