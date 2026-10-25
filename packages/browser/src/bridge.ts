@@ -135,7 +135,7 @@ export class Bridge {
     return new Promise((resolve, reject) => {
       const finish = () => { clearTimeout(timer); signal?.removeEventListener("abort", abort); this.pending.delete(id); };
       const abort = () => { finish(); reject(new Error("Aborted.")); };
-      const timer = setTimeout(() => { finish(); reject(new Error(`Chrome did not answer ${method} within ${timeout / 1000}s.`)); }, timeout);
+      const timer = setTimeout(() => { finish(); reject(new Error(`Chrome did not answer ${method} within ${timeout / 1000}s.`, { cause: "timeout" })); }, timeout);
       signal?.addEventListener("abort", abort, { once: true });
       this.pending.set(id, {
         peer,
@@ -152,9 +152,10 @@ export class Bridge {
     this.state = "joining";
     const join = (reply: unknown) => {
       if (this.peer !== peer) return;
-      if (reply instanceof Error && !reply.message.startsWith("Unknown browser action")) { peer.close(); return; }
-      const { version, host } = (reply ?? {}) as { version?: number; host?: number };
-      this.state = version === PROTOCOL && host === PROTOCOL ? "ready" : new Error(`Pi Browser protocol versions do not match (pi ${PROTOCOL}, extension ${version ?? "none"}, native host ${host ?? "none"}). `
+      if (reply instanceof Error && reply.cause === "timeout") { peer.close(); return; }
+      const { version, host } = (reply instanceof Error ? {} : reply ?? {}) as { version?: number; host?: number };
+      const answered = reply instanceof Error ? `; the extension answered "${reply.message}"` : "";
+      this.state = version === PROTOCOL && host === PROTOCOL ? "ready" : new Error(`Pi Browser protocol versions do not match (pi ${PROTOCOL}, extension ${version ?? "none"}, native host ${host ?? "none"}${answered}). `
         + "Reload the Pi Browser extension in chrome://extensions, and restart pi if it started before the update.");
       for (const wake of this.waiters) wake(this.mismatch);
     };

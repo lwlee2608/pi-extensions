@@ -54,7 +54,7 @@ test("/browser keeps its other lines and shows the error when the status call fa
 
 test("/browser tells you to reload an extension that predates the version handshake", async () => {
   const text = await browser({ error: "Unknown browser action: status" }, "linux", { error: "Unknown browser action: hello" })();
-  assert.match(text, /^Pi Browser protocol versions do not match \(pi \d+, extension none, native host none\)\. Reload the Pi Browser extension in chrome:\/\/extensions/m);
+  assert.match(text, /^Pi Browser protocol versions do not match \(pi \d+, extension none, native host none; the extension answered "Unknown browser action: hello"\)\. Reload the Pi Browser extension in chrome:\/\/extensions/m);
 });
 
 test("/browser says how to reconnect when no browser is connected", async () => {

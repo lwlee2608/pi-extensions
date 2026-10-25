@@ -93,7 +93,20 @@ test("an extension from before the handshake, which answers hello as an unknown 
   await server.listen();
   const socket = connect(path);
   socket.on("data", decoder(({ id, method }: Call) => socket.write(encode({ id, error: `Unknown browser action: ${method}` }))));
-  await assert.rejects(server.call("status", {}), /extension none, native host none\)\. Reload the Pi Browser extension/);
+  await assert.rejects(server.call("status", {}), /extension none, native host none; the extension answered "Unknown browser action: hello"\)\. Reload the Pi Browser extension/);
+});
+
+test("any error answer to hello is a sticky mismatch that keeps the host attached instead of making it reconnect", async () => {
+  const { server, path } = bridge();
+  await server.listen();
+  const socket = connect(path);
+  let closed = false;
+  socket.on("close", () => { closed = true; });
+  socket.on("data", decoder(({ id }: Call) => socket.write(encode({ id, error: "Debugging was canceled in Chrome." }))));
+  const answered = /native host none; the extension answered "Debugging was canceled in Chrome\."\)\. Reload the Pi Browser extension/;
+  await assert.rejects(server.call("echo", {}), answered);
+  await assert.rejects(server.call("echo", {}), answered);
+  assert.equal(closed, false);
 });
 
 test("a host that never answers hello is dropped, not taken for a mismatch, and the next host serves the waiting call", async () => {
