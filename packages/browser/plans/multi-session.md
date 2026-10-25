@@ -38,7 +38,7 @@
 - **Phase count** — 4, sequential: phases share `chrome/background.js` and `src/host.ts`
 
 ## Progress
-Active: 3 · 21/27 tasks
+Active: 4 · 21/27 tasks
 
 ### Phase 1 — One session drives Chrome with no TCP port open
 Today's single-session browser works exactly as before, but over the native host and a 0600 Unix socket, so nothing can squat a port.
@@ -93,6 +93,8 @@ A second pi session gets its own `pi · <name>` group in a distinct color and wo
 - Note: the overlay's Stop button reads `Stop pi · <name>`, taken from the tab's group title on each paint
 - Note: a session that exits while the service worker is down never ends: its group keeps its live title and color until the browser restarts. Ties into phase 4's worker-wake problem; a later fix could, at connect, mark ended any tracked id that does not reconnect within a few seconds
 - Note: `listenSocket` probe-connects before removing a socket file, so a second pi with the same session id fails with an error naming the path and the first keeps its socket. The first pi briefly takes the probe for a host, so a call of its own that is waiting for Chrome at that instant fails with "disconnected". The refused pi probes again on every call, and the probe→rm is not atomic, so two same-id pis starting together can still race; a real fix needs a lock file
+- Note: an `attach` already inside `chrome.debugger.attach` when `end` and the close detach finish can still leave an ended tab attached; fix is to re-check `groups()` after attach and detach if no longer live (`chrome/background.js` `attach`)
+- Note: after a failed `readopt`, a later `readopt` from a fast reconnect can untrack a live group (`chrome/background.js` `readopt`)
 **Verify:** `npm run e2e`: after a session shuts down its group title ends in `(ended)` and its tabs remain; reconnecting with the same session id acts in that same group. `npm test` checks `/browser` prints group, color and browser.
 
 ### Phase 4 — macOS install, clear errors, and release notes
