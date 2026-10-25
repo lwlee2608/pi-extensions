@@ -250,7 +250,7 @@ test("tabs lists the pi tab and only counts the others", async () => {
   const text = await browser({ action: "tabs" });
   assert.match(text, /Pi fixture .*index\.html.*\(current\)/);
   assert.doesNotMatch(text, /other\.html|Other tab|about:blank/);
-  assert.match(text, new RegExp(`^${total - 1} other tabs are not in the pi group\\.$`, "m"));
+  assert.match(text, new RegExp(`^${total - 1} other tabs are not in your group\\.$`, "m"));
 });
 
 test("navigate refuses non-http schemes", async () => {

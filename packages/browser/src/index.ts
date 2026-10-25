@@ -44,7 +44,7 @@ export async function listTabs({ tabs, others }: TabList, allowed: (url: string)
       : await allowed(tab.url) ? `${tab.title || "(untitled)"} <${tab.url}>` : `(unapproved host ${host})`;
     return `Tab ${tab.id}: ${page}${tab.current ? " (current)" : ""}`;
   }));
-  return [...(lines.length ? lines : ["No pi tabs are open."]), `${others} other tabs are not in the pi group.`].join("\n");
+  return [...(lines.length ? lines : ["No pi tabs are open."]), `${others} other tabs are not in your group.`].join("\n");
 }
 
 export function given<T extends object>(params: T): T {
@@ -116,7 +116,7 @@ export function browserExtension({ browserDirs, ...overrides }: Partial<BridgeOp
     pi.registerTool({
       name: "browser",
       label: "Browser",
-      description: "Drive the user's Chrome, only in tabs of its \"pi\" tab group. Actions: tabs lists pi tabs (other tabs are only counted; "
+      description: "Drive the user's Chrome, only in tabs of your own pi tab group. Actions: tabs lists the tabs in your group (other tabs are only counted; "
         + "a tab on a host the user has not approved shows only its host; a non-http(s) tab shows only its scheme and is refused until navigated); "
         + "navigate loads an http/https URL in the current pi tab, or a new one with newTab; read returns the page as an accessibility tree "
         + "where [n] marks an element ref. click, type, and keys act on a ref with real input events; scroll brings a ref into view; "
