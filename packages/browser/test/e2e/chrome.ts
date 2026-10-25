@@ -4,7 +4,6 @@ import { existsSync } from "node:fs";
 import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { WebSocket } from "ws";
 
 const VERSION = "156.0.8078.47";
 const PLATFORMS: Record<string, string> = { "darwin-arm64": "mac-arm64", "darwin-x64": "mac-x64", "linux-x64": "linux64" };
@@ -39,8 +38,8 @@ export class Cdp {
 
   constructor(socket: WebSocket) {
     this.socket = socket;
-    socket.on("message", data => {
-      const message = JSON.parse(data.toString());
+    socket.addEventListener("message", ({ data }) => {
+      const message = JSON.parse(data);
       const call = this.calls.get(message.id);
       this.calls.delete(message.id);
       if (call) {

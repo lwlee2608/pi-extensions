@@ -1,198 +1,198 @@
-import { randomBytes, timingSafeEqual } from "node:crypto";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { chmod, mkdir, rm, utimes } from "node:fs/promises";
+import { connect, createServer, type Socket } from "node:net";
 import { dirname } from "node:path";
-import { WebSocketServer, type WebSocket } from "ws";
+import { decoder, encode, PROTOCOL } from "./host.js";
 
-export const PORT = 47823;
-export const ORIGIN = "chrome-extension://enidoebkpjligpdgedlellobooiiljib";
+export interface Message {
+  id?: number;
+  result?: unknown;
+  error?: string;
+  event?: string;
+}
+
+export interface Peer {
+  send(message: object): void;
+  close(): void;
+}
+
+export interface Handlers {
+  open(peer: Peer): void;
+  message(peer: Peer, message: Message): void;
+  close(peer: Peer): void;
+}
+
+export type Transport = (handlers: Handlers) => Promise<() => void>;
 
 export interface BridgeOptions {
-  port: number;
-  origin: string;
-  secretPath: string;
-  label?: () => string;
+  transport: Transport;
+  name?: () => string;
   connectTimeout?: number;
   callTimeout?: number;
-  requestTimeout?: number;
-  onRelease?: () => void;
   onStop?: () => void;
 }
 
-export interface Owner {
-  label: string;
-  connected: boolean;
-}
-
 interface Pending {
-  socket: WebSocket;
+  peer: Peer;
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
 }
 
+export const MAX_SOCKET_PATH = process.platform === "darwin" ? 104 : 108;
+
+function answers(path: string): Promise<boolean> {
+  return new Promise(resolve => {
+    const socket = connect(path, () => { socket.destroy(); resolve(true); }).once("error", () => resolve(false));
+  });
+}
+
+export async function listenSocket(path: string, handlers: Handlers): Promise<() => void> {
+  const length = Buffer.byteLength(path);
+  if (length > MAX_SOCKET_PATH) throw new Error(`The browser socket path is ${length} bytes, over the ${MAX_SOCKET_PATH}-byte limit on this OS: ${path}`);
+  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+  await chmod(dirname(path), 0o700);
+  if (await answers(path)) throw new Error(`Another pi process with this session is using the browser socket ${path}.`);
+  await rm(path, { force: true });
+  let live: Socket | undefined;
+  const server = createServer(socket => {
+    socket.on("error", () => {});
+    if (live) { socket.destroy(); return; }
+    live = socket;
+    const peer = { send: (message: object) => void socket.write(encode(message)), close: () => socket.destroy() };
+    socket.on("data", decoder((message: Message) => handlers.message(peer, message)));
+    socket.on("close", () => {
+      live = undefined;
+      handlers.close(peer);
+      // Touching the socket wakes the dir watch of any host this one refused, so it takes over.
+      const now = new Date();
+      utimes(path, now, now).catch(() => {});
+    });
+    handlers.open(peer);
+  });
+  await new Promise<void>((resolve, reject) => server.once("error", reject).listen(path, resolve));
+  await chmod(path, 0o600);
+  return () => server.close();
+}
+
 export class Bridge {
   private readonly options: BridgeOptions;
-  private server?: Server;
   private starting?: Promise<void>;
-  private socket?: WebSocket;
+  private stop?: () => void;
+  private peer?: Peer;
+  private state?: "joining" | "ready" | Error;
   private readonly waiters = new Set<(error?: Error) => void>();
   private readonly pending = new Map<number, Pending>();
   private nextId = 0;
-  private secret?: Promise<string>;
 
   constructor(options: BridgeOptions) {
     this.options = options;
   }
 
-  get listening(): boolean {
-    return this.server !== undefined;
-  }
-
   get connected(): boolean {
-    return this.socket !== undefined;
+    return this.state === "ready";
   }
 
-  listen(): Promise<void> {
-    const starting = this.starting ??= new Promise((resolve, reject) => {
-      const server = createServer((req, res) => void this.request(req, res).catch(() => res.destroy()));
-      const wss = new WebSocketServer({ server, verifyClient: ({ origin }: { origin?: string }) => origin === this.options.origin });
-      wss.on("connection", socket => this.attach(socket));
-      wss.on("error", () => {});
-      server.once("error", (error: NodeJS.ErrnoException) => {
-        if (this.starting === starting) this.starting = undefined;
-        server.close();
-        reject(error.code === "EADDRINUSE"
-          ? new Error(`The browser is in use by another pi session (or another program holds port ${this.options.port}). Run /browser take to move it here.`, { cause: error })
-          : error);
-      });
-      server.once("listening", () => {
-        if (this.starting !== starting) { server.close(); reject(new Error("Browser bridge is closed.")); return; }
-        this.server = server;
-        resolve();
-      });
-      server.listen(this.options.port, "127.0.0.1");
+  get mismatch(): Error | undefined {
+    return this.state instanceof Error ? this.state : undefined;
+  }
+
+  async listen(): Promise<void> {
+    const starting = this.starting ??= this.options.transport({
+      open: peer => this.attach(peer),
+      message: (peer, message) => this.receive(peer, message),
+      close: peer => this.detach(peer),
+    }).then(stop => {
+      if (this.starting !== starting) { stop(); throw new Error("Browser bridge is closed."); }
+      this.stop = stop;
+    }, error => {
+      if (this.starting === starting) this.starting = undefined;
+      throw error;
     });
-    return starting;
+    await starting;
   }
 
   async call(method: string, params: object, signal?: AbortSignal): Promise<unknown> {
     signal?.throwIfAborted();
     await this.listen();
-    const socket = this.socket ?? await this.waitForSocket(signal);
+    if (this.state instanceof Error) throw this.state;
+    const peer = this.state === "ready" ? this.peer! : await this.waitForPeer(signal);
+    return this.request(peer, method, params, signal);
+  }
+
+  close(reason = "Browser bridge is closed."): void {
+    this.stop?.();
+    this.stop = undefined;
+    this.starting = undefined;
+    for (const wake of this.waiters) wake(new Error(reason));
+    for (const call of this.pending.values()) call.reject(new Error(reason));
+    this.peer?.close();
+    this.peer = undefined;
+    this.state = undefined;
+  }
+
+  private request(peer: Peer, method: string, params: object, signal?: AbortSignal): Promise<unknown> {
     const id = ++this.nextId;
     const timeout = this.options.callTimeout ?? 30_000;
     return new Promise((resolve, reject) => {
       const finish = () => { clearTimeout(timer); signal?.removeEventListener("abort", abort); this.pending.delete(id); };
       const abort = () => { finish(); reject(new Error("Aborted.")); };
-      const timer = setTimeout(() => { finish(); reject(new Error(`Chrome did not answer ${method} within ${timeout / 1000}s.`)); }, timeout);
+      const timer = setTimeout(() => { finish(); reject(new Error(`Chrome did not answer ${method} within ${timeout / 1000}s.`, { cause: "timeout" })); }, timeout);
       signal?.addEventListener("abort", abort, { once: true });
       this.pending.set(id, {
-        socket,
+        peer,
         resolve: value => { finish(); resolve(value); },
         reject: error => { finish(); reject(error); },
       });
-      socket.send(JSON.stringify({ id, method, params }));
+      peer.send({ id, method, params, name: this.options.name?.() });
     });
   }
 
-  async take(): Promise<boolean> {
-    if (this.server) return false;
-    const response = await this.fetch("/release", "POST");
-    if (response && !response.ok) throw new Error(`Port ${this.options.port} refused the take (HTTP ${response.status}). Is another program using it?`);
-    await this.listen();
-    return true;
+  private attach(peer: Peer): void {
+    if (this.peer) { peer.close(); return; }
+    this.peer = peer;
+    this.state = "joining";
+    const join = (reply: unknown) => {
+      if (this.peer !== peer) return;
+      if (reply instanceof Error && reply.cause === "timeout") { peer.close(); return; }
+      const { version, host } = (reply instanceof Error ? {} : reply ?? {}) as { version?: number; host?: number };
+      const answered = reply instanceof Error ? `; the extension answered "${reply.message}"` : "";
+      this.state = version === PROTOCOL && host === PROTOCOL ? "ready" : new Error(`Pi Browser protocol versions do not match (pi ${PROTOCOL}, extension ${version ?? "none"}, native host ${host ?? "none"}${answered}). `
+        + "Reload the Pi Browser extension in chrome://extensions, and restart pi if it started before the update.");
+      for (const wake of this.waiters) wake(this.mismatch);
+    };
+    this.request(peer, "hello", {}).then(join, join);
   }
 
-  async owner(): Promise<Owner | undefined> {
-    const response = await this.fetch("/owner", "GET");
-    return response?.ok ? await response.json() as Owner : undefined;
+  private detach(peer: Peer): void {
+    for (const call of this.pending.values()) if (call.peer === peer) call.reject(new Error("Chrome extension disconnected."));
+    if (this.peer !== peer) return;
+    this.peer = undefined;
+    this.state = undefined;
   }
 
-  close(reason = "Browser bridge is closed."): void {
-    this.starting = undefined;
-    this.server?.close();
-    this.server = undefined;
-    for (const wake of this.waiters) wake(new Error(reason));
-    for (const call of this.pending.values()) call.reject(new Error(reason));
-    this.socket?.terminate();
-  }
-
-  private async fetch(path: string, method: string): Promise<Response | undefined> {
-    const headers = { authorization: `Bearer ${await this.loadSecret()}` };
-    const timeout = this.options.requestTimeout ?? 3_000;
-    return fetch(`http://127.0.0.1:${this.options.port}${path}`, { method, headers, signal: AbortSignal.timeout(timeout) }).catch((error: Error) => {
-      if (error.name !== "TimeoutError") return undefined;
-      throw new Error(`The pi session holding port ${this.options.port} did not answer within ${timeout / 1000}s. It may be suspended; resume or quit it, then retry.`);
-    });
-  }
-
-  private async request(req: IncomingMessage, res: ServerResponse): Promise<void> {
-    const expected = Buffer.from(`Bearer ${await this.loadSecret()}`);
-    const given = Buffer.from(req.headers.authorization ?? "");
-    if (given.length !== expected.length || !timingSafeEqual(given, expected)) { res.writeHead(403).end(); return; }
-    if (req.method === "GET" && req.url === "/owner") {
-      res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ label: this.options.label?.() ?? "another pi session", connected: this.connected }));
-    } else if (req.method === "POST" && req.url === "/release") {
-      this.close("Another pi session took the browser.");
-      res.writeHead(200, { connection: "close" }).end();
-      this.options.onRelease?.();
-    } else {
-      res.writeHead(404).end();
-    }
-  }
-
-  private loadSecret(): Promise<string> {
-    return this.secret ??= loadSecret(this.options.secretPath);
-  }
-
-  private attach(socket: WebSocket): void {
-    if (this.socket) { socket.close(4409, "Another Chrome is already connected to pi."); return; }
-    this.socket = socket;
-    for (const wake of this.waiters) wake();
-    socket.on("error", () => {});
-    socket.on("message", data => this.receive(data.toString()));
-    socket.on("close", () => {
-      for (const call of this.pending.values()) if (call.socket === socket) call.reject(new Error("Chrome extension disconnected."));
-      if (this.socket === socket) this.socket = undefined;
-    });
-  }
-
-  private receive(raw: string): void {
-    let message: { id?: number; result?: unknown; error?: string; event?: string };
-    try { message = JSON.parse(raw); } catch { return; }
-    if (message.event === "stop") { this.options.onStop?.(); return; }
+  private receive(peer: Peer, message: Message): void {
+    if (message.event === "stop") { if (peer === this.peer && this.connected) this.options.onStop?.(); return; }
     const call = message.id === undefined ? undefined : this.pending.get(message.id);
-    if (!call) return;
+    if (call?.peer !== peer) return;
     if (message.error === undefined) call.resolve(message.result);
     else call.reject(new Error(message.error));
   }
 
-  private waitForSocket(signal?: AbortSignal): Promise<WebSocket> {
+  private waitForPeer(signal?: AbortSignal): Promise<Peer> {
     return new Promise((resolve, reject) => {
       const done = (error?: Error) => {
         clearTimeout(timer);
         this.waiters.delete(done);
         signal?.removeEventListener("abort", abort);
         if (error) reject(error);
-        else resolve(this.socket!);
+        else resolve(this.peer!);
       };
       const abort = () => done(new Error("Aborted."));
       const timer = setTimeout(
-        () => done(new Error("Chrome extension is not connected. Run /browser for the extension folder, load it unpacked in chrome://extensions, and keep Chrome open.")),
+        () => done(new Error("Chrome extension is not connected. Click the Pi Browser toolbar icon in Chrome to reconnect, or reload Pi Browser in chrome://extensions after an update. If it is not installed, run /browser for the extension folder and load it unpacked in chrome://extensions.")),
         this.options.connectTimeout ?? 35_000,
       );
       signal?.addEventListener("abort", abort, { once: true });
       this.waiters.add(done);
     });
   }
-}
-
-export async function loadSecret(path: string): Promise<string> {
-  try { return (await readFile(path, "utf8")).trim(); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  const secret = randomBytes(32).toString("hex");
-  try { await writeFile(path, secret, { mode: 0o600, flag: "wx" }); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code === "EEXIST") return (await readFile(path, "utf8")).trim(); throw error; }
-  return secret;
 }

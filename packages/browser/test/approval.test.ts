@@ -155,7 +155,7 @@ test("tabs shows a tab that has not loaded yet as loading, only the host of unap
     ],
     others: 4,
   }, async url => url.startsWith("https://good.test/"));
-  assert.equal(text, "Tab 1: (loading)\nTab 2: (unapproved host evil.test) (current)\nTab 3: Good <https://good.test/>\nTab 4: (about: page)\n4 other tabs are not in the pi group.");
+  assert.equal(text, "Tab 1: (loading)\nTab 2: (unapproved host evil.test) (current)\nTab 3: Good <https://good.test/>\nTab 4: (about: page)\n4 other tabs are not in your group.");
 });
 
 test("without a UI the tool is hidden and never reaches the bridge", async () => {
@@ -170,7 +170,7 @@ test("without a UI the tool is hidden and never reaches the bridge", async () =>
     setActiveTools: (tools: string[]) => { active = tools; },
   } as unknown as ExtensionAPI;
   const ctx = { hasUI: false } as ExtensionContext;
-  browserExtension({ port: 1, secretPath: join(dir, "secret") })(pi);
+  browserExtension({ browserDirs: [] })(pi);
   handlers.get("session_start")!({}, ctx);
   assert.deepEqual(active, ["read"]);
   active = ["read", "browser"];

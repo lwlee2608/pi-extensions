@@ -3,7 +3,8 @@ import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
 import { Approvals, confirmEval, hostOf, parse, type Choice } from "./approval.ts";
-import { Bridge, ORIGIN, PORT, type BridgeOptions } from "./bridge.ts";
+import { Bridge, listenSocket, type BridgeOptions } from "./bridge.ts";
+import { detectBrowserDirs, installHost } from "./install.ts";
 
 const CHROME_DIR = fileURLToPath(new URL("../chrome/", import.meta.url));
 
@@ -31,6 +32,11 @@ async function ask(ctx: ExtensionContext, host: string, signal?: AbortSignal): P
   return (answer && CHOICES[answer]) || "deny";
 }
 
+interface Status {
+  browser: string;
+  group?: { title: string; color: string };
+}
+
 interface TabList {
   tabs: { id: number; title: string; url: string; current: boolean }[];
   others: number;
@@ -43,7 +49,7 @@ export async function listTabs({ tabs, others }: TabList, allowed: (url: string)
       : await allowed(tab.url) ? `${tab.title || "(untitled)"} <${tab.url}>` : `(unapproved host ${host})`;
     return `Tab ${tab.id}: ${page}${tab.current ? " (current)" : ""}`;
   }));
-  return [...(lines.length ? lines : ["No pi tabs are open."]), `${others} other tabs are not in the pi group.`].join("\n");
+  return [...(lines.length ? lines : ["No pi tabs are open."]), `${others} other tabs are not in your group.`].join("\n");
 }
 
 export function given<T extends object>(params: T): T {
@@ -67,17 +73,18 @@ export function truncate(text: string, tail = false): string {
   return tail ? `${note}\n\n${result.content}` : `${result.content}\n\n${note}`;
 }
 
-export function browserExtension(overrides: Partial<BridgeOptions> = {}): (pi: ExtensionAPI) => void {
+export function browserExtension({ browserDirs, platform = process.platform, ...overrides }: Partial<BridgeOptions> & { browserDirs?: string[]; platform?: NodeJS.Platform } = {}): (pi: ExtensionAPI) => void {
   return pi => {
     let session: ExtensionContext | undefined;
     let used = false;
     const approvals = new Approvals(join(getAgentDir(), "pi-browser", "config.json"));
+    const sessions = join(getAgentDir(), "pi-browser", "sessions");
     const bridge = new Bridge({
-      port: PORT,
-      origin: ORIGIN,
-      secretPath: join(getAgentDir(), "pi-browser", "secret"),
-      label: () => `${session?.sessionManager.getSessionName() ?? basename(session?.cwd ?? "pi")} (pid ${process.pid})`,
-      onRelease: () => session?.ui.notify("Another pi session took the browser.", "info"),
+      transport: async handlers => {
+        await installHost(browserDirs ?? detectBrowserDirs(), sessions);
+        return listenSocket(join(sessions, `${session!.sessionManager.getSessionId()}.sock`), handlers);
+      },
+      name: () => session!.sessionManager.getSessionName() ?? basename(session!.cwd),
       onStop: () => {
         session?.abort();
         session?.ui.notify("Stopped from Chrome.", "info");
@@ -87,16 +94,19 @@ export function browserExtension(overrides: Partial<BridgeOptions> = {}): (pi: E
 
     function use(ctx: ExtensionContext): Bridge {
       if (!ctx.hasUI) throw new Error("The browser needs an interactive pi session.");
+      if (platform === "win32") throw new Error("The browser is not supported on Windows until the port transport lands (https://github.com/lwlee2608/pi-extensions/issues/43).");
       return bridge;
     }
 
     async function status(bridge: Bridge): Promise<string> {
       const lines = [`Chrome extension folder: ${CHROME_DIR}`];
-      const error = await bridge.listen().catch((error: Error) => error);
-      const owner = error ? await bridge.owner() : { label: "this session", connected: bridge.connected };
-      if (!owner) return [...lines, (error as Error).message].join("\n");
-      lines.push(`Owner: ${owner.label}${error ? ". Run /browser take to move it here." : ""}`);
-      lines.push(owner.connected ? "Chrome: connected" : "Chrome: not connected. Load the folder unpacked in chrome://extensions, then click the Pi Browser toolbar icon.");
+      const error = await bridge.listen().then(() => bridge.mismatch, (error: Error) => error);
+      if (error) return [...lines, error.message].join("\n");
+      if (!bridge.connected) return [...lines, "Chrome: not connected. Click the Pi Browser toolbar icon in Chrome to reconnect; its tooltip says why if it cannot start pi's native host. After an update, reload Pi Browser in chrome://extensions. If it is not installed, load the folder unpacked in chrome://extensions. Snap and Flatpak browsers are not supported."].join("\n");
+      const info = await bridge.call("status", {}).catch((error: Error) => error);
+      if (info instanceof Error) return [...lines, `Chrome: connected, but its status failed: ${info.message}`].join("\n");
+      const { browser, group } = info as Status;
+      lines.push(`Connected browser: ${browser}`, group ? `Your group: ${group.title} (${group.color})` : "Your group: none yet; it opens on the agent's first navigate.");
       return lines.join("\n");
     }
 
@@ -116,7 +126,7 @@ export function browserExtension(overrides: Partial<BridgeOptions> = {}): (pi: E
     pi.registerTool({
       name: "browser",
       label: "Browser",
-      description: "Drive the user's Chrome, only in tabs of its \"pi\" tab group. Actions: tabs lists pi tabs (other tabs are only counted; "
+      description: "Drive the user's Chrome, only in tabs of your own pi tab group. Actions: tabs lists the tabs in your group (other tabs are only counted; "
         + "a tab on a host the user has not approved shows only its host; a non-http(s) tab shows only its scheme and is refused until navigated); "
         + "navigate loads an http/https URL in the current pi tab, or a new one with newTab; read returns the page as an accessibility tree "
         + "where [n] marks an element ref. click, type, and keys act on a ref with real input events; scroll brings a ref into view; "
@@ -160,19 +170,11 @@ export function browserExtension(overrides: Partial<BridgeOptions> = {}): (pi: E
     });
 
     pi.registerCommand("browser", {
-      description: "Browser status, or take: move the browser to this session",
+      description: "Browser status",
       handler: async (args, ctx) => {
-        const command = args.trim();
-        if (command !== "" && command !== "take") { ctx.ui.notify("Usage: /browser [take]", "warning"); return; }
+        if (args.trim() !== "") { ctx.ui.notify("Usage: /browser", "warning"); return; }
         try {
-          if (command === "take") {
-            const moved = await use(ctx).take();
-            ctx.ui.notify(moved
-              ? "This session now owns the browser. Chrome reconnects within about 30s; click the Pi Browser toolbar icon to reconnect now."
-              : "This session already owns the browser.", "info");
-          } else {
-            ctx.ui.notify(await status(use(ctx)), "info");
-          }
+          ctx.ui.notify(await status(use(ctx)), "info");
         } catch (error) {
           ctx.ui.notify((error as Error).message, "warning");
         }

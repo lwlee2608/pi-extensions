@@ -1,8 +1,9 @@
-const PORT = 47823;
-const ALARM_MINUTES = 0.5;
-const KEEPALIVE_MS = 20_000;
+const HOST = "com.lwlee2608.pi_browser";
+const PROTOCOL = 1;
+const RECONNECT_MS = 1_000;
+const RECONNECT_MAX_MS = 15_000;
 const NAVIGATE_WAIT_MS = 20_000;
-const GROUP = "pi";
+const COLORS = ["blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange", "grey"];
 const SCREENSHOT_QUALITY = 80;
 const LOG_LIMIT = 200;
 const TEXT_LIMIT = 1_000;
@@ -18,23 +19,27 @@ const INTERACTIVE = new Set(["button", "checkbox", "combobox", "link", "listbox"
   "option", "radio", "searchbox", "slider", "spinbutton", "switch", "tab", "textbox", "treeitem"]);
 
 const handlers = {
-  async tabs() {
+  hello() {
+    return { version: PROTOCOL, host: hostVersion };
+  },
+
+  async tabs(_, caller) {
     const all = await chrome.tabs.query({});
-    const tabs = await piTabs();
+    const tabs = await piTabs(caller);
     return {
-      tabs: tabs.map(tab => ({ id: tab.id, title: tab.title, url: tab.url || tab.pendingUrl || "", current: tab.id === current })),
+      tabs: tabs.map(tab => ({ id: tab.id, title: tab.title, url: tab.url || tab.pendingUrl || "", current: tab.id === current.get(caller.id) })),
       others: all.length - tabs.length,
     };
   },
 
-  async tab({ tabId }) {
-    const tab = await piTab(tabId);
+  async tab({ tabId }, caller) {
+    const tab = await piTab(caller, tabId);
     return { id: tab.id, url: tab.url || tab.pendingUrl || "" };
   },
 
-  async navigate({ url, tabId, newTab }) {
+  async navigate({ url, tabId, newTab }, caller) {
     if (!/^https?:\/\//i.test(url)) throw new Error(`navigate only opens http and https URLs: ${url}`);
-    const tab = newTab || (tabId === undefined && !(await piTabs()).length) ? await openTab() : await piTab(tabId);
+    const tab = newTab || (tabId === undefined && !(await piTabs(caller)).length) ? await openTab(caller) : await piTab(caller, tabId);
     const outcome = await load(tab.id, url);
     if (outcome === "gone") throw new Error(`Tab ${tab.id} closed or detached while loading ${url}.`);
     await overlay(tab.id, "show");
@@ -43,8 +48,8 @@ const handlers = {
     return { url: committed || loaded.pendingUrl || loaded.url || "", text: `${describe(committed ? loaded : { ...loaded, title: "" })}${outcome === "timeout" ? " (still loading)" : ""}` };
   },
 
-  async read({ tabId }) {
-    const tab = await piTab(tabId);
+  async read({ tabId }, caller) {
+    const tab = await piTab(caller, tabId);
     await overlay(tab.id, "show");
     const { frameTree } = await cdp(tab.id, "Page.getFrameTree");
     const lines = [describe(tab)];
@@ -60,8 +65,8 @@ const handlers = {
     return { url: done.url || done.pendingUrl || "", text: lines.join("\n") };
   },
 
-  async click({ tabId, ref }) {
-    const tab = await piTab(tabId);
+  async click({ tabId, ref }, caller) {
+    const tab = await piTab(caller, tabId);
     await overlay(tab.id, "aim", await point(tab.id, ref));
     const at = await center(tab.id, ref);
     if (!at) throw new Error(`Ref [${ref}] has no visible box to click.`);
@@ -73,45 +78,47 @@ const handlers = {
     return acted(tab.id, `Clicked [${ref}]`);
   },
 
-  async type({ tabId, ref, text }) {
+  async type({ tabId, ref, text }, caller) {
     if (typeof text !== "string") throw new Error("type needs text.");
-    const tab = await piTab(tabId);
+    const tab = await piTab(caller, tabId);
     await overlay(tab.id, "show", await point(tab.id, ref).catch(() => undefined));
     await node(tab.id, "DOM.focus", ref);
     await guarded(tab.id, () => cdp(tab.id, "Input.insertText", { text }));
     return acted(tab.id, `Typed ${text.length} characters into [${ref}]`);
   },
 
-  async keys({ tabId, ref, keys }) {
+  async keys({ tabId, ref, keys }, caller) {
     const combos = typeof keys === "string" ? keys.trim().split(/\s+/).filter(Boolean) : [];
     if (!combos.length) throw new Error("keys needs key names, like \"Enter\" or \"Shift+Tab\".");
     const mac = (await chrome.runtime.getPlatformInfo()).os === "mac";
     const presses = combos.map(combo => parseCombo(combo, mac));
-    const tab = await piTab(tabId);
+    const tab = await piTab(caller, tabId);
     await overlay(tab.id, "show", ref === undefined ? undefined : await point(tab.id, ref).catch(() => undefined));
     if (ref !== undefined) await node(tab.id, "DOM.focus", ref);
     await guarded(tab.id, async () => { for (const press of presses) await pressKeys(tab.id, press); });
     return acted(tab.id, `Pressed ${combos.join(" ")}`);
   },
 
-  async scroll({ tabId, ref }) {
-    const tab = await piTab(tabId);
+  async scroll({ tabId, ref }, caller) {
+    const tab = await piTab(caller, tabId);
     await overlay(tab.id, "show", await point(tab.id, ref));
     return acted(tab.id, `Scrolled [${ref}] into view`);
   },
 
-  async screenshot({ tabId }) {
-    const tab = await piTab(tabId);
-    await chrome.tabs.update(tab.id, { active: true });
-    const { cssVisualViewport: css, visualViewport: device } = await cdp(tab.id, "Page.getLayoutMetrics");
-    const clip = { x: css.pageX, y: css.pageY, width: css.clientWidth, height: css.clientHeight, scale: css.clientWidth / device.clientWidth };
-    await overlay(tab.id, "conceal");
-    const { data } = await cdp(tab.id, "Page.captureScreenshot", { format: "jpeg", quality: SCREENSHOT_QUALITY, clip }).finally(() => overlay(tab.id, "show"));
+  async screenshot({ tabId }, caller) {
+    const tab = await piTab(caller, tabId);
+    const { data } = await serial(`window ${tab.windowId}`, async () => {
+      await chrome.tabs.update(tab.id, { active: true });
+      const { cssVisualViewport: css, visualViewport: device } = await cdp(tab.id, "Page.getLayoutMetrics");
+      const clip = { x: css.pageX, y: css.pageY, width: css.clientWidth, height: css.clientHeight, scale: css.clientWidth / device.clientWidth };
+      await overlay(tab.id, "conceal");
+      return cdp(tab.id, "Page.captureScreenshot", { format: "jpeg", quality: SCREENSHOT_QUALITY, clip }).finally(() => overlay(tab.id, "show"));
+    });
     return { ...(await acted(tab.id, "Screenshot")), data };
   },
 
-  async console({ tabId }) {
-    const tab = await piTab(tabId);
+  async console({ tabId }, caller) {
+    const tab = await piTab(caller, tabId);
     const log = await logOf(tab.id);
     if (!log.listening) {
       for (const domain of ["Runtime", "Log"]) await cdp(tab.id, `${domain}.enable`);
@@ -120,16 +127,16 @@ const handlers = {
     return reply(tab.id, listing(tab.id, "console messages", log.console));
   },
 
-  async network({ tabId }) {
-    const tab = await piTab(tabId);
+  async network({ tabId }, caller) {
+    const tab = await piTab(caller, tabId);
     const log = await logOf(tab.id);
     const lines = log.network.map(({ method, status, type, url }) => `${method} ${status ?? "pending"} ${type} ${url}`);
     return reply(tab.id, listing(tab.id, "requests", lines, log.partial ? "since the debugger attached; reload the page to see all requests" : undefined));
   },
 
-  async eval({ tabId, code, host }) {
+  async eval({ tabId, code, host }, caller) {
     if (typeof code !== "string" || !code.trim()) throw new Error("eval needs code.");
-    const tab = await piTab(tabId);
+    const tab = await piTab(caller, tabId);
     if (host !== undefined && hostOf(tab.url) !== host) throw new Error(`Tab ${tab.id} is no longer on ${host}, so the code was not run.`);
     const objectGroup = "pi-eval";
     try {
@@ -147,8 +154,13 @@ const handlers = {
     }
   },
 
-  async idle() {
-    await Promise.all([...attached].map(tabId => overlay(tabId, "hide")));
+  async status(_, caller) {
+    const group = await groupOf(caller);
+    return { browser: browserName(), group: group && { title: group.title, color: group.color } };
+  },
+
+  async idle(_, caller) {
+    await Promise.all((await piTabs(caller)).filter(tab => attached.has(tab.id)).map(tab => overlay(tab.id, "hide")));
     return {};
   },
 };
@@ -161,59 +173,160 @@ const KEYS = {
 const MODIFIERS = { Alt: [1, 18], Control: [2, 17], Meta: [4, 91], Shift: [8, 16] };
 const MAC_COMMANDS = { Meta: { a: "selectAll", c: "copy", v: "paste", x: "cut", z: "undo" }, "Meta+Shift": { z: "redo" } };
 
-const attached = new Set();
+const attached = new Map();
 const refs = new Map();
 const logs = new Map();
 const dialogs = new Map();
-let socket;
-let current;
+const current = new Map();
+const links = new Map();
+const queues = new Map();
+let host;
+let hostVersion;
+let retry;
+let delay = RECONNECT_MS;
+
+const session = {
+  open(peer) {
+    links.set(peer.id, peer);
+    chrome.action.setTitle({ title: "Pi Browser: connected" });
+    readopt(peer.id).catch(() => {});
+  },
+  async message(peer, { id, method, params, name }) {
+    let reply;
+    try {
+      await queues.get("groups");
+      if (method !== "status" && method !== "hello") await allowed();
+      if (!Object.hasOwn(handlers, method)) throw new Error(`Unknown browser action: ${method}`);
+      reply = { id, result: await handlers[method](params ?? {}, { id: peer.id, name }) };
+    } catch (error) {
+      reply = { id, error: error?.message ?? String(error) };
+    }
+    if (links.get(peer.id) === peer) peer.send(reply);
+  },
+  async close(peer) {
+    if (links.get(peer.id) !== peer) return;
+    links.delete(peer.id);
+    if (!links.size) chrome.action.setTitle({ title: "Pi Browser: not connected" });
+    const tabs = await piTabs({ id: peer.id });
+    if (links.has(peer.id)) return;
+    await end(peer.id);
+    if (links.has(peer.id)) return;
+    await Promise.all(tabs.map(tab => detach(tab.id)));
+  },
+};
 
 function connect() {
-  if (socket) return;
-  const ws = socket = new WebSocket(`ws://127.0.0.1:${PORT}`);
-  let keepalive;
-  ws.onopen = () => {
-    keepalive = setInterval(() => ws.send("{}"), KEEPALIVE_MS);
-    chrome.action.setTitle({ title: "Pi Browser: connected" });
-  };
-  ws.onmessage = async ({ data }) => {
-    const { id, method, params } = JSON.parse(data);
-    try {
-      await allowed();
-      if (!Object.hasOwn(handlers, method)) throw new Error(`Unknown browser action: ${method}`);
-      ws.send(JSON.stringify({ id, result: await handlers[method](params ?? {}) }));
-    } catch (error) {
-      ws.send(JSON.stringify({ id, error: error?.message ?? String(error) }));
+  if (host) return;
+  clearTimeout(retry);
+  const port = host = chrome.runtime.connectNative(HOST);
+  const peers = new Map();
+  hostVersion = undefined;
+  port.onMessage.addListener(({ session: id, event, message, version }) => {
+    delay = RECONNECT_MS;
+    const peer = peers.get(id);
+    if (event === "hello") {
+      hostVersion = version;
+      if (!links.size) chrome.action.setTitle({ title: "Pi Browser: not connected" });
     }
-  };
-  ws.onclose = ({ code, reason }) => {
-    clearInterval(keepalive);
-    if (socket === ws) socket = undefined;
-    chrome.action.setTitle({ title: code === 4409 ? `Pi Browser: ${reason}` : "Pi Browser: not connected" });
-    detachAll();
-  };
+    else if (event === "connected") {
+      const next = { id, send: reply => port.postMessage({ session: id, message: reply }) };
+      peers.set(id, next);
+      session.open(next);
+    } else if (event === "disconnected" && peer) {
+      peers.delete(id);
+      session.close(peer);
+    } else if (peer && message) session.message(peer, message);
+  });
+  port.onDisconnect.addListener(() => {
+    const error = chrome.runtime.lastError?.message;
+    for (const peer of peers.values()) session.close(peer);
+    host = undefined;
+    if (error) {
+      chrome.action.setTitle({ title: `Pi Browser: cannot start pi's native host (${error}). Use the browser in pi once to install it, then click this icon to retry. Snap and Flatpak browsers cannot run it.` });
+    }
+    retry = setTimeout(connect, delay);
+    delay = Math.min(delay * 2, RECONNECT_MAX_MS);
+  });
 }
 
-async function piTabs() {
-  const groups = new Set((await chrome.tabGroups.query({ title: GROUP })).map(group => group.id));
-  return (await chrome.tabs.query({})).filter(tab => groups.has(tab.groupId));
+function serial(key, run) {
+  const result = (queues.get(key) ?? Promise.resolve()).then(run);
+  queues.set(key, result.catch(() => {}));
+  return result;
 }
 
-async function piTab(tabId) {
-  const tabs = await piTabs();
-  const tab = tabId === undefined ? tabs.find(tab => tab.id === current) ?? tabs.at(-1) : tabs.find(tab => tab.id === tabId);
-  if (!tab) throw new Error(tabId === undefined ? "No pi tabs are open. Use navigate first." : `Tab ${tabId} is not in the pi tab group.`);
-  current = tab.id;
+async function groups() {
+  return (await chrome.storage.session.get("groups")).groups ?? {};
+}
+
+async function groupOf({ id, name }) {
+  const groupId = (await groups())[id];
+  const group = groupId === undefined ? undefined : await chrome.tabGroups.get(groupId).catch(() => undefined);
+  if (group && name && group.title !== `pi · ${name}` && (await groups())[id] === group.id && links.has(id)) return chrome.tabGroups.update(group.id, { title: `pi · ${name}` });
+  return group;
+}
+
+async function liveColors(owned) {
+  return (await chrome.tabGroups.query({})).filter(group => Object.values(owned).includes(group.id)).map(group => group.color);
+}
+
+function freeColor(used) {
+  return COLORS.find(color => !used.includes(color)) ?? COLORS[used.length % COLORS.length];
+}
+
+function end(id) {
+  return serial("groups", async () => {
+    if (links.has(id)) return;
+    const { [id]: groupId, ...owned } = await groups();
+    const group = groupId === undefined ? undefined : await chrome.tabGroups.get(groupId).catch(() => undefined);
+    const { ended = {} } = await chrome.storage.session.get("ended");
+    await chrome.storage.session.set({ groups: owned, ended: group ? { ...ended, [id]: groupId } : ended });
+    if (group) await chrome.tabGroups.update(groupId, { title: `${group.title} (ended)` });
+  });
+}
+
+function readopt(id) {
+  return serial("groups", async () => {
+    const { ended = {} } = await chrome.storage.session.get("ended");
+    if (!links.has(id) || ended[id] === undefined) return;
+    const { [id]: groupId, ...rest } = ended;
+    const group = await chrome.tabGroups.get(groupId).catch(() => undefined);
+    if (!group) return chrome.storage.session.set({ ended: rest });
+    const owned = await groups();
+    const used = await liveColors(owned);
+    await chrome.tabGroups.update(groupId, { title: group.title.replace(/ \(ended\)$/, ""), color: used.includes(group.color) ? freeColor(used) : group.color });
+    await chrome.storage.session.set({ ended: rest, groups: { ...owned, [id]: groupId } });
+  });
+}
+
+async function piTabs(caller) {
+  const group = await groupOf(caller);
+  return group ? chrome.tabs.query({ groupId: group.id }) : [];
+}
+
+async function piTab(caller, tabId) {
+  const tabs = await piTabs(caller);
+  const tab = tabId === undefined ? tabs.find(tab => tab.id === current.get(caller.id)) ?? tabs.at(-1) : tabs.find(tab => tab.id === tabId);
+  if (!tab) throw new Error(tabId === undefined ? "No pi tabs are open. Use navigate first." : `Tab ${tabId} is not in your group.`);
+  if (attached.has(tab.id) && attached.get(tab.id) !== tab.groupId) await detach(tab.id);
+  current.set(caller.id, tab.id);
   return tab;
 }
 
-async function openTab() {
-  const [group] = await chrome.tabGroups.query({ title: GROUP });
-  const tab = await chrome.tabs.create({ url: "about:blank", active: false, windowId: group?.windowId });
-  const groupId = await chrome.tabs.group({ tabIds: [tab.id], groupId: group?.id });
-  if (!group) await chrome.tabGroups.update(groupId, { title: GROUP, color: "blue" });
-  current = tab.id;
-  return tab;
+function openTab(caller) {
+  return serial("groups", async () => {
+    if (!links.has(caller.id)) throw new Error("This pi session disconnected from the browser.");
+    const group = await groupOf(caller);
+    const tab = await chrome.tabs.create({ url: "about:blank", active: false, windowId: group?.windowId });
+    const groupId = await chrome.tabs.group({ tabIds: [tab.id], groupId: group?.id });
+    if (!group) {
+      const owned = await groups();
+      await chrome.tabGroups.update(groupId, { title: `pi · ${caller.name}`, color: freeColor(await liveColors(owned)) });
+      await chrome.storage.session.set({ groups: { ...owned, [caller.id]: groupId } });
+    }
+    current.set(caller.id, tab.id);
+    return tab;
+  });
 }
 
 async function allowed() {
@@ -225,11 +338,13 @@ async function allowed() {
 async function attach(tabId) {
   if (attached.has(tabId)) return;
   await allowed();
+  const { groupId } = await chrome.tabs.get(tabId);
+  if (!Object.values(await groups()).includes(groupId)) throw new Error(`Tab ${tabId} is not in a live pi group.`);
   await chrome.debugger.attach({ tabId }, "1.3").catch(error => { if (!/already attached/i.test(error.message)) throw error; });
   logs.set(tabId, { console: [], network: [], requests: new Map(), partial: true });
   await chrome.debugger.sendCommand({ tabId }, "Page.enable");
   await chrome.debugger.sendCommand({ tabId }, "Network.enable", { maxTotalBufferSize: 0, maxResourceBufferSize: 0 });
-  attached.add(tabId);
+  attached.set(tabId, groupId);
 }
 
 async function cdp(tabId, method, params) {
@@ -394,17 +509,19 @@ function overlay(tabId, command, at) {
     : Promise.reject(new Error(`Tab ${tabId} was released.`));
   const run = async () => {
     await attach(tabId);
+    const { groupId } = await chrome.tabs.get(tabId);
+    const group = await chrome.tabGroups.get(groupId).catch(() => undefined);
     const { frameTree } = await send("Page.getFrameTree");
     const { executionContextId } = await send("Page.createIsolatedWorld", { frameId: frameTree.frame.id, worldName: OVERLAY_WORLD });
     await send("Runtime.addBinding", { name: STOP_BINDING, executionContextName: OVERLAY_WORLD });
-    const args = JSON.stringify([command, at ?? null, { move: CURSOR_MOVE_MS, idle: OVERLAY_IDLE_MS, binding: STOP_BINDING }]);
+    const args = JSON.stringify([command, at ?? null, { move: CURSOR_MOVE_MS, idle: OVERLAY_IDLE_MS, binding: STOP_BINDING, label: `Stop ${group?.title ?? "pi"}` }]);
     await send("Runtime.evaluate", { contextId: executionContextId, expression: `(${paint})(...${args})`, awaitPromise: true });
   };
   const wait = new Promise(resolve => setTimeout(resolve, OVERLAY_WAIT_MS));
   return Promise.race([run().catch(() => {}), wait]);
 }
 
-function paint(command, at, { move, idle, binding }) {
+function paint(command, at, { move, idle, binding, label }) {
   let ui = globalThis.piOverlay;
   if (!ui?.host.isConnected) {
     if (command === "hide" || command === "conceal") return;
@@ -415,6 +532,7 @@ function paint(command, at, { move, idle, binding }) {
   ui.timer = setTimeout(ui.remove, idle);
   ui.frame.classList.toggle("concealed", command === "conceal");
   ui.stop.style.pointerEvents = command === "aim" ? "none" : "";
+  ui.stop.textContent = label;
   const moved = at && (at.x !== ui.x || at.y !== ui.y);
   if (moved) {
     ui.x = at.x;
@@ -460,7 +578,6 @@ function paint(command, at, { move, idle, binding }) {
     make("div", "ring", cursor);
     make("div", "dot", cursor);
     const stop = make("button", "", frame);
-    stop.textContent = "Stop pi";
     stop.tabIndex = -1;
     const x = innerWidth / 2;
     const y = innerHeight / 2;
@@ -532,6 +649,12 @@ async function pressKeys(tabId, { modifiers, key }) {
   }
 }
 
+function browserName() {
+  const brands = navigator.userAgentData?.brands ?? [];
+  const brand = brands.find(({ brand }) => !/not.a.brand|^chromium$/i.test(brand)) ?? brands.find(({ brand }) => brand === "Chromium");
+  return brand ? `${brand.brand} ${brand.version}` : "an unknown browser";
+}
+
 function describe(tab) {
   return `Tab ${tab.id}: ${tab.title || "(untitled)"} <${tab.url}>`;
 }
@@ -563,8 +686,27 @@ function snapshot(nodes, lines, found) {
   for (const node of nodes) if (!node.parentId) walk(node, 0, "");
 }
 
+function forget(tabId) {
+  attached.delete(tabId);
+  refs.delete(tabId);
+  logs.delete(tabId);
+  dialogs.delete(tabId);
+}
+
+async function detach(tabId) {
+  if (attached.has(tabId)) await overlay(tabId, "hide");
+  forget(tabId);
+  await chrome.debugger.detach({ tabId }).catch(() => {});
+}
+
+async function stop(tabId) {
+  const { groupId } = await chrome.tabs.get(tabId);
+  const [id] = Object.entries(await groups()).find(([, group]) => group === groupId) ?? [];
+  links.get(id)?.send({ event: "stop" });
+}
+
 async function detachAll() {
-  await Promise.all([...attached].map(tabId => overlay(tabId, "hide")));
+  await Promise.all([...attached.keys()].map(tabId => overlay(tabId, "hide")));
   attached.clear();
   refs.clear();
   logs.clear();
@@ -581,29 +723,24 @@ chrome.debugger.onEvent.addListener(({ tabId }, method, params) => {
   else if (method === "Page.frameDetached") refs.get(tabId)?.delete(params.frameId);
   else if (method === "Page.javascriptDialogOpening") dialogs.set(tabId, params.type);
   else if (method === "Page.javascriptDialogClosed") dialogs.delete(tabId);
-  else if (method === "Runtime.bindingCalled" && params.name === STOP_BINDING && socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ event: "stop" }));
+  else if (method === "Runtime.bindingCalled" && params.name === STOP_BINDING) stop(tabId).catch(() => {});
 });
 chrome.debugger.onDetach.addListener(({ tabId }, reason) => {
-  attached.delete(tabId);
-  refs.delete(tabId);
-  logs.delete(tabId);
-  dialogs.delete(tabId);
+  forget(tabId);
   if (reason !== "canceled_by_user") return;
   chrome.storage.session.set({ canceled: true });
   detachAll();
 });
-chrome.tabs.onUpdated.addListener(async (tabId, { groupId }) => {
-  if (groupId === undefined || !attached.has(tabId)) return;
-  const group = groupId === chrome.tabGroups.TAB_GROUP_ID_NONE ? undefined : await chrome.tabGroups.get(groupId);
-  if (group?.title === GROUP) return;
-  await overlay(tabId, "hide");
-  attached.delete(tabId);
-  refs.delete(tabId);
-  logs.delete(tabId);
-  dialogs.delete(tabId);
-  chrome.debugger.detach({ tabId }).catch(() => {});
+chrome.tabs.onUpdated.addListener((tabId, { groupId }) => {
+  if (groupId !== undefined && attached.has(tabId) && attached.get(tabId) !== groupId) detach(tabId);
 });
-chrome.alarms.create("connect", { periodInMinutes: ALARM_MINUTES });
-chrome.alarms.onAlarm.addListener(connect);
-chrome.action.onClicked.addListener(() => chrome.storage.session.remove("canceled").then(connect));
+chrome.runtime.onStartup.addListener(connect);
+chrome.action.onClicked.addListener(() => chrome.storage.session.remove("canceled").then(() => {
+  delay = RECONNECT_MS;
+  if (host && !links.size) {
+    host.disconnect();
+    host = undefined;
+  }
+  connect();
+}));
 connect();
