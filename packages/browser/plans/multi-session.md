@@ -33,12 +33,12 @@
 - **Release** — Minor version bump of package and manifest; README calls out that the extension must be reloaded and `/browser take` is gone, and gains a Security section `agent`
 - **Integration branch** — `integrate/browser-sessions` holds the plan; each phase PRs into it; one final PR to `main`, as v1 did `agent`
 - **Verification budget** — The v1 rules in `plans/browser.md` carry over: e2e under 30s cached, unit under 2s, own sessions dir for e2e, reviewers don't run e2e, one CI wait per phase `agent`
-- **Build mode** — As v1: orchestrator with a fresh worker per phase in its own worktree, a fresh reviewer per review round `agent`
+- **Build mode** — As v1: orchestrator with a fresh worker per phase in its own worktree, a fresh reviewer per review round; worker Opus 5.5 high, reviewer Opus 5.5 high
 - **Demo** — User runs steps in their own Google Chrome (see Demo)
 - **Phase count** — 4, sequential: phases share `chrome/background.js` and `src/host.ts`
 
 ## Progress
-Active: none · 0/27 tasks
+Active: 1 · 0/27 tasks
 
 ### Phase 1 — One session drives Chrome with no TCP port open
 Today's single-session browser works exactly as before, but over the native host and a 0600 Unix socket, so nothing can squat a port.
