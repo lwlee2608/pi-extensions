@@ -102,7 +102,7 @@ export function browserExtension({ browserDirs, platform = process.platform, ...
       const lines = [`Chrome extension folder: ${CHROME_DIR}`];
       const error = await bridge.listen().then(() => bridge.mismatch, (error: Error) => error);
       if (error) return [...lines, error.message].join("\n");
-      if (!bridge.connected) return [...lines, "Chrome: not connected. Click the Pi Browser toolbar icon in Chrome to reconnect. If it is not installed, load the folder unpacked in chrome://extensions."].join("\n");
+      if (!bridge.connected) return [...lines, "Chrome: not connected. Click the Pi Browser toolbar icon in Chrome to reconnect; its tooltip says why if it cannot start pi's native host. If it is not installed, load the folder unpacked in chrome://extensions. Snap and Flatpak browsers are not supported."].join("\n");
       const info = await bridge.call("status", {}).catch((error: Error) => error);
       if (info instanceof Error) return [...lines, `Chrome: connected, but its status failed: ${info.message}`].join("\n");
       const { browser, group } = info as Status;

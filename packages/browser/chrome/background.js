@@ -224,7 +224,10 @@ function connect() {
   port.onMessage.addListener(({ session: id, event, message, version }) => {
     delay = RECONNECT_MS;
     const peer = peers.get(id);
-    if (event === "hello") hostVersion = version;
+    if (event === "hello") {
+      hostVersion = version;
+      if (!links.size) chrome.action.setTitle({ title: "Pi Browser: not connected" });
+    }
     else if (event === "connected") {
       const next = { id, send: reply => port.postMessage({ session: id, message: reply }) };
       peers.set(id, next);
@@ -235,8 +238,12 @@ function connect() {
     } else if (peer && message) session.message(peer, message);
   });
   port.onDisconnect.addListener(() => {
+    const error = chrome.runtime.lastError?.message;
     for (const peer of peers.values()) session.close(peer);
     host = undefined;
+    if (error) {
+      chrome.action.setTitle({ title: `Pi Browser: cannot start pi's native host (${error}). Use the browser in pi once to install it, then click this icon to retry. Snap and Flatpak browsers cannot run it.` });
+    }
     retry = setTimeout(connect, delay);
     delay = Math.min(delay * 2, RECONNECT_MAX_MS);
   });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { mkdtemp, readdir, readFile, readlink, rm, stat } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, readlink, rename, rm, stat } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -596,6 +596,19 @@ test("after a debugging cancel every call fails at once, across a worker restart
   }
   await inWorker(`chrome.storage.session.remove("canceled")`);
   assert.match(await browser({ action: "read" }), /heading/);
+});
+
+test("a native host Chrome cannot start is explained in the toolbar title, and the extension recovers once it can", { skip: process.platform !== "linux" && "reads /proc" }, async () => {
+  await browser({ action: "tabs" });
+  const manifest = join(profile, "NativeMessagingHosts", "com.lwlee2608.pi_browser.json");
+  await rename(manifest, `${manifest}.off`);
+  for (const pid of await hostPids()) process.kill(pid);
+  let title = "";
+  await until(async () => /not found/.test(title = await inWorker("chrome.action.getTitle({})")));
+  assert.match(title, /^Pi Browser: cannot start pi's native host \(Specified native messaging host not found\.\)\. .*click this icon to retry\. Snap and Flatpak/);
+  await rename(`${manifest}.off`, manifest);
+  assert.match(await browser({ action: "tabs" }), /^Tab \d+: /m);
+  assert.equal(await inWorker("chrome.action.getTitle({})"), "Pi Browser: connected");
 });
 
 test("an extension at another protocol version fails every call and /browser with how to fix it", async () => {

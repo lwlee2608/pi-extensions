@@ -60,6 +60,7 @@ test("/browser tells you to reload an extension that predates the version handsh
 test("/browser says how to reconnect when no browser is connected", async () => {
   const text = await browser()();
   assert.match(text, /^Chrome: not connected\. Click the Pi Browser toolbar icon/m);
+  assert.match(text, /Snap and Flatpak browsers are not supported\.$/m);
   assert.doesNotMatch(text, /Your group/);
 });
 
