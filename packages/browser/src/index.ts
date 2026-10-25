@@ -32,6 +32,11 @@ async function ask(ctx: ExtensionContext, host: string, signal?: AbortSignal): P
   return (answer && CHOICES[answer]) || "deny";
 }
 
+interface Status {
+  browser: string;
+  group?: { title: string; color: string };
+}
+
 interface TabList {
   tabs: { id: number; title: string; url: string; current: boolean }[];
   others: number;
@@ -96,7 +101,9 @@ export function browserExtension({ browserDirs, ...overrides }: Partial<BridgeOp
       const lines = [`Chrome extension folder: ${CHROME_DIR}`];
       const error = await bridge.listen().catch((error: Error) => error);
       if (error) return [...lines, error.message].join("\n");
-      lines.push(bridge.connected ? "Chrome: connected" : "Chrome: not connected. Click the Pi Browser toolbar icon in Chrome to reconnect. If it is not installed, load the folder unpacked in chrome://extensions.");
+      if (!bridge.connected) return [...lines, "Chrome: not connected. Click the Pi Browser toolbar icon in Chrome to reconnect. If it is not installed, load the folder unpacked in chrome://extensions."].join("\n");
+      const { browser, group } = await bridge.call("status", {}) as Status;
+      lines.push(`Connected browser: ${browser}`, group ? `Your group: ${group.title} (${group.color})` : "Your group: none yet; it opens on the agent's first navigate.");
       return lines.join("\n");
     }
 

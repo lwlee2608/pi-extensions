@@ -50,10 +50,12 @@ function session(id = "e2e", name = id) {
   const asked: string[] = [];
   const confirmed: string[][] = [];
   const answers: (string | boolean)[] = [];
+  const notes: string[] = [];
+  let command: (args: string, ctx: ExtensionContext) => Promise<void>;
   const pi = {
     on: (event: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) => handlers.set(event, [...handlers.get(event) ?? [], handler]),
     registerTool: (tool: { name: string }) => tools.set(tool.name, tool),
-    registerCommand: () => {},
+    registerCommand: (_name: string, options: { handler: typeof command }) => { command = options.handler; },
     getActiveTools: () => [...tools.keys()],
     setActiveTools: () => {},
   } as unknown as ExtensionAPI;
@@ -68,7 +70,7 @@ function session(id = "e2e", name = id) {
     if (typeof answer !== "string") throw new Error(`Unexpected prompt: ${title}`);
     return answer;
   };
-  const ctx = { hasUI: true, cwd: work, abort: () => { stopped.push(id); }, ui: { notify: () => {}, select }, sessionManager: { getSessionId: () => id, getSessionName: () => name } } as unknown as ExtensionContext;
+  const ctx = { hasUI: true, cwd: work, abort: () => { stopped.push(id); }, ui: { notify: (text: string) => notes.push(text), select }, sessionManager: { getSessionId: () => id, getSessionName: () => name } } as unknown as ExtensionContext;
   const emit = (event: string) => { for (const handler of handlers.get(event) ?? []) handler({}, ctx); };
   browserExtension(options)(pi);
   emit("session_start");
@@ -81,7 +83,8 @@ function session(id = "e2e", name = id) {
     }
   };
   const browser = async (params: object, ...replies: (string | boolean)[]): Promise<string> => (await call(params, ...replies)).content[0].text;
-  return { asked, confirmed, emit, call, browser, rename: (next: string) => { name = next; } };
+  const status = async () => { await command("", ctx); return notes.splice(0).join("\n"); };
+  return { asked, confirmed, emit, call, browser, status, rename: (next: string) => { name = next; } };
 }
 
 let { asked, confirmed, emit, call, browser } = session();
@@ -423,6 +426,18 @@ function groupOf(id: string): Promise<{ title: string; color: string }> {
   return inWorker(`chrome.storage.session.get("groups").then(({ groups }) => chrome.tabGroups.get(groups["${id}"])).then(({ title, color }) => ({ title, color }))`);
 }
 
+function tabGroup(url: string): Promise<{ id: number; title: string; color: string }> {
+  return inWorker(`chrome.tabs.query({ url: "${url}" }).then(([tab]) => chrome.tabGroups.get(tab.groupId)).then(({ id, title, color }) => ({ id, title, color }))`);
+}
+
+function stopLabel(url: string): Promise<string> {
+  return inWorker(`chrome.tabs.query({ url: "${url}" }).then(async ([{ id: tabId }]) => {
+    const { frameTree } = await chrome.debugger.sendCommand({ tabId }, "Page.getFrameTree");
+    const { executionContextId: contextId } = await chrome.debugger.sendCommand({ tabId }, "Page.createIsolatedWorld", { frameId: frameTree.frame.id, worldName: OVERLAY_WORLD });
+    return (await chrome.debugger.sendCommand({ tabId }, "Runtime.evaluate", { contextId, expression: "piOverlay.stop.textContent", returnByValue: true })).result.value;
+  })`);
+}
+
 test("two sessions navigate and read their own pages at the same time, each in its own labelled group", async () => {
   const [page, other] = await Promise.all([
     browser({ action: "navigate", url: at("always", "index.html") }).then(() => browser({ action: "read" })),
@@ -468,9 +483,10 @@ test("a renamed session's group title follows on its next action", async () => {
   assert.equal((await groupOf("e2e-b")).title, "pi · renamed");
 });
 
-test("the overlay's Stop button stops only the session that owns the tab", async () => {
+test("the overlay's Stop button names its session and stops only the session that owns the tab", async () => {
   await inWorker(`chrome.tabs.query({ url: "${theirs}" }).then(([tab]) => chrome.tabs.update(tab.id, { active: true }))`);
   await second.browser({ action: "read" });
+  assert.equal(await stopLabel(theirs), "Stop pi · renamed");
   const [x, y] = await inPage(theirs, "[innerWidth / 2, innerHeight - 34]");
   await onPage(theirs, async sessionId => {
     for (const type of ["mousePressed", "mouseReleased"]) await cdp.send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1 }, sessionId);
@@ -479,6 +495,30 @@ test("the overlay's Stop button stops only the session that owns the tab", async
   await browser({ action: "tabs" });
   assert.deepEqual(stopped, ["e2e", "e2e-b"]);
   second.emit("session_shutdown");
+});
+
+test("an exited session's group is retitled ended, keeps its tabs, and is untracked", async () => {
+  await until(async () => (await tabGroup(theirs)).title === "pi · renamed (ended)");
+  assert.equal(await inWorker(`chrome.storage.session.get("groups").then(({ groups }) => "e2e-b" in groups)`), false);
+});
+
+test("a session reconnecting with the same id acts in its old group, under its title and a color no live group uses", async () => {
+  const ended = await tabGroup(theirs);
+  const third = session("e2e-c", "third");
+  await third.browser({ action: "navigate", url: at("always", "other.html") });
+  const taken = await groupOf("e2e-c");
+  assert.equal(taken.color, ended.color, "the ended group's color was free for a new session");
+  const resumed = session("e2e-b", "renamed");
+  assert.match(await resumed.browser({ action: "read" }), /textbox "Name"/);
+  const group = await tabGroup(theirs);
+  assert.equal(group.id, ended.id);
+  assert.equal(group.title, "pi · renamed");
+  assert.ok(![taken.color, (await groupOf("e2e")).color].includes(group.color), `${group.color} is not used by another live group`);
+  const status = await resumed.status();
+  assert.match(status, new RegExp(`^Your group: pi · renamed \\(${group.color}\\)$`, "m"));
+  assert.match(status, /^Connected browser: Chromium \d+$/m);
+  resumed.emit("session_shutdown");
+  third.emit("session_shutdown");
 });
 
 test("console returns the page's logged error and uncaught exception, and a navigation clears them", async () => {
