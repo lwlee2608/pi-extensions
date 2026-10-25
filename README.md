@@ -1,16 +1,20 @@
 # Pi extensions
 
+[![CI](https://github.com/lwlee2608/pi-extensions/actions/workflows/npm-publish.yml/badge.svg?branch=main)](https://github.com/lwlee2608/pi-extensions/actions/workflows/npm-publish.yml)
+[![License: MIT](https://img.shields.io/github/license/lwlee2608/pi-extensions)](LICENSE)
+
 [Pi](https://pi.dev) extensions, each published as its own npm package.
 
-| Package | Command | Description |
-| --- | --- | --- |
-| [`@lwlee2608/pi-model-plus`](packages/model-plus) | `/model-plus` | Bookmark favorite models and switch between them. |
-| [`@lwlee2608/pi-session-board`](packages/session-board) | `/sessions` | Observe independent Pi terminal sessions. |
-| [`@lwlee2608/pi-notify`](packages/notify) | `/notify`, `notify_me` tool | Opt-in phone pings on completion or waiting for input, via Telegram or a shell command. |
-| [`@lwlee2608/pi-footer`](packages/footer) | Automatic | Context, cost, cache usage, and run timer in a compact footer. |
-| [`@lwlee2608/pi-ask-user`](packages/ask-user) | `ask_user_question` tool | Lean inline questionnaires with previews, notes, and review. |
-| [`@lwlee2608/pi-subagent`](packages/subagent) | `subagent` tool, `/subagents` | Persistent workers, parallel tasks, child questions, and explicit recovery. |
-| [`@lwlee2608/pi-browser`](packages/browser) | `browser` tool, `/browser` | Drive your signed-in Chrome through a companion extension. |
+| Package | Command | Description | Downloads |
+| --- | --- | --- | --- |
+| [`@lwlee2608/pi-model-plus`](packages/model-plus) | `/model-plus` | Bookmark favorite models and switch between them. | [![npm](https://img.shields.io/npm/dm/@lwlee2608/pi-model-plus)](https://www.npmjs.com/package/@lwlee2608/pi-model-plus) |
+| [`@lwlee2608/pi-session-board`](packages/session-board) | `/sessions` | Observe independent Pi terminal sessions. | [![npm](https://img.shields.io/npm/dm/@lwlee2608/pi-session-board)](https://www.npmjs.com/package/@lwlee2608/pi-session-board) |
+| [`@lwlee2608/pi-notify`](packages/notify) | `/notify`, `notify_me` tool | Opt-in phone pings on completion or waiting for input, via Telegram or a shell command. | [![npm](https://img.shields.io/npm/dm/@lwlee2608/pi-notify)](https://www.npmjs.com/package/@lwlee2608/pi-notify) |
+| [`@lwlee2608/pi-footer`](packages/footer) | Automatic | Context, cost, cache usage, and run timer in a compact footer. | [![npm](https://img.shields.io/npm/dm/@lwlee2608/pi-footer)](https://www.npmjs.com/package/@lwlee2608/pi-footer) |
+| [`@lwlee2608/pi-ask-user`](packages/ask-user) | `ask_user_question` tool | Lean inline questionnaires with previews, notes, and review. | [![npm](https://img.shields.io/npm/dm/@lwlee2608/pi-ask-user)](https://www.npmjs.com/package/@lwlee2608/pi-ask-user) |
+| [`@lwlee2608/pi-subagent`](packages/subagent) | `subagent` tool, `/subagents` | Persistent workers, parallel tasks, child questions, and explicit recovery. | [![npm](https://img.shields.io/npm/dm/@lwlee2608/pi-subagent)](https://www.npmjs.com/package/@lwlee2608/pi-subagent) |
+| [`@lwlee2608/pi-browser`](packages/browser) | `browser` tool, `/browser` | Drive your signed-in Chrome through a companion extension. | [![npm](https://img.shields.io/npm/dm/@lwlee2608/pi-browser)](https://www.npmjs.com/package/@lwlee2608/pi-browser) |
+| [`@lwlee2608/pi-code-blocks`](packages/code-blocks) | Automatic | **Experimental.** Fence-free code blocks with accent-colored plain text. | [![npm](https://img.shields.io/npm/dm/@lwlee2608/pi-code-blocks)](https://www.npmjs.com/package/@lwlee2608/pi-code-blocks) |
 
 ## Install
 
@@ -24,6 +28,7 @@ pi install npm:@lwlee2608/pi-notify
 pi install npm:@lwlee2608/pi-ask-user
 pi install npm:@lwlee2608/pi-subagent
 pi install npm:@lwlee2608/pi-browser
+pi install npm:@lwlee2608/pi-code-blocks
 ```
 
 Ask-user must not load alongside rpiv's `ask_user_question`; if you use rpiv, read its [replacement instructions](packages/ask-user#replace-rpiv-user-action-after-verification) first.
@@ -39,10 +44,6 @@ Run `/reload` in an existing Pi session after installation. Requires Node.js 22.
 ## Experimental
 
 [`packages/code-blocks`](packages/code-blocks) hides Markdown code fences and uses the theme’s accent color for plain-text blocks. It patches a private Pi renderer method and is **opt-in**, not part of the root package’s automatic extension list.
-
-```sh
-pi install npm:@lwlee2608/pi-code-blocks
-```
 
 ## Local development
 
