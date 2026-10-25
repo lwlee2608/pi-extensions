@@ -6,7 +6,7 @@ import { connect, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { Bridge, listenSocket, type BridgeOptions } from "../src/bridge.ts";
+import { Bridge, listenSocket, MAX_SOCKET_PATH, type BridgeOptions } from "../src/bridge.ts";
 import { decoder, encode } from "../src/host.js";
 
 const dir = await mkdtemp(join(tmpdir(), "pi-browser-test-"));
@@ -114,6 +114,15 @@ test("a second pi with the same session fails clearly and leaves the live socket
   await probe;
   await host(path);
   assert.deepEqual(await server.call("echo", {}), { method: "echo", params: {} });
+});
+
+test("a socket path at the OS limit listens, and one byte over fails naming the path", async () => {
+  const at = (length: number) => join(dir, `${"s".repeat(length - dir.length - 6)}.sock`);
+  const close = await listenSocket(at(MAX_SOCKET_PATH), { open: () => {}, message: () => {}, close: () => {} });
+  close();
+  const long = at(MAX_SOCKET_PATH + 1);
+  await assert.rejects(listenSocket(long, { open: () => {}, message: () => {}, close: () => {} }),
+    { message: `The browser socket path is ${MAX_SOCKET_PATH + 1} bytes, over the ${MAX_SOCKET_PATH}-byte limit on this OS: ${long}` });
 });
 
 test("a bridge closed while it starts does not keep listening", async () => {

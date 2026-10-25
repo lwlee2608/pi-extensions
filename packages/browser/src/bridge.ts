@@ -37,6 +37,8 @@ interface Pending {
   reject: (error: Error) => void;
 }
 
+export const MAX_SOCKET_PATH = process.platform === "darwin" ? 104 : 108;
+
 function answers(path: string): Promise<boolean> {
   return new Promise(resolve => {
     const socket = connect(path, () => { socket.destroy(); resolve(true); }).once("error", () => resolve(false));
@@ -44,6 +46,8 @@ function answers(path: string): Promise<boolean> {
 }
 
 export async function listenSocket(path: string, handlers: Handlers): Promise<() => void> {
+  const length = Buffer.byteLength(path);
+  if (length > MAX_SOCKET_PATH) throw new Error(`The browser socket path is ${length} bytes, over the ${MAX_SOCKET_PATH}-byte limit on this OS: ${path}`);
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   await chmod(dirname(path), 0o700);
   if (await answers(path)) throw new Error(`Another pi process with this session is using the browser socket ${path}.`);

@@ -38,7 +38,7 @@
 - **Phase count** — 4, sequential: phases share `chrome/background.js` and `src/host.ts`
 
 ## Progress
-Active: 4 · 23/27 tasks
+Active: 4 · 24/27 tasks
 
 ### Phase 1 — One session drives Chrome with no TCP port open
 Today's single-session browser works exactly as before, but over the native host and a 0600 Unix socket, so nothing can squat a port.
@@ -102,10 +102,11 @@ macOS works, and every unsupported setup fails with a message saying what to do.
 **Blocked by:** 3
 - [x] Install manifests into macOS Chrome, Brave and Chromium paths (`src/install.ts`)
 - [x] Refuse Windows with a "not supported until the port transport" error (`src/index.ts`)
-- [ ] Fail with an error naming the path when the socket path is over the OS limit (`src/bridge.ts`)
+- [x] Fail with an error naming the path when the socket path is over the OS limit (`src/bridge.ts`)
 - [ ] Exchange a protocol version on connect and fail with "reload the Pi Browser extension" on mismatch (`src/bridge.ts`, `src/host.ts`, `chrome/background.js`)
 - [ ] Explain a failed `connectNative` in the toolbar title, and mention Snap/Flatpak in `/browser` (`chrome/background.js`, `src/index.ts`)
 - [ ] Rewrite install and add a Security section, note the reload and that `/browser take` is gone; bump package and manifest minor version (`README.md`, `package.json`, `chrome/manifest.json`)
+- Note: the socket limit is the full `sun_path` size, 108 bytes on Linux and 104 on macOS; on Linux Node binds a 108-byte path fine but silently truncates a longer one, so without the check a 109-byte path binds the wrong file
 **Verify:** `npm test` writes manifests under a fake macOS home at the expected paths, rejects an over-long socket path and a Windows platform with their messages; `npm run e2e` with a mismatched extension version fails with "reload the Pi Browser extension".
 
 ## Demo
