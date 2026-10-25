@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdir, mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { Bridge, listenSocket } from "../src/bridge.ts";
 import { decoder, encode } from "../src/host.js";
 import { detectBrowserDirs, HOST, installHost, ORIGIN } from "../src/install.ts";
@@ -31,9 +32,11 @@ test("installs the manifest and a Node-pinned wrapper into each detected Linux b
   }
 });
 
-test("the installed wrapper runs the host, which relays a call from the session to Chrome's stdio", async () => {
+test("the installed wrapper runs the host through a symlinked package, and it relays a call from the session to Chrome's stdio", async () => {
   const browser = join(home, "browser");
-  await installHost([browser], sessions);
+  const linked = join(home, "linked-src");
+  await symlink(fileURLToPath(new URL("../src/", import.meta.url)), linked);
+  await installHost([browser], sessions, process.execPath, join(linked, "host.js"));
   const bridge = new Bridge({ transport: handlers => listenSocket(join(sessions, "a.sock"), handlers), connectTimeout: 5_000, callTimeout: 5_000 });
   await bridge.listen();
   const child = spawn(join(browser, "NativeMessagingHosts", `${HOST}.sh`), [`${ORIGIN}/`], { stdio: ["pipe", "pipe", "inherit"] });
