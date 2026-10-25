@@ -2,6 +2,8 @@
 
 Let Pi use the Chrome you're already signed into. The agent opens pages, reads them, fills forms, takes screenshots, and checks console and network errors, in your real profile, without a separate automation browser.
 
+![Pi filling a conference registration form in Chrome while its browser tool calls stream in the terminal](https://github.com/lwlee2608/pi-extensions/releases/download/media/browser-demo.gif)
+
 ## What you can do
 
 | Use case | Ask Pi |

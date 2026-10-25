@@ -15,7 +15,9 @@
   "keywords": ["pi-package", "pi-extension", "chrome", "browser"],
   "files": ["src", "chrome"],
   "pi": {
-    "extensions": ["./src/index.ts"]
+    "extensions": ["./src/index.ts"],
+    "image": "https://github.com/lwlee2608/pi-extensions/releases/download/media/browser-demo.png",
+    "video": "https://github.com/lwlee2608/pi-extensions/releases/download/media/browser-demo.mp4"
   },
   "engines": {
     "node": ">=22.19.0"

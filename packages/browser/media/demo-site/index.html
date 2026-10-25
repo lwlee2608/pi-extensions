@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>OrbitConf '26 — Register</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: grid; place-items: center; padding: 32px;
+    font: 15px/1.5 system-ui, sans-serif; color: #ecebf3; background: #0f0d1a;
+  }
+  .card { width: min(1000px, 100%); padding: 36px 40px; border-radius: 20px; background: #1a1729; border: 1px solid #2e2a45; }
+  header { display: flex; justify-content: space-between; align-items: end; margin-bottom: 28px; }
+  .logo { font-weight: 800; letter-spacing: .3em; font-size: 12px; color: #8b7cf6; }
+  h1 { margin: 4px 0 0; font-size: 30px; }
+  .steps { color: #8e8aa6; font-size: 14px; }
+  .steps b { color: #ecebf3; }
+  form { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; }
+  form[hidden] { display: none; }
+  h2 { margin: 0 0 4px; font-size: 12px; letter-spacing: .15em; text-transform: uppercase; color: #5fd4e0; }
+  .field { display: block; margin-top: 14px; font-size: 13px; color: #b9b5cc; }
+  .field input {
+    display: block; width: 100%; margin-top: 6px; padding: 12px 14px; border-radius: 10px;
+    font: inherit; color: inherit; background: #121020; border: 1px solid #2e2a45;
+  }
+  .group { margin-top: 14px; font-size: 13px; color: #b9b5cc; }
+  .chips { display: grid; gap: 10px; margin-top: 6px; }
+  .chips.two { grid-template-columns: 1fr 1fr; }
+  .chips.five { grid-template-columns: repeat(5, 1fr); }
+  .chip { position: relative; display: block; }
+  .chip input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+  .chip > span {
+    display: block; padding: 11px 14px; border-radius: 10px; text-align: center; font-size: 14px; color: #ecebf3;
+    border: 1px solid #2e2a45; background: #121020;
+  }
+  .chip input:checked + span { border-color: #8b7cf6; background: #2c2550; box-shadow: 0 0 0 1px #8b7cf6; }
+  .ticket > span { display: flex; align-items: center; justify-content: space-between; text-align: left; padding: 14px 16px; }
+  .ticket b { display: block; font-size: 16px; }
+  .ticket em { font-style: normal; color: #8b7cf6; font-weight: 700; }
+  .ticket small { display: block; color: #8e8aa6; font-size: 12px; }
+  button {
+    width: 100%; margin-top: 20px; padding: 14px; border: 0; border-radius: 10px; cursor: pointer;
+    font: 700 15px system-ui; color: #0f0d1a; background: #8b7cf6;
+  }
+  .badge { text-align: center; padding: 24px 0 8px; }
+  .badge[hidden] { display: none; }
+  .pass { display: inline-block; min-width: 440px; padding: 28px 36px; border-radius: 18px; text-align: left; background: #2c2550; border: 1px solid #8b7cf6; }
+  .badge dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 20px; margin: 18px 0 0; }
+  .badge dt { color: #8e8aa6; }
+  .badge dd { margin: 0; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="card">
+  <header>
+    <div>
+      <div class="logo">ORBITCONF '26 · DEC 3–4 · SINGAPORE</div>
+      <h1>Register an attendee</h1>
+    </div>
+    <div class="steps" id="steps"><b>1 Attendee</b> → 2 Extras</div>
+  </header>
+
+  <form id="attendee">
+    <section>
+      <h2>Attendee</h2>
+      <label class="field">Full name<input name="name" required></label>
+      <label class="field">Work email<input name="email" type="email" required></label>
+      <label class="field">Company<input name="company"></label>
+    </section>
+    <section>
+      <h2>Ticket</h2>
+      <div class="chips">
+        <label class="chip ticket"><input type="radio" name="ticket" value="General" checked><span><span><b>General</b><small>Talks, expo, lunch</small></span><em>$299</em></span></label>
+        <label class="chip ticket"><input type="radio" name="ticket" value="VIP"><span><span><b>VIP</b><small>Front rows, speaker dinner</small></span><em>$699</em></span></label>
+        <label class="chip ticket"><input type="radio" name="ticket" value="Student"><span><span><b>Student</b><small>Talks only, ID required</small></span><em>$99</em></span></label>
+      </div>
+      <button>Next →</button>
+    </section>
+  </form>
+
+  <form id="extras" hidden>
+    <section>
+      <h2>Workshops · Dec 3</h2>
+      <div class="chips two">
+        <label class="chip"><input type="checkbox" name="workshops" value="AI agents"><span>AI agents</span></label>
+        <label class="chip"><input type="checkbox" name="workshops" value="Rust in prod"><span>Rust in prod</span></label>
+        <label class="chip"><input type="checkbox" name="workshops" value="Edge infra"><span>Edge infra</span></label>
+        <label class="chip"><input type="checkbox" name="workshops" value="Postgres tuning"><span>Postgres tuning</span></label>
+      </div>
+    </section>
+    <section>
+      <h2>Extras</h2>
+      <div class="group">T-shirt size
+        <div class="chips five">
+          <label class="chip"><input type="radio" name="shirt" value="XS"><span>XS</span></label>
+          <label class="chip"><input type="radio" name="shirt" value="S"><span>S</span></label>
+          <label class="chip"><input type="radio" name="shirt" value="M"><span>M</span></label>
+          <label class="chip"><input type="radio" name="shirt" value="L"><span>L</span></label>
+          <label class="chip"><input type="radio" name="shirt" value="XL"><span>XL</span></label>
+        </div>
+      </div>
+      <button>Register</button>
+    </section>
+  </form>
+
+  <div class="badge" id="badge" hidden></div>
+</div>
+
+<script>
+  const attendee = document.getElementById("attendee");
+  const extras = document.getElementById("extras");
+  const steps = document.getElementById("steps");
+  const badge = document.getElementById("badge");
+
+  attendee.addEventListener("submit", (event) => {
+    event.preventDefault();
+    attendee.hidden = true;
+    extras.hidden = false;
+    steps.innerHTML = "1 Attendee → <b>2 Extras</b>";
+  });
+
+  extras.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const data = { ...Object.fromEntries(new FormData(attendee)), ...Object.fromEntries(new FormData(extras)) };
+    data.workshops = new FormData(extras).getAll("workshops");
+    const res = await fetch("/api/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    const pass = await res.json();
+    extras.hidden = true;
+    steps.innerHTML = "<b>Registered ✓</b>";
+    badge.hidden = false;
+    badge.innerHTML = `
+      <div class="pass">
+        <div class="logo">ORBITCONF '26 · ${pass.ticket.toUpperCase()}</div>
+        <h1>You're in, ${pass.name}!</h1>
+        <dl>
+          <dt>Badge ID</dt><dd>${pass.badge}</dd>
+          <dt>Keynote seat</dt><dd>${pass.seat}</dd>
+          <dt>Workshops</dt><dd>${pass.workshops.join(", ") || "None"}</dd>
+        </dl>
+      </div>`;
+  });
+</script>
+</body>
+</html>
