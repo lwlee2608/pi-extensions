@@ -38,7 +38,7 @@
 - **Phase count** — 4, sequential: phases share `chrome/background.js` and `src/host.ts`
 
 ## Progress
-Active: 4 · 21/27 tasks
+Active: 4 · 22/27 tasks
 
 ### Phase 1 — One session drives Chrome with no TCP port open
 Today's single-session browser works exactly as before, but over the native host and a 0600 Unix socket, so nothing can squat a port.
@@ -100,7 +100,7 @@ A second pi session gets its own `pi · <name>` group in a distinct color and wo
 ### Phase 4 — macOS install, clear errors, and release notes
 macOS works, and every unsupported setup fails with a message saying what to do.
 **Blocked by:** 3
-- [ ] Install manifests into macOS Chrome, Brave and Chromium paths (`src/install.ts`)
+- [x] Install manifests into macOS Chrome, Brave and Chromium paths (`src/install.ts`)
 - [ ] Refuse Windows with a "not supported until the port transport" error (`src/index.ts`)
 - [ ] Fail with an error naming the path when the socket path is over the OS limit (`src/bridge.ts`)
 - [ ] Exchange a protocol version on connect and fail with "reload the Pi Browser extension" on mismatch (`src/bridge.ts`, `src/host.ts`, `chrome/background.js`)

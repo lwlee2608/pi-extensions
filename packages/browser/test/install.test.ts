@@ -18,7 +18,7 @@ test("installs the manifest and a Node-pinned wrapper into each detected Linux b
   const chrome = join(config, "google-chrome");
   const brave = join(config, "BraveSoftware", "Brave-Browser");
   for (const dir of [chrome, brave, join(config, "other")]) await mkdir(dir, { recursive: true });
-  const dirs = detectBrowserDirs(home, config);
+  const dirs = detectBrowserDirs(home, "linux", config);
   assert.deepEqual(dirs, [chrome, brave]);
   for (const node of ["/old/node", "/opt/it's/node"]) await installHost(dirs, sessions, node);
   for (const dir of dirs) {
@@ -29,6 +29,21 @@ test("installs the manifest and a Node-pinned wrapper into each detected Linux b
       { name: HOST, description: "Pi Browser", path: wrapper, type: "stdio", allowed_origins: [`${ORIGIN}/`] });
     assert.match(await readFile(wrapper, "utf8"), new RegExp(`^#!/bin/sh\nexec '/opt/it'\\\\''s/node' '\\S+/src/host\\.js' '${sessions}' "\\$@"\n$`));
     assert.equal((await stat(wrapper)).mode & 0o777, 0o755);
+  }
+});
+
+test("installs into each detected macOS browser under Application Support", async () => {
+  const mac = join(home, "mac");
+  const support = join(mac, "Library", "Application Support");
+  const browsers = ["Google/Chrome", "Chromium", "BraveSoftware/Brave-Browser"].map(name => join(support, name));
+  for (const dir of [...browsers, join(support, "Firefox")]) await mkdir(dir, { recursive: true });
+  const dirs = detectBrowserDirs(mac, "darwin", config);
+  assert.deepEqual(dirs, browsers);
+  await installHost(dirs, sessions, "/opt/homebrew/bin/node");
+  for (const dir of dirs) {
+    const manifest = JSON.parse(await readFile(join(dir, "NativeMessagingHosts", `${HOST}.json`), "utf8"));
+    assert.equal(manifest.path, join(dir, "NativeMessagingHosts", `${HOST}.sh`));
+    assert.match(await readFile(manifest.path, "utf8"), /^exec '\/opt\/homebrew\/bin\/node' /m);
   }
 });
 
