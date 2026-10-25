@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import test from "node:test";
 import { Bridge, listenSocket } from "../src/bridge.ts";
-import { decoder, encode, relay } from "../src/host.js";
+import { decoder, encode, PROTOCOL, relay } from "../src/host.js";
 
 const root = await mkdtemp(join(tmpdir(), "pi-browser-host-"));
 const bridges: Bridge[] = [];
@@ -24,11 +24,15 @@ function chrome(dir: string) {
   const events: string[] = [];
   const frames: { session: string; message: any }[] = [];
   const waiters = new Set<() => void>();
-  output.on("data", decoder(({ session, event, message }: { session: string; event?: string; message: any }) => {
-    if (event) events.push(`${event} ${session}`);
+  let host: number | undefined;
+  const answer = ({ id, method }: { id: number; method: string }, session: string) => method === "hello" ? { id, result: { version: PROTOCOL, host } }
+    : method === "fail" ? { id, error: "boom" } : { id, result: `${session} ${method}` };
+  output.on("data", decoder(({ session, event, message, version }: { session: string; event?: string; message: any; version?: number }) => {
+    if (event === "hello") host = version;
+    else if (event) events.push(`${event} ${session}`);
     else {
       frames.push({ session, message });
-      if (message.method !== "never") input.write(encode({ session, message: message.method === "fail" ? { id: message.id, error: "boom" } : { id: message.id, result: `${session} ${message.method}` } }));
+      if (message.method !== "never") input.write(encode({ session, message: answer(message, session) }));
     }
     for (const wake of waiters) wake();
   }));
@@ -96,9 +100,8 @@ test("first claim wins: a second host is refused while one holds the session, an
   await first.until(1);
   const second = chrome(dir);
   await second.start();
-  await second.until(2);
-  assert.deepEqual(second.events, ["connected a", "disconnected a"]);
   assert.equal(await bridge.call("echo", {}), "a echo");
+  assert.deepEqual(second.events, [], "the refused host never tells its Chrome the session connected");
   assert.equal(second.frames.length, 0);
   const pending = assert.rejects(bridge.call("never", {}), /disconnected/);
   first.input.end();
@@ -112,7 +115,7 @@ test("a folder change seen while a socket is closing is not lost: the host retri
   const dir = join(root, "missed");
   await mkdir(dir, { recursive: true });
   const held: Socket[] = [];
-  const servers = ["x", "y"].map(() => createServer(socket => held.push(socket)));
+  const servers = ["x", "y"].map(() => createServer(socket => { held.push(socket); socket.write(encode({})); }));
   await new Promise(resolve => servers[0].listen(join(dir, "x.sock"), () => resolve(undefined)));
   const browser = chrome(dir);
   try {

@@ -1,7 +1,7 @@
 import { chmod, mkdir, rm, utimes } from "node:fs/promises";
 import { connect, createServer, type Socket } from "node:net";
 import { dirname } from "node:path";
-import { decoder, encode } from "./host.js";
+import { decoder, encode, PROTOCOL } from "./host.js";
 
 export interface Message {
   id?: number;
@@ -37,6 +37,8 @@ interface Pending {
   reject: (error: Error) => void;
 }
 
+export const MAX_SOCKET_PATH = process.platform === "darwin" ? 104 : 108;
+
 function answers(path: string): Promise<boolean> {
   return new Promise(resolve => {
     const socket = connect(path, () => { socket.destroy(); resolve(true); }).once("error", () => resolve(false));
@@ -44,6 +46,8 @@ function answers(path: string): Promise<boolean> {
 }
 
 export async function listenSocket(path: string, handlers: Handlers): Promise<() => void> {
+  const length = Buffer.byteLength(path);
+  if (length > MAX_SOCKET_PATH) throw new Error(`The browser socket path is ${length} bytes, over the ${MAX_SOCKET_PATH}-byte limit on this OS: ${path}`);
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
   await chmod(dirname(path), 0o700);
   if (await answers(path)) throw new Error(`Another pi process with this session is using the browser socket ${path}.`);
@@ -74,6 +78,7 @@ export class Bridge {
   private starting?: Promise<void>;
   private stop?: () => void;
   private peer?: Peer;
+  private state?: "joining" | "ready" | Error;
   private readonly waiters = new Set<(error?: Error) => void>();
   private readonly pending = new Map<number, Pending>();
   private nextId = 0;
@@ -83,13 +88,17 @@ export class Bridge {
   }
 
   get connected(): boolean {
-    return this.peer !== undefined;
+    return this.state === "ready";
+  }
+
+  get mismatch(): Error | undefined {
+    return this.state instanceof Error ? this.state : undefined;
   }
 
   async listen(): Promise<void> {
     const starting = this.starting ??= this.options.transport({
       open: peer => this.attach(peer),
-      message: (peer, message) => { if (peer === this.peer) this.receive(message); },
+      message: (peer, message) => this.receive(peer, message),
       close: peer => this.detach(peer),
     }).then(stop => {
       if (this.starting !== starting) { stop(); throw new Error("Browser bridge is closed."); }
@@ -104,21 +113,9 @@ export class Bridge {
   async call(method: string, params: object, signal?: AbortSignal): Promise<unknown> {
     signal?.throwIfAborted();
     await this.listen();
-    const peer = this.peer ?? await this.waitForPeer(signal);
-    const id = ++this.nextId;
-    const timeout = this.options.callTimeout ?? 30_000;
-    return new Promise((resolve, reject) => {
-      const finish = () => { clearTimeout(timer); signal?.removeEventListener("abort", abort); this.pending.delete(id); };
-      const abort = () => { finish(); reject(new Error("Aborted.")); };
-      const timer = setTimeout(() => { finish(); reject(new Error(`Chrome did not answer ${method} within ${timeout / 1000}s.`)); }, timeout);
-      signal?.addEventListener("abort", abort, { once: true });
-      this.pending.set(id, {
-        peer,
-        resolve: value => { finish(); resolve(value); },
-        reject: error => { finish(); reject(error); },
-      });
-      peer.send({ id, method, params, name: this.options.name?.() });
-    });
+    if (this.state instanceof Error) throw this.state;
+    const peer = this.state === "ready" ? this.peer! : await this.waitForPeer(signal);
+    return this.request(peer, method, params, signal);
   }
 
   close(reason = "Browser bridge is closed."): void {
@@ -129,23 +126,53 @@ export class Bridge {
     for (const call of this.pending.values()) call.reject(new Error(reason));
     this.peer?.close();
     this.peer = undefined;
+    this.state = undefined;
+  }
+
+  private request(peer: Peer, method: string, params: object, signal?: AbortSignal): Promise<unknown> {
+    const id = ++this.nextId;
+    const timeout = this.options.callTimeout ?? 30_000;
+    return new Promise((resolve, reject) => {
+      const finish = () => { clearTimeout(timer); signal?.removeEventListener("abort", abort); this.pending.delete(id); };
+      const abort = () => { finish(); reject(new Error("Aborted.")); };
+      const timer = setTimeout(() => { finish(); reject(new Error(`Chrome did not answer ${method} within ${timeout / 1000}s.`, { cause: "timeout" })); }, timeout);
+      signal?.addEventListener("abort", abort, { once: true });
+      this.pending.set(id, {
+        peer,
+        resolve: value => { finish(); resolve(value); },
+        reject: error => { finish(); reject(error); },
+      });
+      peer.send({ id, method, params, name: this.options.name?.() });
+    });
   }
 
   private attach(peer: Peer): void {
     if (this.peer) { peer.close(); return; }
     this.peer = peer;
-    for (const wake of this.waiters) wake();
+    this.state = "joining";
+    const join = (reply: unknown) => {
+      if (this.peer !== peer) return;
+      if (reply instanceof Error && reply.cause === "timeout") { peer.close(); return; }
+      const { version, host } = (reply instanceof Error ? {} : reply ?? {}) as { version?: number; host?: number };
+      const answered = reply instanceof Error ? `; the extension answered "${reply.message}"` : "";
+      this.state = version === PROTOCOL && host === PROTOCOL ? "ready" : new Error(`Pi Browser protocol versions do not match (pi ${PROTOCOL}, extension ${version ?? "none"}, native host ${host ?? "none"}${answered}). `
+        + "Reload the Pi Browser extension in chrome://extensions, and restart pi if it started before the update.");
+      for (const wake of this.waiters) wake(this.mismatch);
+    };
+    this.request(peer, "hello", {}).then(join, join);
   }
 
   private detach(peer: Peer): void {
     for (const call of this.pending.values()) if (call.peer === peer) call.reject(new Error("Chrome extension disconnected."));
-    if (this.peer === peer) this.peer = undefined;
+    if (this.peer !== peer) return;
+    this.peer = undefined;
+    this.state = undefined;
   }
 
-  private receive(message: Message): void {
-    if (message.event === "stop") { this.options.onStop?.(); return; }
+  private receive(peer: Peer, message: Message): void {
+    if (message.event === "stop") { if (peer === this.peer && this.connected) this.options.onStop?.(); return; }
     const call = message.id === undefined ? undefined : this.pending.get(message.id);
-    if (!call) return;
+    if (call?.peer !== peer) return;
     if (message.error === undefined) call.resolve(message.result);
     else call.reject(new Error(message.error));
   }
@@ -161,7 +188,7 @@ export class Bridge {
       };
       const abort = () => done(new Error("Aborted."));
       const timer = setTimeout(
-        () => done(new Error("Chrome extension is not connected. Click the Pi Browser toolbar icon in Chrome to reconnect. If it is not installed, run /browser for the extension folder and load it unpacked in chrome://extensions.")),
+        () => done(new Error("Chrome extension is not connected. Click the Pi Browser toolbar icon in Chrome to reconnect, or reload Pi Browser in chrome://extensions after an update. If it is not installed, run /browser for the extension folder and load it unpacked in chrome://extensions.")),
         this.options.connectTimeout ?? 35_000,
       );
       signal?.addEventListener("abort", abort, { once: true });

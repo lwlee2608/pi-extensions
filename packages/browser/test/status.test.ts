@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Handlers } from "../src/bridge.ts";
+import { PROTOCOL } from "../src/host.js";
 import { browserExtension } from "../src/index.ts";
 
-function browser(reply?: { result: object } | { error: string }): () => Promise<string> {
+function browser(reply?: { result: object } | { error: string }, platform: NodeJS.Platform = "linux", hello: { result: object } | { error: string } = { result: { version: PROTOCOL, host: PROTOCOL } }): () => Promise<string> {
   const handlers = new Map<string, (event: unknown, ctx: ExtensionContext) => void>();
   let command: (args: string, ctx: ExtensionContext) => Promise<void>;
   const pi = {
@@ -16,12 +17,12 @@ function browser(reply?: { result: object } | { error: string }): () => Promise<
   } as unknown as ExtensionAPI;
   const transport = async (bridge: Handlers) => {
     if (reply) {
-      const peer = { send: ({ id, method }: { id: number; method: string }) => queueMicrotask(() => bridge.message(peer, method === "status" ? { id, ...reply } : { id, error: method })), close: () => {} };
+      const peer = { send: ({ id, method }: { id: number; method: string }) => queueMicrotask(() => bridge.message(peer, { id, ...method === "status" ? reply : method === "hello" ? hello : { error: method } })), close: () => {} };
       bridge.open(peer);
     }
     return () => {};
   };
-  browserExtension({ transport, connectTimeout: 10, callTimeout: 100 })(pi);
+  browserExtension({ transport, platform, connectTimeout: 10, callTimeout: 100 })(pi);
   const notes: string[] = [];
   const ctx = { hasUI: true, cwd: "/work/demo", ui: { notify: (text: string) => notes.push(text) }, sessionManager: { getSessionId: () => "id", getSessionName: () => "foo" } } as unknown as ExtensionContext;
   handlers.get("session_start")!({}, ctx);
@@ -51,8 +52,18 @@ test("/browser keeps its other lines and shows the error when the status call fa
   assert.match(text, /^Chrome: connected, but its status failed: Unknown browser action: status$/m);
 });
 
+test("/browser tells you to reload an extension that predates the version handshake", async () => {
+  const text = await browser({ error: "Unknown browser action: status" }, "linux", { error: "Unknown browser action: hello" })();
+  assert.match(text, /^Pi Browser protocol versions do not match \(pi \d+, extension none, native host none; the extension answered "Unknown browser action: hello"\)\. Reload the Pi Browser extension in chrome:\/\/extensions/m);
+});
+
 test("/browser says how to reconnect when no browser is connected", async () => {
   const text = await browser()();
-  assert.match(text, /^Chrome: not connected\. Click the Pi Browser toolbar icon/m);
+  assert.match(text, /^Chrome: not connected\. Click the Pi Browser toolbar icon.*After an update, reload Pi Browser in chrome:\/\/extensions\./m);
+  assert.match(text, /Snap and Flatpak browsers are not supported\.$/m);
   assert.doesNotMatch(text, /Your group/);
+});
+
+test("/browser on Windows says it is not supported until the port transport", async () => {
+  assert.match(await browser({ result: { browser: "Google Chrome 156" } }, "win32")(), /^The browser is not supported on Windows until the port transport lands/);
 });

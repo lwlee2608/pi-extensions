@@ -7,13 +7,22 @@ import { fileURLToPath } from "node:url";
 export const HOST = "com.lwlee2608.pi_browser";
 export const ORIGIN = "chrome-extension://enidoebkpjligpdgedlellobooiiljib";
 const HOST_SCRIPT = fileURLToPath(new URL("./host.js", import.meta.url));
-const LINUX_BROWSERS = ["google-chrome", "google-chrome-beta", "google-chrome-unstable", "chromium", "BraveSoftware/Brave-Browser"];
+const BROWSERS: Partial<Record<NodeJS.Platform, string[]>> = {
+  linux: ["google-chrome", "google-chrome-beta", "google-chrome-unstable", "chromium", "BraveSoftware/Brave-Browser"],
+  darwin: ["Google/Chrome", "Google/Chrome Beta", "Google/Chrome Dev", "Google/Chrome Canary", "Chromium", "BraveSoftware/Brave-Browser"],
+};
 
-export function detectBrowserDirs(home = homedir(), config = process.env.XDG_CONFIG_HOME || join(home, ".config")): string[] {
-  return LINUX_BROWSERS.map(name => join(config, name)).filter(dir => existsSync(dir));
+export function detectBrowserDirs(home = homedir(), platform = process.platform, config = process.env.XDG_CONFIG_HOME || join(home, ".config")): string[] {
+  const root = platform === "darwin" ? join(home, "Library", "Application Support") : config;
+  return (BROWSERS[platform] ?? []).map(name => join(root, name)).filter(dir => existsSync(dir));
 }
 
-export async function installHost(browserDirs: string[], sessions: string, node = process.execPath, script = HOST_SCRIPT): Promise<void> {
+export function nodePath(execPath = process.execPath, standalone = Boolean(process.versions.bun) || process.getBuiltinModule("node:sea")?.isSea() === true): string {
+  if (standalone) throw new Error(`The browser's native host runs on Node.js, but this pi runs as ${execPath}, which is not Node. Install pi with npm on Node.js 22.19+ to use the browser.`);
+  return execPath;
+}
+
+export async function installHost(browserDirs: string[], sessions: string, node = nodePath(), script = HOST_SCRIPT): Promise<void> {
   for (const browser of browserDirs) {
     const dir = join(browser, "NativeMessagingHosts");
     const wrapper = join(dir, `${HOST}.sh`);

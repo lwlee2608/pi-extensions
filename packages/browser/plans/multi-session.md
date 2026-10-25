@@ -38,7 +38,7 @@
 - **Phase count** — 4, sequential: phases share `chrome/background.js` and `src/host.ts`
 
 ## Progress
-Active: 4 · 21/27 tasks
+Active: none · 27/27 tasks
 
 ### Phase 1 — One session drives Chrome with no TCP port open
 Today's single-session browser works exactly as before, but over the native host and a 0600 Unix socket, so nothing can squat a port.
@@ -100,12 +100,18 @@ A second pi session gets its own `pi · <name>` group in a distinct color and wo
 ### Phase 4 — macOS install, clear errors, and release notes
 macOS works, and every unsupported setup fails with a message saying what to do.
 **Blocked by:** 3
-- [ ] Install manifests into macOS Chrome, Brave and Chromium paths (`src/install.ts`)
-- [ ] Refuse Windows with a "not supported until the port transport" error (`src/index.ts`)
-- [ ] Fail with an error naming the path when the socket path is over the OS limit (`src/bridge.ts`)
-- [ ] Exchange a protocol version on connect and fail with "reload the Pi Browser extension" on mismatch (`src/bridge.ts`, `src/host.ts`, `chrome/background.js`)
-- [ ] Explain a failed `connectNative` in the toolbar title, and mention Snap/Flatpak in `/browser` (`chrome/background.js`, `src/index.ts`)
-- [ ] Rewrite install and add a Security section, note the reload and that `/browser take` is gone; bump package and manifest minor version (`README.md`, `package.json`, `chrome/manifest.json`)
+- [x] Install manifests into macOS Chrome, Brave and Chromium paths (`src/install.ts`)
+- [x] Refuse Windows with a "not supported until the port transport" error (`src/index.ts`)
+- [x] Fail with an error naming the path when the socket path is over the OS limit (`src/bridge.ts`)
+- [x] Exchange a protocol version on connect and fail with "reload the Pi Browser extension" on mismatch (`src/bridge.ts`, `src/host.ts`, `chrome/background.js`)
+- [x] Explain a failed `connectNative` in the toolbar title, and mention Snap/Flatpak in `/browser` (`chrome/background.js`, `src/index.ts`)
+- [x] Rewrite install and add a Security section, note the reload and that `/browser take` is gone; bump package and manifest minor version (`README.md`, `package.json`, `chrome/manifest.json`)
+- Note: the socket limit is the full `sun_path` size, 108 bytes on Linux and 104 on macOS; on Linux Node binds a 108-byte path fine but silently truncates a longer one, so without the check a 109-byte path binds the wrong file
+- Note: the handshake: the host announces its version to Chrome on start, pi's first frame on a new host is a `hello` call, and the extension answers with its own and the host's version. pi checks both; any error answer counts as a mismatch and is quoted in the message (an extension that predates the handshake says "Unknown browser action: hello"), and only a hello with no answer at all drops the host so it reconnects and tries again. A mismatched host stays attached and every call fails at once until it disconnects, since closing it would make pi's touch-on-close wake the host to reconnect in a loop
+- Note: the host now tells Chrome `connected` only on pi's first frame, so a refused host sends nothing and the toolbar title no longer flickers; and a same-id pi's probe never finishes the handshake, so it no longer fails a call waiting for Chrome with "disconnected"
+- Note: no alarm is needed for a host that cannot start: `onDisconnect` reads `chrome.runtime.lastError` and puts Chrome's reason in the toolbar title, which is browser state and outlives the worker. A worker that dies after the failed retries leaves that title up, and pi's not-connected errors and `/browser` already say to click the icon, which wakes the worker and connects at once. The host's start-up `hello` resets the title to "not connected"
+- Note: nothing ties `PROTOCOL` to package releases, so a stale extension is caught only when the protocol changed; a future release that adds actions must bump `PROTOCOL` or compare manifest versions
+- Note: `chrome.runtime.reload()` from the worker unloads the extension in headless Chrome for Testing without loading it again, so the mismatch e2e case launches a second Chrome with its own profile and agent dir
 **Verify:** `npm test` writes manifests under a fake macOS home at the expected paths, rejects an over-long socket path and a Windows platform with their messages; `npm run e2e` with a mismatched extension version fails with "reload the Pi Browser extension".
 
 ## Demo

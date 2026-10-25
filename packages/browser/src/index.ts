@@ -73,7 +73,7 @@ export function truncate(text: string, tail = false): string {
   return tail ? `${note}\n\n${result.content}` : `${result.content}\n\n${note}`;
 }
 
-export function browserExtension({ browserDirs, ...overrides }: Partial<BridgeOptions> & { browserDirs?: string[] } = {}): (pi: ExtensionAPI) => void {
+export function browserExtension({ browserDirs, platform = process.platform, ...overrides }: Partial<BridgeOptions> & { browserDirs?: string[]; platform?: NodeJS.Platform } = {}): (pi: ExtensionAPI) => void {
   return pi => {
     let session: ExtensionContext | undefined;
     let used = false;
@@ -94,14 +94,15 @@ export function browserExtension({ browserDirs, ...overrides }: Partial<BridgeOp
 
     function use(ctx: ExtensionContext): Bridge {
       if (!ctx.hasUI) throw new Error("The browser needs an interactive pi session.");
+      if (platform === "win32") throw new Error("The browser is not supported on Windows until the port transport lands (https://github.com/lwlee2608/pi-extensions/issues/43).");
       return bridge;
     }
 
     async function status(bridge: Bridge): Promise<string> {
       const lines = [`Chrome extension folder: ${CHROME_DIR}`];
-      const error = await bridge.listen().catch((error: Error) => error);
+      const error = await bridge.listen().then(() => bridge.mismatch, (error: Error) => error);
       if (error) return [...lines, error.message].join("\n");
-      if (!bridge.connected) return [...lines, "Chrome: not connected. Click the Pi Browser toolbar icon in Chrome to reconnect. If it is not installed, load the folder unpacked in chrome://extensions."].join("\n");
+      if (!bridge.connected) return [...lines, "Chrome: not connected. Click the Pi Browser toolbar icon in Chrome to reconnect; its tooltip says why if it cannot start pi's native host. After an update, reload Pi Browser in chrome://extensions. If it is not installed, load the folder unpacked in chrome://extensions. Snap and Flatpak browsers are not supported."].join("\n");
       const info = await bridge.call("status", {}).catch((error: Error) => error);
       if (info instanceof Error) return [...lines, `Chrome: connected, but its status failed: ${info.message}`].join("\n");
       const { browser, group } = info as Status;
