@@ -126,7 +126,7 @@ Once the agent uses `console` on a tab, Chrome reports that tab's console to the
 
 ## Security
 
-**Threat model.** Pi Browser defends against web pages, other extensions, and other users on the same machine. It does not defend against programs running as you: those can already read your Chrome profile, cookies included, so no local check would stop them. A session's boundary is its tab group: a tab you drag into the group, or one a pi tab opens with `window.open`, joins it, and another extension with the `tabs` or `tabGroups` permission could move tabs into a pi group. Site approval still gates every action on those tabs.
+**Threat model.** Pi Browser defends against web pages, other extensions, and other users on the same machine. It does not defend against programs running as you: those can already read your Chrome profile, cookies included, so no local check would stop them. A session's boundary is its tab group: a tab you drag into the group, or one a pi tab opens with `window.open`, joins it, and any other extension can move tabs into a pi group. Site approval still gates every action on those tabs.
 
 - **Other OS users can't reach a session.** Each session's socket is readable and writable only by you (`0600`), inside a folder only you can enter (`0700`).
 - **Only this extension can start the host.** The native host manifest lists the companion's pinned extension ID in `allowed_origins`, so Chrome refuses to start it for web pages or any other extension. Nothing listens on a TCP port, so there is nothing for a web page or a local process to squat.
