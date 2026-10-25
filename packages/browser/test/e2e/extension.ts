@@ -10,7 +10,7 @@ function set(text: string, name: string, value: number): string {
   return text.replace(line, `const ${name} = ${value};`);
 }
 
-export async function copyExtension(dir: string, settings: { RECONNECT_MS: number; RECONNECT_MAX_MS: number; NAVIGATE_WAIT_MS: number }): Promise<string> {
+export async function copyExtension(dir: string, settings: { RECONNECT_MS: number; RECONNECT_MAX_MS: number; NAVIGATE_WAIT_MS: number; PROTOCOL?: number }): Promise<string> {
   await cp(source, dir, { recursive: true });
   const path = join(dir, "background.js");
   await writeFile(path, Object.entries(settings).reduce((text, [name, value]) => set(text, name, value), await readFile(path, "utf8")));

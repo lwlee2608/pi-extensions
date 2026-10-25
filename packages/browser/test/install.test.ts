@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { Bridge, listenSocket } from "../src/bridge.ts";
-import { decoder, encode } from "../src/host.js";
+import { decoder, encode, PROTOCOL } from "../src/host.js";
 import { detectBrowserDirs, HOST, installHost, nodePath, ORIGIN } from "../src/install.ts";
 
 const home = await mkdtemp(join(tmpdir(), "pi-browser-install-"));
@@ -61,8 +61,10 @@ test("the installed wrapper runs the host through a symlinked package, and it re
   const bridge = new Bridge({ transport: handlers => listenSocket(join(sessions, "a.sock"), handlers), connectTimeout: 5_000, callTimeout: 5_000 });
   await bridge.listen();
   const child = spawn(join(browser, "NativeMessagingHosts", `${HOST}.sh`), [`${ORIGIN}/`], { stdio: ["pipe", "pipe", "inherit"] });
-  child.stdout.on("data", decoder(({ session, message }: { session: string; message?: { id: number; method: string } }) => {
-    if (message) child.stdin.write(encode({ session, message: { id: message.id, result: `${session} ${message.method}` } }));
+  let host: number | undefined;
+  child.stdout.on("data", decoder(({ session, event, version, message }: { session: string; event?: string; version?: number; message?: { id: number; method: string } }) => {
+    if (event === "hello") host = version;
+    if (message) child.stdin.write(encode({ session, message: { id: message.id, result: message.method === "hello" ? { version: PROTOCOL, host } : `${session} ${message.method}` } }));
   }));
   try {
     assert.equal(await bridge.call("echo", {}), "a echo");

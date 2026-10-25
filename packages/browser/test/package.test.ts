@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { PROTOCOL } from "../src/host.js";
 import { HOST, ORIGIN } from "../src/install.ts";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -20,8 +21,10 @@ test("package exposes its source and the Chrome extension, and excludes tests an
   assert.ok(paths.every(path => !/^(test|plans)\//.test(path)));
 });
 
-test("the extension connects to the native host pi installs", () => {
-  assert.match(readFileSync(root + "chrome/background.js", "utf8"), new RegExp(`^const HOST = "${HOST}";$`, "m"));
+test("the extension connects to the native host pi installs, at the protocol version pi speaks", () => {
+  const background = readFileSync(root + "chrome/background.js", "utf8");
+  assert.match(background, new RegExp(`^const HOST = "${HOST}";$`, "m"));
+  assert.match(background, new RegExp(`^const PROTOCOL = ${PROTOCOL};$`, "m"));
 });
 
 test("manifest key pins the extension id the native host allows", () => {

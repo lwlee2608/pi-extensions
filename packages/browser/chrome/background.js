@@ -1,4 +1,5 @@
 const HOST = "com.lwlee2608.pi_browser";
+const PROTOCOL = 1;
 const RECONNECT_MS = 1_000;
 const RECONNECT_MAX_MS = 15_000;
 const NAVIGATE_WAIT_MS = 20_000;
@@ -18,6 +19,10 @@ const INTERACTIVE = new Set(["button", "checkbox", "combobox", "link", "listbox"
   "option", "radio", "searchbox", "slider", "spinbutton", "switch", "tab", "textbox", "treeitem"]);
 
 const handlers = {
+  hello() {
+    return { version: PROTOCOL, host: hostVersion };
+  },
+
   async tabs(_, caller) {
     const all = await chrome.tabs.query({});
     const tabs = await piTabs(caller);
@@ -176,6 +181,7 @@ const current = new Map();
 const links = new Map();
 const queues = new Map();
 let host;
+let hostVersion;
 let retry;
 let delay = RECONNECT_MS;
 
@@ -189,7 +195,7 @@ const session = {
     let reply;
     try {
       await queues.get("groups");
-      if (method !== "status") await allowed();
+      if (method !== "status" && method !== "hello") await allowed();
       if (!Object.hasOwn(handlers, method)) throw new Error(`Unknown browser action: ${method}`);
       reply = { id, result: await handlers[method](params ?? {}, { id: peer.id, name }) };
     } catch (error) {
@@ -214,10 +220,12 @@ function connect() {
   clearTimeout(retry);
   const port = host = chrome.runtime.connectNative(HOST);
   const peers = new Map();
-  port.onMessage.addListener(({ session: id, event, message }) => {
+  hostVersion = undefined;
+  port.onMessage.addListener(({ session: id, event, message, version }) => {
     delay = RECONNECT_MS;
     const peer = peers.get(id);
-    if (event === "connected") {
+    if (event === "hello") hostVersion = version;
+    else if (event === "connected") {
       const next = { id, send: reply => port.postMessage({ session: id, message: reply }) };
       peers.set(id, next);
       session.open(next);

@@ -4,6 +4,8 @@ import { connect } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+export const PROTOCOL = 1;
+
 export function encode(message) {
   const body = Buffer.from(JSON.stringify(message));
   const head = Buffer.alloc(4);
@@ -40,11 +42,11 @@ export async function relay(dir, input, output) {
     let linked = false;
     links.set(session, socket);
     socket.on("error", error => console.error(`pi-browser host: ${path}: ${error.message}`));
-    socket.once("connect", () => {
+    socket.on("data", decoder(message => {
+      if (!linked) send({ session, event: "connected" });
       linked = true;
-      send({ session, event: "connected" });
-      socket.on("data", decoder(message => send({ session, message })));
-    });
+      send({ session, message });
+    }));
     socket.once("close", () => {
       if (links.get(session) === socket) links.delete(session);
       if (linked && !ended) send({ session, event: "disconnected" });
@@ -68,7 +70,8 @@ export async function relay(dir, input, output) {
     watcher.close();
     for (const socket of links.values()) socket.destroy();
   });
-  scan();
+  send({ event: "hello", version: PROTOCOL });
+  await scan();
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) relay(process.argv[2], process.stdin, process.stdout);

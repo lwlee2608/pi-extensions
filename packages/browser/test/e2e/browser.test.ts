@@ -44,7 +44,7 @@ const options = { browserDirs: [profile], connectTimeout: 10_000, callTimeout: 1
 
 const stopped: string[] = [];
 
-function session(id = "e2e", name = id) {
+function session(id = "e2e", name = id, overrides = {}) {
   const handlers = new Map<string, ((event: unknown, ctx: ExtensionContext) => unknown)[]>();
   const tools = new Map<string, any>();
   const asked: string[] = [];
@@ -72,7 +72,7 @@ function session(id = "e2e", name = id) {
   };
   const ctx = { hasUI: true, cwd: work, abort: () => { stopped.push(id); }, ui: { notify: (text: string) => notes.push(text), select }, sessionManager: { getSessionId: () => id, getSessionName: () => name } } as unknown as ExtensionContext;
   const emit = (event: string) => { for (const handler of handlers.get(event) ?? []) handler({}, ctx); };
-  browserExtension(options)(pi);
+  browserExtension({ ...options, ...overrides })(pi);
   emit("session_start");
   const call = async (params: object, ...replies: (string | boolean)[]): Promise<{ content: any[] }> => {
     answers.push(...replies);
@@ -91,7 +91,8 @@ let { asked, confirmed, emit, call, browser } = session();
 const host = new URL(site).hostname;
 const at = (name: string, path = "other.html") => `http://${name}.test:${new URL(site).port}/${path}`;
 
-const extensionDir = await copyExtension(join(work, "extension"), { RECONNECT_MS: 100, RECONNECT_MAX_MS: 200, NAVIGATE_WAIT_MS: 300 });
+const settings = { RECONNECT_MS: 100, RECONNECT_MAX_MS: 200, NAVIGATE_WAIT_MS: 300 };
+const extensionDir = await copyExtension(join(work, "extension"), settings);
 const chrome = await launchChrome(extensionDir, profile);
 const { cdp } = chrome;
 await cdp.send("Target.setDiscoverTargets", { discover: true });
@@ -595,4 +596,20 @@ test("after a debugging cancel every call fails at once, across a worker restart
   }
   await inWorker(`chrome.storage.session.remove("canceled")`);
   assert.match(await browser({ action: "read" }), /heading/);
+});
+
+test("an extension at another protocol version fails every call and /browser with how to fix it", async () => {
+  const dir = join(work, "stale");
+  const stale = await launchChrome(await copyExtension(join(dir, "extension"), { ...settings, PROTOCOL: 0 }), join(dir, "profile"));
+  process.env.PI_CODING_AGENT_DIR = join(dir, "agent");
+  const old = session("e2e-stale", "stale", { browserDirs: [join(dir, "profile")] });
+  process.env.PI_CODING_AGENT_DIR = join(work, "agent");
+  const reload = /^Pi Browser protocol versions do not match \(pi 1, extension 0, native host 1\)\. Reload the Pi Browser extension in chrome:\/\/extensions/m;
+  try {
+    await assert.rejects(old.browser({ action: "tabs" }), { message: reload });
+    assert.match(await old.status(), reload);
+  } finally {
+    old.emit("session_shutdown");
+    await stale.close();
+  }
 });
