@@ -32,7 +32,7 @@ function chrome(dir: string) {
     waiters.add(check);
     check();
   });
-  return { input, events, until, start: () => relay(dir, input, output) };
+  return { input, events, until, start: (retryMs?: number) => relay(dir, input, output, retryMs) };
 }
 
 test("frames survive any chunking, and a bad frame is skipped", () => {
@@ -77,6 +77,25 @@ test("the host tells Chrome when its session goes away and links the next one", 
   assert.deepEqual(browser.events, ["connected", "disconnected", "connected"]);
   assert.equal(await other.call("echo", {}), "echo");
   browser.input.end();
+});
+
+test("a host refused while another holds the session takes over once that one ends", async () => {
+  const dir = join(root, "takeover");
+  const bridge = session(join(dir, "a.sock"));
+  await bridge.listen();
+  const first = chrome(dir);
+  await first.start();
+  await first.until(1);
+  const second = chrome(dir);
+  await second.start(50);
+  await second.until(2);
+  assert.deepEqual(second.events.slice(0, 2), ["connected", "disconnected"]);
+  const pending = assert.rejects(bridge.call("never", {}), /disconnected/);
+  first.input.end();
+  await pending;
+  assert.equal(await bridge.call("echo", {}), "echo");
+  assert.equal(second.events.at(-1), "connected");
+  second.input.end();
 });
 
 test("Chrome closing the host's input drops the session link", async () => {

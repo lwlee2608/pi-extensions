@@ -626,6 +626,10 @@ chrome.tabs.onUpdated.addListener(async (tabId, { groupId }) => {
 chrome.runtime.onStartup.addListener(connect);
 chrome.action.onClicked.addListener(() => chrome.storage.session.remove("canceled").then(() => {
   delay = RECONNECT_MS;
+  if (host && !link) {
+    host.disconnect();
+    host = undefined;
+  }
   connect();
 }));
 connect();

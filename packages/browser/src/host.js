@@ -26,10 +26,11 @@ export function decoder(receive) {
   };
 }
 
-export async function relay(dir, input, output) {
+export async function relay(dir, input, output, retryMs = 5_000) {
   await mkdir(dir, { recursive: true, mode: 0o700 });
   let link;
   let ended = false;
+  let retry;
   let queue = Promise.resolve();
   const send = message => output.write(encode(message));
 
@@ -48,6 +49,8 @@ export async function relay(dir, input, output) {
         if (ended) return;
         send({ event: "disconnected" });
         scan(path);
+        clearTimeout(retry);
+        retry = setTimeout(scan, retryMs);
       });
       resolve(true);
     });
@@ -67,6 +70,7 @@ export async function relay(dir, input, output) {
   input.on("data", decoder(message => link?.write(encode(message))));
   input.once("end", () => {
     ended = true;
+    clearTimeout(retry);
     watcher.close();
     link?.destroy();
   });

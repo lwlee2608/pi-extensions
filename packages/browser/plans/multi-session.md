@@ -54,7 +54,7 @@ Today's single-session browser works exactly as before, but over the native host
 - Note: the host is `src/host.js`, not `.ts`: Node refuses to strip types under `node_modules`, where pi installs packages, so a `.ts` host would only run from a checkout. Phases 2 and 4 edit `src/host.js`; it also holds the frame codec `src/bridge.ts` imports (`allowJs` in the package tsconfig)
 - Note: e2e proves headless Chrome for Testing 156 reads the host manifest from `<user-data-dir>/NativeMessagingHosts`
 - Note: with no alarm, a service worker stopped from outside restarts only on an event it listens to (tab update, toolbar click, browser startup via `runtime.onStartup`); the two e2e worker-restart cases now wake it by opening a tab
-- Note: the bridge still refuses a second host connection, as v1 did; the host then skips that socket until the sessions folder changes, so two Chromes don't reconnect in a loop. Phase 2 replaces this with first-claim-wins
+- Note: the bridge still refuses a second host connection, as v1 did; the refused host retries every 5s, so it takes over once the first Chrome leaves, and a toolbar click with no session linked restarts the host at once. Phase 2 replaces this with first-claim-wins
 - Note: README still describes port 47823 and `/browser take` until phase 4 rewrites it; the `ws` dependency is gone and the e2e CDP client uses Node's built-in `WebSocket`
 - Note: e2e on this host still needs a local, uncommitted `--no-sandbox` (AppArmor), as in v1
 **Verify:** `npm run e2e` passes every existing case over the native host, plus a new case that asserts no TCP listener exists while the agent reads a page; `npm test` covers relay framing and stale-socket cleanup.
