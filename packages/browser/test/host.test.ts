@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PassThrough } from "node:stream";
@@ -105,6 +106,28 @@ test("first claim wins: a second host is refused while one holds the session, an
   assert.equal(await bridge.call("echo", {}), "a echo");
   assert.equal(second.events.at(-1), "connected a");
   second.input.end();
+});
+
+test("a folder change seen while a socket is closing is not lost: the host retries that session once it closes", async () => {
+  const dir = join(root, "missed");
+  await mkdir(dir, { recursive: true });
+  const held: Socket[] = [];
+  const servers = ["x", "y"].map(() => createServer(socket => held.push(socket)));
+  await new Promise(resolve => servers[0].listen(join(dir, "x.sock"), () => resolve(undefined)));
+  const browser = chrome(dir);
+  try {
+    await browser.start();
+    await browser.until(1);
+    servers[1].listen(join(dir, "y.sock"));
+    await browser.until(2);
+    held[0].destroy();
+    await Promise.race([browser.until(4), new Promise((_, reject) => setTimeout(reject, 1_000, new Error("the host never retried x")).unref())]);
+    assert.deepEqual(browser.events, ["connected x", "connected y", "disconnected x", "connected x"]);
+  } finally {
+    browser.input.end();
+    for (const socket of held) socket.destroy();
+    for (const server of servers) server.close();
+  }
 });
 
 test("Chrome closing the host's input drops every session link", async () => {

@@ -29,6 +29,7 @@ export function decoder(receive) {
 export async function relay(dir, input, output) {
   await mkdir(dir, { recursive: true, mode: 0o700 });
   const links = new Map();
+  const missed = new Set();
   let ended = false;
   const send = message => output.write(encode(message));
 
@@ -47,16 +48,20 @@ export async function relay(dir, input, output) {
     socket.once("close", () => {
       if (links.get(session) === socket) links.delete(session);
       if (linked && !ended) send({ session, event: "disconnected" });
+      if (missed.delete(session) && !ended) scan();
     });
   };
 
-  const scan = async () => {
+  const scan = async changed => {
     for (const name of await readdir(dir).catch(() => [])) {
-      if (!ended && name.endsWith(".sock") && !links.has(name.slice(0, -".sock".length))) open(name);
+      const session = name.slice(0, -".sock".length);
+      if (ended || !name.endsWith(".sock")) continue;
+      if (!links.has(session)) open(name);
+      else if (changed) missed.add(session);
     }
   };
 
-  const watcher = watch(dir, () => scan());
+  const watcher = watch(dir, () => scan(true));
   input.on("data", decoder(({ session, message }) => links.get(session)?.write(encode(message))));
   input.once("end", () => {
     ended = true;
