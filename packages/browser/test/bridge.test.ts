@@ -96,6 +96,21 @@ test("an extension from before the handshake, which answers hello as an unknown 
   await assert.rejects(server.call("status", {}), /extension none, native host none\)\. Reload the Pi Browser extension/);
 });
 
+test("a host that never answers hello is dropped, not taken for a mismatch, and the next host serves the waiting call", async () => {
+  const path = join(dir, "sessions", `${++count}.sock`);
+  let closed!: () => void;
+  const gone = new Promise<void>(resolve => { closed = resolve; });
+  const server = new Bridge({ transport: handlers => listenSocket(path, { ...handlers, close: peer => { handlers.close(peer); closed(); } }), callTimeout: 50 });
+  bridges.push(server);
+  await server.listen();
+  const call = server.call("echo", {});
+  connect(path);
+  await gone;
+  assert.equal(server.mismatch, undefined);
+  await host(path);
+  assert.deepEqual(await call, { method: "echo", params: {} });
+});
+
 test("a call fails when Chrome never connects", async () => {
   const { server } = bridge({ connectTimeout: 20 });
   await assert.rejects(server.call("echo", {}), /not connected\. Click the Pi Browser toolbar icon/);

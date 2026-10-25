@@ -152,6 +152,7 @@ export class Bridge {
     this.state = "joining";
     const join = (reply: unknown) => {
       if (this.peer !== peer) return;
+      if (reply instanceof Error && !reply.message.startsWith("Unknown browser action")) { peer.close(); return; }
       const { version, host } = (reply ?? {}) as { version?: number; host?: number };
       this.state = version === PROTOCOL && host === PROTOCOL ? "ready" : new Error(`Pi Browser protocol versions do not match (pi ${PROTOCOL}, extension ${version ?? "none"}, native host ${host ?? "none"}). `
         + "Reload the Pi Browser extension in chrome://extensions, and restart pi if it started before the update.");
