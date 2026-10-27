@@ -293,17 +293,21 @@ test("type, keys, and click fill and submit a form with real input events", asyn
   assert.match(await browser({ action: "read" }), /submitted: second/, "select-all and Backspace cleared the field");
 });
 
+const intruded = (url: string) => until(() => inPage(url, "'intruded' in document.documentElement.dataset"));
+
 test("a page holding another extension's frame, like a password manager's, is still read, typed into, and submitted", async () => {
   assert.match(await browser({ action: "navigate", url: `${form}?intrude`, newTab: true }), /Pi form/);
+  await intruded(`${form}?intrude`);
   const page = await browser({ action: "read" });
   await browser({ action: "type", ref: ref(page, 'textbox "Name"'), text: "past the intruder" });
   await browser({ action: "keys", keys: "Enter" });
   assert.match(await browser({ action: "read" }), /submitted: past the intruder/);
 });
 
-test("a page that keeps re-adding another extension's frame fails with the cause and the workaround", async () => {
-  await browser({ action: "navigate", url: `${form}?intrude=stubborn`, newTab: true }).catch(() => {});
-  await assert.rejects(browser({ action: "read" }), { message: /^Another extension, likely a password manager such as LastPass, keeps adding its own frame to tab \d+, and Chrome does not let Pi Browser control a tab that holds another extension's frame\. Ask the user to turn that extension off for this site/ });
+test("a page holding another extension's frame that cannot be removed fails with the cause and the workaround", async () => {
+  await browser({ action: "navigate", url: `${form}?intrude=object`, newTab: true });
+  await intruded(`${form}?intrude=object`);
+  await assert.rejects(browser({ action: "read" }), { message: /^Another extension, likely a password manager such as LastPass, has a frame in tab \d+ that Pi Browser could not remove, and Chrome does not let Pi Browser control a tab that holds another extension's frame\. Ask the user to turn that extension off for this site/ });
 });
 
 test("the pi overlay marks where the agent clicks, stays out of read and the page's reach, and its Stop button aborts the agent", async () => {

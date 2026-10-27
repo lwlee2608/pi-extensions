@@ -342,22 +342,23 @@ async function attach(tabId) {
   await allowed();
   const { groupId } = await chrome.tabs.get(tabId);
   if (!Object.values(await groups()).includes(groupId)) throw new Error(`Tab ${tabId} is not in a live pi group.`);
-  await debug(tabId);
-  logs.set(tabId, { console: [], network: [], requests: new Map(), partial: true });
-  await chrome.debugger.sendCommand({ tabId }, "Page.enable");
-  await chrome.debugger.sendCommand({ tabId }, "Network.enable", { maxTotalBufferSize: 0, maxResourceBufferSize: 0 });
+  await unblocked(tabId, async () => {
+    await chrome.debugger.attach({ tabId }, "1.3").catch(error => { if (!/already attached/i.test(error.message)) throw error; });
+    logs.set(tabId, { console: [], network: [], requests: new Map(), partial: true });
+    await chrome.debugger.sendCommand({ tabId }, "Page.enable");
+    await chrome.debugger.sendCommand({ tabId }, "Network.enable", { maxTotalBufferSize: 0, maxResourceBufferSize: 0 });
+  });
   attached.set(tabId, groupId);
 }
 
-async function debug(tabId) {
+async function unblocked(tabId, run) {
   for (let tries = 0; ; tries++) {
     try {
-      return await chrome.debugger.attach({ tabId }, "1.3");
+      return await run();
     } catch (error) {
-      if (/already attached/i.test(error.message)) return;
       if (!/URL of different extension/.test(error.message)) throw error;
       if (tries === STRIP_TRIES) {
-        throw new Error(`Another extension, likely a password manager such as LastPass, keeps adding its own frame to tab ${tabId}, and Chrome does not let Pi Browser control a tab that holds another extension's frame. Ask the user to turn that extension off for this site, or to use a Chrome profile without it.`);
+        throw new Error(`Another extension, likely a password manager such as LastPass, has a frame in tab ${tabId} that Pi Browser could not remove, and Chrome does not let Pi Browser control a tab that holds another extension's frame. Ask the user to turn that extension off for this site, or to use a Chrome profile without it.`);
       }
       await strip(tabId);
       await new Promise(resolve => setTimeout(resolve, STRIP_WAIT_MS * (tries + 1)));
@@ -381,7 +382,7 @@ function strip(tabId) {
 async function cdp(tabId, method, params) {
   if (dialogs.has(tabId)) throw dialogError(dialogs.get(tabId));
   await attach(tabId);
-  return chrome.debugger.sendCommand({ tabId }, method, params);
+  return unblocked(tabId, () => chrome.debugger.sendCommand({ tabId }, method, params));
 }
 
 async function logOf(tabId) {
