@@ -33,8 +33,8 @@
 
 ## Verification budget
 Carried over from `plans/browser.md`; these rules bind every phase, review round, and merge.
-- **Before the PR** — The phase's Verify: its tagged e2e cases plus unit tests.
-- **After a review fix** — Unit tests, plus the tagged e2e cases of any action the fix touched.
+- **Before the PR** — Unit tests, the phase's tagged e2e cases, and existing cases for actions it changes.
+- **After a review fix** — Unit tests, plus e2e cases for actions the fix changed.
 - **Before merge** — The full `npm run e2e -w packages/browser`, once, even if no fix touched e2e: e2e is not in CI, so this is the only regression check on the other cases.
 - **Reviewers don't run e2e** — They read the diff; the worker owns verification.
 - **Time** — Targets: full e2e under 30s with Chrome cached, unit tests under 2s. A target, not a cap: never cut coverage to fit. Over target, the phase report gives the time, the slow cases, and why.
