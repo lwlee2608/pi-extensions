@@ -339,10 +339,11 @@ async function allowed() {
 
 async function attach(tabId) {
   if (attached.has(tabId)) return;
-  await allowed();
-  const { groupId } = await chrome.tabs.get(tabId);
-  if (!Object.values(await groups()).includes(groupId)) throw new Error(`Tab ${tabId} is not in a live pi group.`);
+  let groupId;
   await unblocked(tabId, async () => {
+    await allowed();
+    ({ groupId } = await chrome.tabs.get(tabId));
+    if (!Object.values(await groups()).includes(groupId)) throw new Error(`Tab ${tabId} is not in a live pi group.`);
     await chrome.debugger.attach({ tabId }, "1.3").catch(error => { if (!/already attached/i.test(error.message)) throw error; });
     logs.set(tabId, { console: [], network: [], requests: new Map(), partial: true });
     await chrome.debugger.sendCommand({ tabId }, "Page.enable");
