@@ -1,6 +1,6 @@
 {
   "name": "@lwlee2608/pi-browser",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Let Pi drive your signed-in Chrome through a companion extension.",
   "type": "module",
   "license": "MIT",
