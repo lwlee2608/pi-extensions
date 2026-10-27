@@ -13,6 +13,8 @@ const OVERLAY_IDLE_MS = 120_000;
 const OVERLAY_WAIT_MS = 1_000;
 const OVERLAY_WORLD = "pi-overlay";
 const STOP_BINDING = "piStop";
+const STRIP_TRIES = 4;
+const STRIP_WAIT_MS = 75;
 
 const SKIP = new Set(["generic", "none", "paragraph", "InlineTextBox", "LineBreak", "RootWebArea"]);
 const INTERACTIVE = new Set(["button", "checkbox", "combobox", "link", "listbox", "menuitem", "menuitemcheckbox", "menuitemradio",
@@ -41,7 +43,7 @@ const handlers = {
     if (!/^https?:\/\//i.test(url)) throw new Error(`navigate only opens http and https URLs: ${url}`);
     const tab = newTab || (tabId === undefined && !(await piTabs(caller)).length) ? await openTab(caller) : await piTab(caller, tabId);
     const outcome = await load(tab.id, url);
-    if (outcome === "gone") throw new Error(`Tab ${tab.id} closed or detached while loading ${url}.`);
+    if (outcome === "gone" && !(await chrome.tabs.get(tab.id).catch(() => undefined))) throw new Error(`Tab ${tab.id} closed while loading ${url}.`);
     await overlay(tab.id, "show");
     const loaded = await chrome.tabs.get(tab.id);
     const committed = loaded.url === "about:blank" ? "" : loaded.url;
@@ -337,20 +339,51 @@ async function allowed() {
 
 async function attach(tabId) {
   if (attached.has(tabId)) return;
-  await allowed();
-  const { groupId } = await chrome.tabs.get(tabId);
-  if (!Object.values(await groups()).includes(groupId)) throw new Error(`Tab ${tabId} is not in a live pi group.`);
-  await chrome.debugger.attach({ tabId }, "1.3").catch(error => { if (!/already attached/i.test(error.message)) throw error; });
-  logs.set(tabId, { console: [], network: [], requests: new Map(), partial: true });
-  await chrome.debugger.sendCommand({ tabId }, "Page.enable");
-  await chrome.debugger.sendCommand({ tabId }, "Network.enable", { maxTotalBufferSize: 0, maxResourceBufferSize: 0 });
+  let groupId;
+  await unblocked(tabId, async () => {
+    await allowed();
+    ({ groupId } = await chrome.tabs.get(tabId));
+    if (!Object.values(await groups()).includes(groupId)) throw new Error(`Tab ${tabId} is not in a live pi group.`);
+    await chrome.debugger.attach({ tabId }, "1.3").catch(error => { if (!/already attached/i.test(error.message)) throw error; });
+    logs.set(tabId, { console: [], network: [], requests: new Map(), partial: true });
+    await chrome.debugger.sendCommand({ tabId }, "Page.enable");
+    await chrome.debugger.sendCommand({ tabId }, "Network.enable", { maxTotalBufferSize: 0, maxResourceBufferSize: 0 });
+  });
   attached.set(tabId, groupId);
+}
+
+async function unblocked(tabId, run) {
+  for (let tries = 0; ; tries++) {
+    try {
+      return await run();
+    } catch (error) {
+      if (!/URL of different extension/.test(error.message)) throw error;
+      if (tries === STRIP_TRIES) {
+        throw new Error(`Another extension, likely a password manager such as LastPass, has a frame in tab ${tabId} that Pi Browser could not remove, and Chrome does not let Pi Browser control a tab that holds another extension's frame. Ask the user to turn that extension off for this site, or to use a Chrome profile without it.`);
+      }
+      await strip(tabId);
+      await new Promise(resolve => setTimeout(resolve, STRIP_WAIT_MS * (tries + 1)));
+    }
+  }
+}
+
+function strip(tabId) {
+  return chrome.scripting.executeScript({ target: { tabId, allFrames: true }, injectImmediately: true, args: [chrome.runtime.id], func: own => {
+    const roots = [document];
+    for (const root of roots) {
+      for (const element of root.querySelectorAll("*")) {
+        if (element instanceof HTMLIFrameElement && /^chrome-extension:/.test(element.src) && new URL(element.src).host !== own) element.remove();
+        const shadow = element instanceof HTMLElement && chrome.dom.openOrClosedShadowRoot(element);
+        if (shadow) roots.push(shadow);
+      }
+    }
+  } }).catch(() => {});
 }
 
 async function cdp(tabId, method, params) {
   if (dialogs.has(tabId)) throw dialogError(dialogs.get(tabId));
   await attach(tabId);
-  return chrome.debugger.sendCommand({ tabId }, method, params);
+  return unblocked(tabId, () => chrome.debugger.sendCommand({ tabId }, method, params));
 }
 
 async function logOf(tabId) {

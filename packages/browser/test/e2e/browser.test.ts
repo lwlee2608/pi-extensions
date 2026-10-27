@@ -13,6 +13,7 @@ import { copyExtension } from "./extension.ts";
 
 const EXTENSION = "chrome-extension://enidoebkpjligpdgedlellobooiiljib/";
 const fixtures = fileURLToPath(new URL("fixtures/", import.meta.url));
+const intruder = fileURLToPath(new URL("intruder/", import.meta.url));
 const work = await mkdtemp(join(tmpdir(), "pi-browser-e2e-"));
 
 async function listen(server: Server): Promise<number> {
@@ -93,7 +94,7 @@ const at = (name: string, path = "other.html") => `http://${name}.test:${new URL
 
 const settings = { RECONNECT_MS: 100, RECONNECT_MAX_MS: 200, NAVIGATE_WAIT_MS: 300 };
 const extensionDir = await copyExtension(join(work, "extension"), settings);
-const chrome = await launchChrome(extensionDir, profile);
+const chrome = await launchChrome([extensionDir, intruder], profile);
 const { cdp } = chrome;
 await cdp.send("Target.setDiscoverTargets", { discover: true });
 
@@ -290,6 +291,23 @@ test("type, keys, and click fill and submit a form with real input events", asyn
   await browser({ action: "type", ref: ref(page, 'textbox "Name"'), text: "second" });
   await browser({ action: "keys", keys: "Enter" });
   assert.match(await browser({ action: "read" }), /submitted: second/, "select-all and Backspace cleared the field");
+});
+
+const intruded = (url: string) => until(() => inPage(url, "'intruded' in document.documentElement.dataset"));
+
+test("a page holding another extension's frame, like a password manager's, is still read, typed into, and submitted", async () => {
+  assert.match(await browser({ action: "navigate", url: `${form}?intrude`, newTab: true }), /Pi form/);
+  await intruded(`${form}?intrude`);
+  const page = await browser({ action: "read" });
+  await browser({ action: "type", ref: ref(page, 'textbox "Name"'), text: "past the intruder" });
+  await browser({ action: "keys", keys: "Enter" });
+  assert.match(await browser({ action: "read" }), /submitted: past the intruder/);
+});
+
+test("a page holding another extension's frame that cannot be removed fails with the cause and the workaround", async () => {
+  await browser({ action: "navigate", url: `${form}?intrude=object`, newTab: true });
+  await intruded(`${form}?intrude=object`);
+  await assert.rejects(browser({ action: "read" }), { message: /^Another extension, likely a password manager such as LastPass, has a frame in tab \d+ that Pi Browser could not remove, and Chrome does not let Pi Browser control a tab that holds another extension's frame\. Ask the user to turn that extension off for this site/ });
 });
 
 test("the pi overlay marks where the agent clicks, stays out of read and the page's reach, and its Stop button aborts the agent", async () => {
@@ -613,7 +631,7 @@ test("a native host Chrome cannot start is explained in the toolbar title, and t
 
 test("an extension at another protocol version fails every call and /browser with how to fix it", async () => {
   const dir = join(work, "stale");
-  const stale = await launchChrome(await copyExtension(join(dir, "extension"), { ...settings, PROTOCOL: 0 }), join(dir, "profile"));
+  const stale = await launchChrome([await copyExtension(join(dir, "extension"), { ...settings, PROTOCOL: 0 })], join(dir, "profile"));
   process.env.PI_CODING_AGENT_DIR = join(dir, "agent");
   const old = session("e2e-stale", "stale", { browserDirs: [join(dir, "profile")] });
   process.env.PI_CODING_AGENT_DIR = join(work, "agent");
