@@ -1,7 +1,7 @@
 # Browser Web Store
 **The Job** — Publish Pi Browser to the Chrome Web Store, make pi and the extension keep working when their versions drift apart, and switch `/browser` and the README to the store install (issue #50).
 **The Why** — Two equal pains: installing means Developer mode and Load unpacked, which puts off new users, and every package update needs a manual reload in `chrome://extensions`, and a protocol bump breaks everyone until they do it.
-**The Guardrail** — Every v1 and multi-session gate stays: per-host approval, eval confirmation, http/https-only navigate, per-session group isolation, no tool without UI. No new manifest permissions, now or for #43 Option B later. Load unpacked keeps working as the dev path.
+**The Guardrail** — Every v1 and multi-session gate stays: per-host approval, eval confirmation, http/https-only navigate, per-session group isolation, no tool without UI. No new manifest permissions beyond `scripting` and `<all_urls>` host access (added for #34 to strip other extensions' frames that block the debugger), now or for #43 Option B later. Load unpacked keeps working as the dev path.
 **Done means** — A user installs Pi Browser from the store in one click and pi connects; a later store update of the extension, or a pi update, keeps working without a reload in `chrome://extensions`.
 
 ## Decisions
@@ -24,7 +24,7 @@
 - **Version numbers** — Manifest version is independent of the package version and bumped only when `chrome/` changes, since every store upload needs a higher version `agent`
 - **Unpacked dev path** — The npm package keeps shipping `chrome/`; README's dev path says to remove the store copy first, since both share one ID `agent`
 - **Privacy policy** — `PRIVACY.md` in the package, linked by its GitHub URL; covers the native host and the future localhost transport, the locally stored pairing secret, and that nothing leaves the machine `agent`
-- **Listing text** — Store description and per-permission justifications (`debugger`, `nativeMessaging`, `tabs`, `tabGroups`, `storage`) live in the repo for review, outside the zip `agent`
+- **Listing text** — Store description and per-permission justifications (`debugger`, `scripting`, `<all_urls>` host access, `nativeMessaging`, `tabs`, `tabGroups`, `storage`) live in the repo for review, outside the zip `agent`
 - **Release** — Minor bump to 0.3.0; npm publish waits until the store approves the listing so `/browser`'s link works `agent`
 - **Integration branch** — `integrate/browser-web-store` holds the plan; each phase PRs into it; one final PR to `main`, as before `agent`
 - **Verification budget** — The v1 rules in `plans/browser.md` carry over `agent`
