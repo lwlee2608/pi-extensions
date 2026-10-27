@@ -61,7 +61,7 @@ Then try a read-only first task:
 Open https://example.com and tell me what the page says.
 ```
 
-> **Trust:** the companion has the `debugger` permission in the profile you load it into. Read [`chrome/`](chrome/) before loading it. Consider a separate Chrome profile if you don't want the agent anywhere near your main one.
+> **Trust:** the companion has the `debugger` permission in the profile you load it into, plus `scripting` on all sites, which it uses only to remove other extensions' frames that block the debugger. Read [`chrome/`](chrome/) before loading it. Consider a separate Chrome profile if you don't want the agent anywhere near your main one.
 
 ### Upgrading from 0.1
 
@@ -151,7 +151,7 @@ Once the agent uses `console` on a tab, Chrome reports that tab's console to the
 - No hover and no wheel scrolling: Chrome doesn't answer those events in a tab that isn't in front. `scroll` brings a ref into view instead.
 - Chrome can't load this extension with `--load-extension` anymore; load it unpacked.
 - After updating the package, reload Pi Browser in `chrome://extensions`. A stale extension shows up as not connected, or as a protocol mismatch when the update changed the protocol.
-- Password-manager extensions such as LastPass inject frames into form pages, and Chrome then blocks the debugger on that tab ("Cannot access a chrome-extension:// URL of different extension"). Turn the extension off for that site, or use a Chrome profile without it ([#34](https://github.com/lwlee2608/pi-extensions/issues/34)).
+- Chrome blocks the debugger on any tab holding another extension's frame, which password managers such as LastPass add to form pages. Pi Browser removes those frames and retries, so the password manager's popup is gone on that page. If the extension keeps re-adding its frame, actions fail; turn it off for that site, or use a Chrome profile without it ([#34](https://github.com/lwlee2608/pi-extensions/issues/34)).
 
 ## Troubleshooting
 

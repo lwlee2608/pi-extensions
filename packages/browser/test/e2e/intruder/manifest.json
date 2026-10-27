@@ -1,0 +1,8 @@
+{
+  "manifest_version": 3,
+  "name": "Intruder",
+  "version": "1.0",
+  "description": "Injects its own frame into pages like password managers do, for the Pi Browser e2e tests.",
+  "content_scripts": [{ "matches": ["http://127.0.0.1/*"], "js": ["content.js"] }],
+  "web_accessible_resources": [{ "resources": ["frame.html"], "matches": ["http://127.0.0.1/*"] }]
+}
