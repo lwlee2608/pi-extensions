@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
-import { mkdtemp, readdir, readFile, readlink, rename, rm, stat } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, readlink, rename, rm, stat, writeFile } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
 import { join } from "node:path";
 import test from "node:test";
@@ -65,7 +65,7 @@ function session(id = "e2e", name = id, overrides = {}) {
     if (title.startsWith("Run this JavaScript")) {
       confirmed.push([title, ...options]);
       if (typeof answer !== "boolean") throw new Error(`Unexpected eval prompt: ${title}`);
-      return answer ? options[0] : options.at(-1);
+      return answer ? options[0] : options[1];
     }
     asked.push(title.match(/use (\S+) in Chrome/)![1]);
     if (typeof answer !== "string") throw new Error(`Unexpected prompt: ${title}`);
@@ -582,26 +582,34 @@ test("a tab that changed group while the debugger attached starts fresh on its n
   assert.match(await browser({ action: "network", tabId }), /since the debugger attached/);
 });
 
-test("eval asks with its code shown even on an always host, returns the value, and fails when declined", async () => {
+test("eval runs without asking on an approved host, and asks with its code shown once confirmEval is on", async () => {
   await browser({ action: "navigate", url: at("always", "debug.html"), newTab: true });
-  assert.equal(await browser({ action: "eval", code: "document.title" }, true), "Pi debug");
-  assert.deepEqual(confirmed.splice(0), [["Run this JavaScript in the always.test tab?\ndocument.title", "Run all 1 line", "Always run on always.test", "Never ask again on approved sites", "Don't run"]]);
-  await assert.rejects(browser({ action: "eval", code: "document.title = 'changed'" }, false), /did not allow this eval/);
-  assert.deepEqual(confirmed.splice(0), [["Run this JavaScript in the always.test tab?\ndocument.title = 'changed'", "Run all 1 line", "Always run on always.test", "Never ask again on approved sites", "Don't run"]]);
-  assert.deepEqual(JSON.parse(await browser({ action: "eval", code: "Promise.resolve({ title: document.title, n: 1 })" }, true)), { title: "Pi debug", n: 1 });
-  assert.match(await browser({ action: "eval", code: "missing.call()" }, true), /^Uncaught: ReferenceError: missing is not defined/);
+  assert.equal(await browser({ action: "eval", code: "document.title" }), "Pi debug");
+  assert.deepEqual(JSON.parse(await browser({ action: "eval", code: "Promise.resolve({ title: document.title, n: 1 })" })), { title: "Pi debug", n: 1 });
+  assert.match(await browser({ action: "eval", code: "missing.call()" }), /^Uncaught: ReferenceError: missing is not defined/);
   for (let i = 0; i < 2; i++) {
-    assert.equal(await browser({ action: "eval", code: "const heading = await Promise.resolve(document.querySelector('h1'));\nheading.textContent" }, true), "Debug fixture");
+    assert.equal(await browser({ action: "eval", code: "const heading = await Promise.resolve(document.querySelector('h1'));\nheading.textContent" }), "Debug fixture");
   }
-  confirmed.splice(0);
+  const saved = JSON.parse(await readFile(configPath, "utf8"));
+  await writeFile(configPath, JSON.stringify({ ...saved, confirmEval: true }));
+  try {
+    assert.equal(await browser({ action: "eval", code: "document.title" }, true), "Pi debug");
+    await assert.rejects(browser({ action: "eval", code: "document.title = 'changed'" }, false), /did not allow this eval/);
+    assert.deepEqual(confirmed.splice(0), [
+      ["Run this JavaScript in the always.test tab?\ndocument.title", "Run all 1 line", "Don't run"],
+      ["Run this JavaScript in the always.test tab?\ndocument.title = 'changed'", "Run all 1 line", "Don't run"],
+    ]);
+  } finally {
+    await writeFile(configPath, JSON.stringify(saved));
+  }
   assert.deepEqual(asked, [], "eval adds its confirm, not a host prompt");
 });
 
 test("an eval that opens a dialog fails at once instead of hanging", async () => {
-  await assert.rejects(browser({ action: "eval", code: "confirm('Sure?')" }, true), /opened a confirm dialog/);
+  await assert.rejects(browser({ action: "eval", code: "confirm('Sure?')" }), /opened a confirm dialog/);
   const tabId = await inWorker(`chrome.tabs.query({ url: "${at("always", "debug.html")}" }).then(tabs => tabs.at(-1).id)`);
   await inWorker(`chrome.debugger.sendCommand({ tabId: ${tabId} }, "Page.handleJavaScriptDialog", { accept: false })`);
-  assert.equal(await browser({ action: "eval", code: "1 + 1" }, true), "2");
+  assert.equal(await browser({ action: "eval", code: "1 + 1" }), "2");
 });
 
 test("after a debugging cancel every call fails at once, across a worker restart, until it is allowed again", async () => {

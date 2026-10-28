@@ -85,7 +85,7 @@ The agent gets one `browser` tool:
 | `screenshot` | JPEG of a pi tab's visible area at CSS pixel size, so high-density screens don't produce oversized images. Brings that tab to the front of its window first. Also saved to a private `pi-browser-*` folder in the system temp dir; the result gives the path. |
 | `console` | Console messages, uncaught exceptions, and Chrome's own warnings from the tab's current page. |
 | `network` | Requests from the tab's current page: method, status, type, and URL. Never headers or bodies. |
-| `eval` | Run JavaScript in the page's main frame like the DevTools console, and return the last value as JSON, awaiting a promise. You confirm the code every time. |
+| `eval` | Run JavaScript in the page's main frame like the DevTools console, and return the last value as JSON, awaiting a promise. Runs without asking on approved sites unless you turn on **Ask before eval** in `/browser settings`. |
 
 Page actions take an optional tab id and default to the current pi tab. Refs come from the tab's last `read` and go stale when the page navigates (or, for refs inside a frame, when that frame does); the agent reads again to get fresh ones. `click`, `type`, and `keys` don't wait for a page they trigger to load; the agent reads to see the result.
 
@@ -94,6 +94,7 @@ Page actions take an optional tab id and default to the current pi tab. Refs com
 | Command | Result |
 | --- | --- |
 | `/browser` | Extension path, connection state, the connected browser, and your group, like "Your group: pi · api (red)". |
+| `/browser settings` | Turn **Ask before eval** on or off, remove one approved site, or forget all approved sites. |
 
 ### Site approval
 
@@ -101,17 +102,10 @@ The first action on a new host, reads included, asks you in Pi:
 
 - **Allow once:** this action only.
 - **This session:** until the session ends.
-- **Always:** saved to `~/.pi/agent/pi-browser/config.json` (under `PI_CODING_AGENT_DIR` when set) as `{ "allowedHosts": ["example.com"] }`. Remove a host there to revoke it; the file is read on every action.
+- **Always:** saved to `~/.pi/agent/pi-browser/config.json` (under `PI_CODING_AGENT_DIR` when set) as `{ "allowedHosts": ["example.com"] }`. Remove a host with `/browser settings`, or edit the file; it is read on every action.
 - **Deny:** the action fails. The next action on that host asks again.
 
-Approval matches the exact hostname, so `github.com` doesn't cover `gist.github.com`. It covers the tab's page and the same-site frames inside it, so a `github.com` page that embeds a `gist.github.com` frame shows that frame's text too. `read` skips cross-site frames, but `screenshot` shows whatever is visible in the tab, cross-site frames included. It is checked against the tab's page before every action, against the target before every navigation, and against where the page ended up after it, so a redirect or link to a new host asks again. `tabs` asks nothing; a pi tab on a host you haven't approved shows only its host, never its title or full URL. `eval` asks separately, even on an "always" host: after the host check, Pi shows you the code and offers:
-
-- **Run all N lines:** run this eval only.
-- **Always run on <host>:** adds the host to `"evalHosts"` in the same `config.json`; later evals there run without asking.
-- **Never ask again on approved sites:** sets `"confirmEval": false` in `config.json`; evals run without asking on every host you've approved. New hosts still ask for site approval.
-- **Don't run:** the call fails.
-
-Set `"confirmEval": true`, or remove a host from `"evalHosts"`, to be asked again. Only skip the eval prompt for sites you trust or control, like `localhost`: a page can carry text that steers the agent into an eval that reads your cookies or sends them elsewhere. Eval code is capped at 20 lines and 1,500 characters, may not have two blank lines in a row, and may not contain invisible or control characters other than newline and tab. On a short terminal the top of the code can still scroll out of view, so check that the line count in that option matches the code you see.
+Approval matches the exact hostname, so `github.com` doesn't cover `gist.github.com`. It covers the tab's page and the same-site frames inside it, so a `github.com` page that embeds a `gist.github.com` frame shows that frame's text too. `read` skips cross-site frames, but `screenshot` shows whatever is visible in the tab, cross-site frames included. It is checked against the tab's page before every action, against the target before every navigation, and against where the page ended up after it, so a redirect or link to a new host asks again. `tabs` asks nothing; a pi tab on a host you haven't approved shows only its host, never its title or full URL. `eval` doesn't ask on its own: once a site is approved, eval runs there like any other action, as in Claude in Chrome. A page can carry text that steers the agent into an eval that reads your cookies or sends them elsewhere, so turn on **Ask before eval** in `/browser settings` if you use the browser on sites you don't trust. Then Pi shows you the code and runs it only if you pick **Run all N lines**; anything else fails the call. Eval code is capped at 20 lines and 1,500 characters, may not have two blank lines in a row, and may not contain invisible or control characters other than newline and tab. On a short terminal the top of the code can still scroll out of view, so check that the line count in that option matches the code you see.
 
 A pi tab showing anything other than an `http`/`https` page, such as `about:blank`, `data:`, or `chrome:`, has no host to approve, so every action on it is refused and `tabs` shows only its scheme. That stops a page from writing into a blank tab it opened and having the agent read it unasked. Navigate the tab to use it again.
 

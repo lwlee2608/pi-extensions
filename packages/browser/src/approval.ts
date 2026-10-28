@@ -1,4 +1,4 @@
-import { addHost, loadConfirmEval, loadHosts, stopConfirmingEval } from "./config.ts";
+import { addHost, loadConfirmEval, loadHosts, removeHosts } from "./config.ts";
 
 export type Choice = "once" | "session" | "always" | "deny";
 export type Ask = (host: string) => Promise<Choice>;
@@ -23,6 +23,16 @@ export class Approvals {
 
   reset(): void {
     this.session.clear();
+  }
+
+  async hosts(): Promise<string[]> {
+    return [...new Set([...await loadHosts(this.configPath), ...this.session])];
+  }
+
+  async forget(host?: string): Promise<void> {
+    if (host === undefined) this.session.clear();
+    else this.session.delete(host);
+    await removeHosts(this.configPath, host);
   }
 
   async allowed(url: string, granted: Set<string>): Promise<boolean> {
@@ -57,12 +67,7 @@ export async function confirmEval(code: string | undefined, host: string, choose
     throw new Error(`eval code is limited to ${EVAL_MAX_LINES} lines and ${EVAL_MAX_CHARS} characters so the user can see all of it.`);
   }
   if (lines.some((line, i) => !line.trim() && i > 0 && !lines[i - 1].trim())) throw new Error("eval code may not have two blank lines in a row.");
-  if (!(await loadConfirmEval(configPath)) || (await loadHosts(configPath, "evalHosts")).includes(host)) return;
+  if (!(await loadConfirmEval(configPath))) return;
   const run = `Run all ${lines.length} line${lines.length === 1 ? "" : "s"}`;
-  const always = `Always run on ${host}`;
-  const never = "Never ask again on approved sites";
-  const choice = await choose(`Run this JavaScript in the ${host} tab?\n${code}`, [run, always, never, "Don't run"]);
-  if (choice === always) await addHost(configPath, host, "evalHosts");
-  else if (choice === never) await stopConfirmingEval(configPath);
-  else if (choice !== run) throw new Error("The user did not allow this eval.");
+  if (await choose(`Run this JavaScript in the ${host} tab?\n${code}`, [run, "Don't run"]) !== run) throw new Error("The user did not allow this eval.");
 }

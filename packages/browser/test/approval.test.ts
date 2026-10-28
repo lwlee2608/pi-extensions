@@ -5,7 +5,7 @@ import { dirname, join } from "node:path";
 import test from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Approvals, confirmEval, type Choice } from "../src/approval.ts";
-import { loadHosts } from "../src/config.ts";
+import { loadHosts, setConfirmEval } from "../src/config.ts";
 import { browserExtension, given, listTabs, truncate } from "../src/index.ts";
 
 const dir = await mkdtemp(join(tmpdir(), "pi-browser-approval-"));
@@ -106,57 +106,46 @@ test("the config can be hand-edited and is checked on every action", async () =>
   await assert.rejects(loadHosts(path), /array of hostnames/);
 });
 
-test("eval shows its code, host, and line count and runs only when a run option is chosen", async () => {
+test("eval runs without asking by default, and asks with its code, host, and line count once confirmEval is on", async () => {
   const shown: [string, string[]][] = [];
   const answers = ["Run all 1 line", "Don't run", undefined, "Run all 2 lines"];
   const choose = async (title: string, options: string[]) => { shown.push([title, options]); return answers.shift(); };
   const path = config();
   await confirmEval("document.title", "example.com", choose, path);
+  assert.deepEqual(shown, []);
+  await setConfirmEval(path, true);
+  await confirmEval("document.title", "example.com", choose, path);
   await assert.rejects(confirmEval("document.cookie", "example.com", choose, path), /did not allow this eval/);
   await assert.rejects(confirmEval("document.cookie", "example.com", choose, path), /did not allow this eval/);
   await confirmEval("const a = 1;\n\ta;", "example.com", choose, path);
   await assert.rejects(confirmEval("  ", "example.com", choose, path), /eval needs code/);
-  const options = (run: string) => [run, "Always run on example.com", "Never ask again on approved sites", "Don't run"];
   assert.deepEqual(shown, [
-    ["Run this JavaScript in the example.com tab?\ndocument.title", options("Run all 1 line")],
-    ["Run this JavaScript in the example.com tab?\ndocument.cookie", options("Run all 1 line")],
-    ["Run this JavaScript in the example.com tab?\ndocument.cookie", options("Run all 1 line")],
-    ["Run this JavaScript in the example.com tab?\nconst a = 1;\n\ta;", options("Run all 2 lines")],
+    ["Run this JavaScript in the example.com tab?\ndocument.title", ["Run all 1 line", "Don't run"]],
+    ["Run this JavaScript in the example.com tab?\ndocument.cookie", ["Run all 1 line", "Don't run"]],
+    ["Run this JavaScript in the example.com tab?\ndocument.cookie", ["Run all 1 line", "Don't run"]],
+    ["Run this JavaScript in the example.com tab?\nconst a = 1;\n\ta;", ["Run all 2 lines", "Don't run"]],
   ]);
-  assert.deepEqual(await loadHosts(path, "evalHosts"), []);
-});
-
-test("always run on a host saves it to evalHosts, keeps allowedHosts, and later evals there do not ask", async () => {
-  const path = config();
-  await new Approvals(path).approve("https://example.com/", asker("always").ask, new Set());
-  const shown: string[] = [];
-  const choose = async (title: string, options: string[]) => { shown.push(title); return options[1]; };
-  await confirmEval("document.title", "example.com", choose, path);
-  assert.deepEqual(JSON.parse(await readFile(path, "utf8")), { allowedHosts: ["example.com"], evalHosts: ["example.com"] });
-  await confirmEval("document.cookie", "example.com", choose, path);
-  await confirmEval("document.cookie", "other.example", choose, path);
-  assert.deepEqual(shown, ["Run this JavaScript in the example.com tab?\ndocument.title", "Run this JavaScript in the other.example tab?\ndocument.cookie"]);
-  await assert.rejects(confirmEval("a\u200bb", "example.com", choose, path), /invisible or control characters/);
-  await writeFile(path, JSON.stringify({ evalHosts: "example.com" }));
-  await assert.rejects(confirmEval("document.title", "example.com", choose, path), /"evalHosts" to be an array/);
-});
-
-test("never ask again turns eval confirmation off for every host, and confirmEval can be hand-edited", async () => {
-  const path = config();
-  await new Approvals(path).approve("https://example.com/", asker("always").ask, new Set());
-  const shown: string[] = [];
-  const choose = async (title: string, options: string[]) => { shown.push(title); return options[2]; };
-  await confirmEval("document.title", "example.com", choose, path);
-  assert.deepEqual(JSON.parse(await readFile(path, "utf8")), { allowedHosts: ["example.com"], confirmEval: false });
-  await confirmEval("document.cookie", "example.com", choose, path);
-  await confirmEval("document.cookie", "other.example", choose, path);
-  assert.deepEqual(shown, ["Run this JavaScript in the example.com tab?\ndocument.title"]);
-  await assert.rejects(confirmEval("a\u200bb", "example.com", choose, path), /invisible or control characters/);
-  await writeFile(path, JSON.stringify({ confirmEval: true }));
-  await confirmEval("document.title", "example.com", choose, path);
-  assert.equal(shown.length, 2);
   await writeFile(path, JSON.stringify({ confirmEval: "no" }));
   await assert.rejects(confirmEval("document.title", "example.com", choose, path), /"confirmEval" to be true or false/);
+});
+
+test("settings writes keep the other keys, and forgetting a site drops it from the config and this session", async () => {
+  const path = config();
+  const approvals = new Approvals(path);
+  const { asked, ask } = asker("always", "always", "session", "once", "once", "once");
+  for (const host of ["a.test", "b.test", "c.test"]) await approvals.approve(`https://${host}/`, ask, new Set());
+  await setConfirmEval(path, true);
+  assert.deepEqual(JSON.parse(await readFile(path, "utf8")), { allowedHosts: ["a.test", "b.test"], confirmEval: true });
+  assert.deepEqual(await approvals.hosts(), ["a.test", "b.test", "c.test"]);
+  await approvals.forget("a.test");
+  await approvals.forget("c.test");
+  assert.deepEqual(await approvals.hosts(), ["b.test"]);
+  await approvals.approve("https://a.test/", ask, new Set());
+  await approvals.approve("https://c.test/", ask, new Set());
+  await approvals.forget();
+  assert.deepEqual(JSON.parse(await readFile(path, "utf8")), { allowedHosts: [], confirmEval: true });
+  await approvals.approve("https://b.test/", ask, new Set());
+  assert.deepEqual(asked, ["a.test", "b.test", "c.test", "a.test", "c.test", "b.test"]);
 });
 
 test("eval refuses code that could hide part of itself from the prompt", async () => {

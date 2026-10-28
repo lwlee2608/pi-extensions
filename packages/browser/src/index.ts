@@ -5,6 +5,7 @@ import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
 import { Approvals, confirmEval, hostOf, parse, type Choice } from "./approval.ts";
+import { loadConfirmEval, setConfirmEval } from "./config.ts";
 import { Bridge, listenSocket, type BridgeOptions } from "./bridge.ts";
 import { detectBrowserDirs, installHost } from "./install.ts";
 
@@ -119,6 +120,7 @@ export function browserExtension({ browserDirs, platform = process.platform, ...
       if (info instanceof Error) return [...lines, `Chrome: connected, but its status failed: ${info.message}`].join("\n");
       const { browser, group } = info as Status;
       lines.push(`Connected browser: ${browser}`, group ? `Your group: ${group.title} (${group.color})` : "Your group: none yet; it opens on the agent's first navigate.");
+      lines.push("Change eval and site approvals with /browser settings.");
       return lines.join("\n");
     }
 
@@ -144,7 +146,7 @@ export function browserExtension({ browserDirs, platform = process.platform, ...
         + "where [n] marks an element ref. click, type, and keys act on a ref with real input events; scroll brings a ref into view; "
         + "screenshot returns a JPEG of the tab, bringing it to the front of its window, and saves it to a file whose path it gives. console and network list the tab's console messages "
         + "and requests (method, status, type, URL) since its page loaded, newest last; when the debugger attached after the page loaded, network says so and only a reload shows every request. eval runs code in the page and returns its JSON value; "
-        + "the user confirms each eval with the code shown, unless they turned that off for the host or for all approved hosts. Refs go stale when the page navigates; "
+        + "eval runs on approved hosts without asking unless the user turned on eval confirmation, which shows them the code. Refs go stale when the page navigates; "
         + "read again. Actions do not wait for a page they trigger to load; read to see the result. The user approves each new host; "
         + "if they deny one, or decline an eval, the call fails and you should not retry it. "
         + `Output is truncated to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)}.`,
@@ -183,12 +185,37 @@ export function browserExtension({ browserDirs, platform = process.platform, ...
       },
     });
 
+    async function settings(ctx: ExtensionContext): Promise<string | undefined> {
+      const confirm = await loadConfirmEval(configPath);
+      const hosts = await approvals.hosts();
+      const toggle = `Ask before eval: ${confirm ? "on" : "off"}`;
+      const remove = "Remove an approved site";
+      const forget = `Forget all approved sites (${hosts.length})`;
+      const choice = await ctx.ui.select("Browser settings", hosts.length ? [toggle, remove, forget] : [toggle]);
+      if (choice === toggle) {
+        await setConfirmEval(configPath, !confirm);
+        return confirm ? "Eval now runs without asking on approved sites." : "Eval now asks before running.";
+      }
+      if (choice === remove) {
+        const host = await ctx.ui.select("Remove which site?", hosts);
+        if (!host) return;
+        await approvals.forget(host);
+        return `Removed ${host}; the agent asks before using it again.`;
+      }
+      if (choice === forget) {
+        await approvals.forget();
+        return "Forgot all approved sites; the agent asks before using each one again.";
+      }
+    }
+
     pi.registerCommand("browser", {
-      description: "Browser status",
+      description: "Browser status; /browser settings to change approvals",
       handler: async (args, ctx) => {
-        if (args.trim() !== "") { ctx.ui.notify("Usage: /browser", "warning"); return; }
+        const sub = args.trim();
+        if (sub !== "" && sub !== "settings") { ctx.ui.notify("Usage: /browser [settings]", "warning"); return; }
         try {
-          ctx.ui.notify(await status(use(ctx)), "info");
+          const text = sub === "settings" ? await settings(ctx) : await status(use(ctx));
+          if (text) ctx.ui.notify(text, "info");
         } catch (error) {
           ctx.ui.notify((error as Error).message, "warning");
         }
