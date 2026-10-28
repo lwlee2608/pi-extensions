@@ -23,10 +23,23 @@ export async function loadHosts(path: string, list: HostList = "allowedHosts"): 
   return hostsOf(path, await load(path), list);
 }
 
+export async function loadConfirmEval(path: string): Promise<boolean> {
+  const value = (await load(path)).confirmEval ?? true;
+  if (typeof value !== "boolean") throw new Error(`${path} needs "confirmEval" to be true or false.`);
+  return value;
+}
+
+async function save(path: string, config: Record<string, unknown>): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, `${JSON.stringify(config, null, 2)}\n`);
+}
+
 export async function addHost(path: string, host: string, list: HostList = "allowedHosts"): Promise<void> {
   const config = await load(path);
   const hosts = hostsOf(path, config, list);
-  if (hosts.includes(host)) return;
-  await mkdir(dirname(path), { recursive: true });
-  await writeFile(path, `${JSON.stringify({ ...config, [list]: [...hosts, host] }, null, 2)}\n`);
+  if (!hosts.includes(host)) await save(path, { ...config, [list]: [...hosts, host] });
+}
+
+export async function stopConfirmingEval(path: string): Promise<void> {
+  await save(path, { ...await load(path), confirmEval: false });
 }

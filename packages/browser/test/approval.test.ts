@@ -116,7 +116,7 @@ test("eval shows its code, host, and line count and runs only when a run option 
   await assert.rejects(confirmEval("document.cookie", "example.com", choose, path), /did not allow this eval/);
   await confirmEval("const a = 1;\n\ta;", "example.com", choose, path);
   await assert.rejects(confirmEval("  ", "example.com", choose, path), /eval needs code/);
-  const options = (run: string) => [run, "Always run on example.com", "Don't run"];
+  const options = (run: string) => [run, "Always run on example.com", "Never ask again on approved sites", "Don't run"];
   assert.deepEqual(shown, [
     ["Run this JavaScript in the example.com tab?\ndocument.title", options("Run all 1 line")],
     ["Run this JavaScript in the example.com tab?\ndocument.cookie", options("Run all 1 line")],
@@ -139,6 +139,24 @@ test("always run on a host saves it to evalHosts, keeps allowedHosts, and later 
   await assert.rejects(confirmEval("a\u200bb", "example.com", choose, path), /invisible or control characters/);
   await writeFile(path, JSON.stringify({ evalHosts: "example.com" }));
   await assert.rejects(confirmEval("document.title", "example.com", choose, path), /"evalHosts" to be an array/);
+});
+
+test("never ask again turns eval confirmation off for every host, and confirmEval can be hand-edited", async () => {
+  const path = config();
+  await new Approvals(path).approve("https://example.com/", asker("always").ask, new Set());
+  const shown: string[] = [];
+  const choose = async (title: string, options: string[]) => { shown.push(title); return options[2]; };
+  await confirmEval("document.title", "example.com", choose, path);
+  assert.deepEqual(JSON.parse(await readFile(path, "utf8")), { allowedHosts: ["example.com"], confirmEval: false });
+  await confirmEval("document.cookie", "example.com", choose, path);
+  await confirmEval("document.cookie", "other.example", choose, path);
+  assert.deepEqual(shown, ["Run this JavaScript in the example.com tab?\ndocument.title"]);
+  await assert.rejects(confirmEval("a\u200bb", "example.com", choose, path), /invisible or control characters/);
+  await writeFile(path, JSON.stringify({ confirmEval: true }));
+  await confirmEval("document.title", "example.com", choose, path);
+  assert.equal(shown.length, 2);
+  await writeFile(path, JSON.stringify({ confirmEval: "no" }));
+  await assert.rejects(confirmEval("document.title", "example.com", choose, path), /"confirmEval" to be true or false/);
 });
 
 test("eval refuses code that could hide part of itself from the prompt", async () => {
