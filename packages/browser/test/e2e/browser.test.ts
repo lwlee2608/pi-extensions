@@ -398,6 +398,8 @@ test("click refuses a ref whose center another element covers, naming it, and cl
   assert.equal(await inPage(url, "clicks"), 0);
   assert.match(await browser({ action: "click", ref: ref(page, 'checkbox "Agree"') }), /^Clicked/);
   assert.equal(await inPage(url, "agree.checked"), true);
+  for (const label of ["Slotted label", "Slotted text"]) await browser({ action: "click", ref: ref(page, `button "${label}"`) });
+  assert.deepEqual(await inPage(url, "slotted"), ["Slotted label", "Slotted text"]);
 });
 
 test("scroll brings a ref below the fold into view", async () => {

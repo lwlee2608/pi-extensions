@@ -559,7 +559,7 @@ async function uncovered(tabId, ref, at) {
       const resolve = async backendNodeId => (await cdp(tabId, "DOM.resolveNode", { backendNodeId, objectGroup })).object.objectId;
       const { result } = await cdp(tabId, "Runtime.callFunctionOn", {
         objectId: await resolve(ref), arguments: [{ objectId: await resolve(hit.backendNodeId) }], returnByValue: true,
-        functionDeclaration: "function (hit) { for (let node = hit; node; node = node.parentNode ?? node.host) if (node === this || [...this.labels ?? []].includes(node)) return true; return false; }",
+        functionDeclaration: "function (hit) { if (this.getRootNode().host === hit) return true; for (let node = hit; node; node = node.assignedSlot ?? node.parentNode ?? node.host) if (node === this || [...this.labels ?? []].includes(node)) return true; return false; }",
       });
       if (result.value) return;
     } finally {
