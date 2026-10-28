@@ -544,7 +544,7 @@ function inFront(tab, run) {
   return serial(`window ${tab.windowId}`, async () => {
     await chrome.tabs.update(tab.id, { active: true });
     const { result } = await cdp(tab.id, "Runtime.evaluate", { expression: "document.visibilityState", returnByValue: true });
-    if (result.value !== "visible") throw new Error(`Tab ${tab.id} is hidden, likely because its window is minimized, and Chrome drops clicks and key presses there. Ask the user to restore the window.`);
+    if (result.value !== "visible") throw new Error(`Tab ${tab.id}'s window is hidden (minimized, fully covered, on another desktop, or the screen is locked), and Chrome drops clicks and key presses there. Ask the user to bring that window into view.`);
     return run();
   });
 }

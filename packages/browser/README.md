@@ -150,7 +150,7 @@ Once the agent uses `console` on a tab, Chrome reports that tab's console to the
 - Cross-origin iframes, native dialogs, file pickers, password-manager popups, passkeys, and CAPTCHAs are out of reach.
 - An action or `eval` that opens an `alert`, `confirm`, or `prompt` dialog fails at once and leaves the dialog for you to answer in Chrome; the tab is blocked until you do.
 - No hover and no wheel scrolling: Chrome doesn't answer those events in a tab that isn't in front. `scroll` brings a ref into view instead.
-- Chrome drops clicks and key presses in a tab that isn't in front, so `click` and `keys` switch to the pi tab in its window. In a minimized window they fail until you restore it.
+- Chrome drops clicks and key presses in a tab that isn't in front, so `click` and `keys` switch to the pi tab in its window. In a hidden window (minimized, fully covered, on another desktop, or with the screen locked) they fail until you bring it into view.
 - Chrome can't load this extension with `--load-extension` anymore; load it unpacked.
 - After updating the package, reload Pi Browser in `chrome://extensions`. A stale extension shows up as not connected, or as a protocol mismatch when the update changed the protocol.
 - Chrome blocks the debugger on any tab holding another extension's frame, which password managers such as LastPass add to form pages. Pi Browser removes those frames and retries, so the password manager's popup is gone on that page. If a frame can't be removed, actions fail; turn it off for that site, or use a Chrome profile without it ([#34](https://github.com/lwlee2608/pi-extensions/issues/34)).
