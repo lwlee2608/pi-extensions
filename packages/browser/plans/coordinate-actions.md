@@ -11,7 +11,7 @@
 - **Coordinate space** — x,y are pixels in the extension's own screenshot. The extension captures at a size models do not shrink, states the image's width and height in the result, and maps points back to the page itself; the model never scales
 - **Cross-site frames at a point** — Before acting, find the frame under each point; if its host differs from the tab's, it needs approval like any new host, with the same choices
 - **Demo** — User runs a short script in their own Chrome on real sites
-- **Pointer actions on a tab not in front** — Hover, drag, and wheel bring the pi tab to the front of its window first, as `screenshot` does; click and type at a point do not
+- **Pointer actions on a tab not in front** — Hover, drag, and wheel bring the pi tab to the front of its window first, as `screenshot` and `click` do; type at a point does not
 - **Tool shape** — `click`, `type`, and `scroll` take either a ref or a point, never both; new actions `hover`, `drag`, and `zoom`. `click` gains a button (left or right) and a click count (1–3), for refs too `agent`
 - **Which screenshot a point refers to** — The tab's last screenshot; its scale is kept per tab. A point action on a tab with no screenshot fails and asks for one. Points are not invalidated on scroll or navigation; the tool description says to screenshot again after the page moves `agent`
 - **Capture size** — Long edge at most 1568 px and about 1.15 megapixels, which Anthropic models take unshrunk and pi's 2000 px default leaves alone; Chrome scales during capture. Providers that shrink further on their side (OpenAI's 768 px short side) can still skew points; accepted and noted in README Limits `agent`
@@ -28,7 +28,7 @@
 - **Phase e2e tags** — Each phase's new e2e case names start with its tag (`points:`, `frames:`, `pointer:`, `zoom:`) so its Verify runs only those cases `agent`
 - **Verification budget** — See `## Verification budget`; it binds every phase, review round, and merge `agent`
 - **Pi resizes tool images** — pi normalizes tool-result images (default max 2000×2000, or the model's own limit) and adds a "multiply coordinates by N" note when it shrinks one; providers may shrink again without a note `research`
-- **Background tabs** — Chrome does not answer mouse moves or wheel events in a tab that is not in front (README Limits); `screenshot` already brings its tab to the front `research`
+- **Background tabs** — Chrome does not answer mouse moves or wheel events in a tab that is not in front, and drops clicks and key presses there (README Limits, #54); `screenshot`, `click`, and `keys` already bring their tab to the front `research`
 - **Input routing** — `Input.dispatchMouseEvent` on the tab's target takes main-viewport CSS pixels and Chrome routes it into any frame under the point, cross-site ones included `research`
 
 ## Verification budget
