@@ -1,4 +1,6 @@
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, getAgentDir, truncateHead, truncateTail, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
@@ -54,6 +56,15 @@ export async function listTabs({ tabs, others }: TabList, allowed: (url: string)
 
 export function given<T extends object>(params: T): T {
   return Object.fromEntries(Object.entries(params).filter(([, value]) => value !== 0 && value !== "")) as T;
+}
+
+let screenshots: Promise<string> | undefined;
+
+async function saveScreenshot(data: string, tabId: number): Promise<string> {
+  screenshots ??= mkdtemp(join(tmpdir(), "pi-browser-"));
+  const file = join(await screenshots, `${tabId}-${Date.now()}.jpg`);
+  await writeFile(file, Buffer.from(data, "base64"));
+  return file;
 }
 
 function loaded(url: string): string {
@@ -130,7 +141,7 @@ export function browserExtension({ browserDirs, platform = process.platform, ...
         + "a tab on a host the user has not approved shows only its host; a non-http(s) tab shows only its scheme and is refused until navigated); "
         + "navigate loads an http/https URL in the current pi tab, or a new one with newTab; read returns the page as an accessibility tree "
         + "where [n] marks an element ref. click, type, and keys act on a ref with real input events; scroll brings a ref into view; "
-        + "screenshot returns a JPEG of the tab, bringing it to the front of its window. console and network list the tab's console messages "
+        + "screenshot returns a JPEG of the tab, bringing it to the front of its window, and saves it to a file whose path it gives. console and network list the tab's console messages "
         + "and requests (method, status, type, URL) since its page loaded, newest last; when the debugger attached after the page loaded, network says so and only a reload shows every request. eval runs code in the page and returns its JSON value; "
         + "the user confirms every eval with the code shown. Refs go stale when the page navigates; "
         + "read again. Actions do not wait for a page they trigger to load; read to see the result. The user approves each new host; "
@@ -163,9 +174,11 @@ export function browserExtension({ browserDirs, platform = process.platform, ...
         }
         const page = await bridge.call(action, params, signal) as { url: string; text: string; data?: string };
         await approve(loaded(page.url));
-        const image = page.data ? [{ type: "image" as const, data: page.data, mimeType: "image/jpeg" }] : [];
-        const text = truncate(page.text, action === "console" || action === "network");
-        return { content: [{ type: "text" as const, text }, ...image], details: undefined };
+        if (page.data) {
+          const file = await saveScreenshot(page.data, params.tabId!);
+          return { content: [{ type: "text" as const, text: `${page.text} Saved to ${file}` }, { type: "image" as const, data: page.data, mimeType: "image/jpeg" }], details: undefined };
+        }
+        return { content: [{ type: "text" as const, text: truncate(page.text, action === "console" || action === "network") }], details: undefined };
       },
     });
 
