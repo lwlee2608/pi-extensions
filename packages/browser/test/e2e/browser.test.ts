@@ -387,8 +387,9 @@ test("screenshot brings a pi tab behind another tab to the front and returns a C
   const tabId = await inWorker(`chrome.tabs.query({ url: "${form}" }).then(tabs => tabs.at(-1).id)`);
   await inWorker(`chrome.tabs.get(${tabId}).then(tab => chrome.tabs.create({ windowId: tab.windowId, url: "${site}other.html", active: true }))`);
   const { content } = await call({ action: "screenshot", tabId });
-  assert.match(content[0].text, new RegExp(`^Screenshot in tab ${tabId}\\.$`));
+  const [, file] = content[0].text.match(new RegExp(`^Screenshot in tab ${tabId}\\. Saved to (.+\\.jpg)$`));
   assert.equal(content[1].mimeType, "image/jpeg");
+  assert.equal((await readFile(file)).toString("base64"), content[1].data);
   assert.equal(await inWorker(`chrome.tabs.get(${tabId}).then(tab => tab.active)`), true);
   const [width, height, r, g, b] = await decode(content[1]);
   const [cssWidth, ratio] = await inPage(form, "[innerWidth, devicePixelRatio]");
