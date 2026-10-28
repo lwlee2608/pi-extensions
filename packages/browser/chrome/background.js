@@ -78,8 +78,7 @@ const handlers = {
         await cdp(tab.id, "Input.dispatchMouseEvent", { type: "mousePressed", ...at, button: "left", clickCount: 1 });
         await cdp(tab.id, "Input.dispatchMouseEvent", { type: "mouseReleased", ...at, button: "left", clickCount: 1 });
       });
-    });
-    overlay(tab.id, "show");
+    }).finally(() => { overlay(tab.id, "show"); });
     return acted(tab.id, `Clicked [${ref}]`);
   },
 
