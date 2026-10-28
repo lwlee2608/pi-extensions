@@ -88,7 +88,8 @@ export function browserExtension({ browserDirs, platform = process.platform, ...
   return pi => {
     let session: ExtensionContext | undefined;
     let used = false;
-    const approvals = new Approvals(join(getAgentDir(), "pi-browser", "config.json"));
+    const configPath = join(getAgentDir(), "pi-browser", "config.json");
+    const approvals = new Approvals(configPath);
     const sessions = join(getAgentDir(), "pi-browser", "sessions");
     const bridge = new Bridge({
       transport: async handlers => {
@@ -143,7 +144,7 @@ export function browserExtension({ browserDirs, platform = process.platform, ...
         + "where [n] marks an element ref. click, type, and keys act on a ref with real input events; scroll brings a ref into view; "
         + "screenshot returns a JPEG of the tab, bringing it to the front of its window, and saves it to a file whose path it gives. console and network list the tab's console messages "
         + "and requests (method, status, type, URL) since its page loaded, newest last; when the debugger attached after the page loaded, network says so and only a reload shows every request. eval runs code in the page and returns its JSON value; "
-        + "the user confirms every eval with the code shown. Refs go stale when the page navigates; "
+        + "the user confirms each eval with the code shown, unless they always allow eval on that host. Refs go stale when the page navigates; "
         + "read again. Actions do not wait for a page they trigger to load; read to see the result. The user approves each new host; "
         + "if they deny one, or decline an eval, the call fails and you should not retry it. "
         + `Output is truncated to ${DEFAULT_MAX_LINES} lines or ${formatSize(DEFAULT_MAX_BYTES)}.`,
@@ -168,7 +169,7 @@ export function browserExtension({ browserDirs, platform = process.platform, ...
           params.tabId = tab.id;
           if (action === "eval") {
             const host = hostOf(tab.url)!;
-            await confirmEval(params.code, host, (title, options) => ctx.ui.select(title, options, { signal }));
+            await confirmEval(params.code, host, (title, options) => ctx.ui.select(title, options, { signal }), configPath);
             Object.assign(params, { host });
           }
         }

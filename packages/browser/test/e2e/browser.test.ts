@@ -65,7 +65,7 @@ function session(id = "e2e", name = id, overrides = {}) {
     if (title.startsWith("Run this JavaScript")) {
       confirmed.push([title, ...options]);
       if (typeof answer !== "boolean") throw new Error(`Unexpected eval prompt: ${title}`);
-      return answer ? options[0] : options[1];
+      return answer ? options[0] : options.at(-1);
     }
     asked.push(title.match(/use (\S+) in Chrome/)![1]);
     if (typeof answer !== "string") throw new Error(`Unexpected prompt: ${title}`);
@@ -585,9 +585,9 @@ test("a tab that changed group while the debugger attached starts fresh on its n
 test("eval asks with its code shown even on an always host, returns the value, and fails when declined", async () => {
   await browser({ action: "navigate", url: at("always", "debug.html"), newTab: true });
   assert.equal(await browser({ action: "eval", code: "document.title" }, true), "Pi debug");
-  assert.deepEqual(confirmed.splice(0), [["Run this JavaScript in the always.test tab?\ndocument.title", "Run all 1 line", "Don't run"]]);
+  assert.deepEqual(confirmed.splice(0), [["Run this JavaScript in the always.test tab?\ndocument.title", "Run all 1 line", "Always run on always.test", "Don't run"]]);
   await assert.rejects(browser({ action: "eval", code: "document.title = 'changed'" }, false), /did not allow this eval/);
-  assert.deepEqual(confirmed.splice(0), [["Run this JavaScript in the always.test tab?\ndocument.title = 'changed'", "Run all 1 line", "Don't run"]]);
+  assert.deepEqual(confirmed.splice(0), [["Run this JavaScript in the always.test tab?\ndocument.title = 'changed'", "Run all 1 line", "Always run on always.test", "Don't run"]]);
   assert.deepEqual(JSON.parse(await browser({ action: "eval", code: "Promise.resolve({ title: document.title, n: 1 })" }, true)), { title: "Pi debug", n: 1 });
   assert.match(await browser({ action: "eval", code: "missing.call()" }, true), /^Uncaught: ReferenceError: missing is not defined/);
   for (let i = 0; i < 2; i++) {

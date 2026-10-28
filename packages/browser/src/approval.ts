@@ -49,7 +49,7 @@ const EVAL_MAX_LINES = 20;
 const EVAL_MAX_CHARS = 1_500;
 const HIDDEN = /(?![\t\n])[\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}\u2028\u2029]/u;
 
-export async function confirmEval(code: string | undefined, host: string, choose: Choose): Promise<void> {
+export async function confirmEval(code: string | undefined, host: string, choose: Choose, configPath: string): Promise<void> {
   if (!code?.trim()) throw new Error("eval needs code.");
   if (HIDDEN.test(code)) throw new Error("eval code may not contain invisible or control characters other than newline and tab; write them as escapes like \\u001b.");
   const lines = code.split("\n");
@@ -57,6 +57,10 @@ export async function confirmEval(code: string | undefined, host: string, choose
     throw new Error(`eval code is limited to ${EVAL_MAX_LINES} lines and ${EVAL_MAX_CHARS} characters so the user can see all of it.`);
   }
   if (lines.some((line, i) => !line.trim() && i > 0 && !lines[i - 1].trim())) throw new Error("eval code may not have two blank lines in a row.");
+  if ((await loadHosts(configPath, "evalHosts")).includes(host)) return;
   const run = `Run all ${lines.length} line${lines.length === 1 ? "" : "s"}`;
-  if (await choose(`Run this JavaScript in the ${host} tab?\n${code}`, [run, "Don't run"]) !== run) throw new Error("The user did not allow this eval.");
+  const always = `Always run on ${host}`;
+  const choice = await choose(`Run this JavaScript in the ${host} tab?\n${code}`, [run, always, "Don't run"]);
+  if (choice === always) await addHost(configPath, host, "evalHosts");
+  else if (choice !== run) throw new Error("The user did not allow this eval.");
 }
