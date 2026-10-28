@@ -2,7 +2,6 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { mkdtemp, readdir, readFile, readlink, rename, rm, stat } from "node:fs/promises";
 import { createServer, type Server } from "node:http";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -14,7 +13,8 @@ import { copyExtension } from "./extension.ts";
 const EXTENSION = "chrome-extension://enidoebkpjligpdgedlellobooiiljib/";
 const fixtures = fileURLToPath(new URL("fixtures/", import.meta.url));
 const intruder = fileURLToPath(new URL("intruder/", import.meta.url));
-const work = await mkdtemp(join(tmpdir(), "pi-browser-e2e-"));
+// macOS TMPDIR is too long for the session socket path limit.
+const work = await mkdtemp("/tmp/pi-browser-e2e-");
 
 async function listen(server: Server): Promise<number> {
   server.listen(0, "127.0.0.1");
@@ -287,7 +287,7 @@ test("type, keys, and click fill and submit a form with real input events", asyn
   const after = await browser({ action: "read" });
   assert.match(after, /submitted: hello pi/);
   assert.match(after, /button "Clicked 1 times"/, "the click arrived as a trusted event");
-  await browser({ action: "keys", ref: ref(page, 'textbox "Name"'), keys: "Control+a Backspace" });
+  await browser({ action: "keys", ref: ref(page, 'textbox "Name"'), keys: `${process.platform === "darwin" ? "Meta" : "Control"}+a Backspace` });
   await browser({ action: "type", ref: ref(page, 'textbox "Name"'), text: "second" });
   await browser({ action: "keys", keys: "Enter" });
   assert.match(await browser({ action: "read" }), /submitted: second/, "select-all and Backspace cleared the field");
