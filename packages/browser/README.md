@@ -82,7 +82,7 @@ The agent gets one `browser` tool:
 | `type` | Focus a ref and insert text at its cursor. |
 | `keys` | Press keys or combos, like `Enter`, `Shift+Tab`, or select-all (`Meta+a` on macOS, `Control+a` elsewhere), after focusing a ref if given. |
 | `scroll` | Scroll a ref into view. |
-| `screenshot` | JPEG of a pi tab's visible area at CSS pixel size, so high-density screens don't produce oversized images. Brings that tab to the front of its window first. Also saved to `pi-browser/` in the system temp dir; the result gives the path. |
+| `screenshot` | JPEG of a pi tab's visible area at CSS pixel size, so high-density screens don't produce oversized images. Brings that tab to the front of its window first. Also saved to a private `pi-browser-*` folder in the system temp dir; the result gives the path. |
 | `console` | Console messages, uncaught exceptions, and Chrome's own warnings from the tab's current page. |
 | `network` | Requests from the tab's current page: method, status, type, and URL. Never headers or bodies. |
 | `eval` | Run JavaScript in the page's main frame like the DevTools console, and return the last value as JSON, awaiting a promise. You confirm the code every time. |

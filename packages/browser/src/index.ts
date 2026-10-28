@@ -1,5 +1,5 @@
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, getAgentDir, truncateHead, truncateTail, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -58,10 +58,11 @@ export function given<T extends object>(params: T): T {
   return Object.fromEntries(Object.entries(params).filter(([, value]) => value !== 0 && value !== "")) as T;
 }
 
+let screenshots: Promise<string> | undefined;
+
 async function saveScreenshot(data: string, tabId: number): Promise<string> {
-  const dir = join(tmpdir(), "pi-browser");
-  await mkdir(dir, { recursive: true });
-  const file = join(dir, `${tabId}-${Date.now()}.jpg`);
+  screenshots ??= mkdtemp(join(tmpdir(), "pi-browser-"));
+  const file = join(await screenshots, `${tabId}-${Date.now()}.jpg`);
   await writeFile(file, Buffer.from(data, "base64"));
   return file;
 }
