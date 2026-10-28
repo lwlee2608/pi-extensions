@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>Pi cover</title></head>
+<body>
+  <div style="position: relative">
+    <button id="covered">Covered</button>
+    <div id="banner" style="position: absolute; inset: 0"></div>
+  </div>
+  <label style="display: inline-block; position: relative; padding: 8px">Agree <input id="agree" type="checkbox" style="position: absolute; left: 8px; clip-path: inset(50%)"></label>
+  <pi-button><span>Slotted label</span></pi-button>
+  <pi-button>Slotted text</pi-button>
+  <script>
+    let clicks = 0;
+    covered.onclick = banner.onclick = () => { clicks++; };
+    const slotted = [];
+    customElements.define("pi-button", class extends HTMLElement {
+      constructor() {
+        super();
+        this.attachShadow({ mode: "open" }).innerHTML = "<button><slot></slot></button>";
+        this.shadowRoot.firstChild.onclick = () => slotted.push(this.textContent);
+      }
+    });
+  </script>
+</body>
+</html>

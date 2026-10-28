@@ -367,6 +367,41 @@ test("click reaches a ref inside a same-origin frame, and the frame navigating k
   assert.match(await browser({ action: "click", ref: ref(page, 'button "Press me"') }), /^Clicked/);
 });
 
+test("click and keys bring a pi tab behind another tab to the front, since Chrome drops input in a hidden tab", async () => {
+  const url = `${form}?behind`;
+  await browser({ action: "navigate", url, newTab: true });
+  const tabId = await inWorker(`chrome.tabs.query({ url: "${url}" }).then(([tab]) => tab.id)`);
+  const active = () => inWorker(`chrome.tabs.get(${tabId}).then(tab => tab.active)`);
+  // Headless Chrome drops input in a background tab only once its visual properties change, as a zoom does.
+  const hide = async (zoom: number) => {
+    await inWorker(`chrome.tabs.get(${tabId}).then(tab => chrome.tabs.create({ windowId: tab.windowId, url: "${site}other.html", active: true }))`);
+    await inWorker(`chrome.tabs.setZoomSettings(${tabId}, { scope: "per-tab" }).then(() => chrome.tabs.setZoom(${tabId}, ${zoom}))`);
+    assert.equal(await active(), false);
+  };
+  const page = await browser({ action: "read", tabId });
+  await hide(1.25);
+  await browser({ action: "click", tabId, ref: ref(page, 'button "Clicked 0 times"') });
+  assert.match(await browser({ action: "read", tabId }), /button "Clicked 1 times"/);
+  assert.equal(await active(), true);
+  await hide(1);
+  await browser({ action: "type", tabId, ref: ref(page, 'textbox "Name"'), text: "behind" });
+  await browser({ action: "keys", tabId, keys: "Enter" });
+  assert.match(await browser({ action: "read", tabId }), /submitted: behind/);
+  assert.equal(await active(), true);
+});
+
+test("click refuses a ref whose center another element covers, naming it, and clicks a hidden checkbox through its label", async () => {
+  const url = `${site}cover.html`;
+  await browser({ action: "navigate", url, newTab: true });
+  const page = await browser({ action: "read" });
+  await assert.rejects(browser({ action: "click", ref: ref(page, 'button "Covered"') }), /Ref \[\d+\] is covered at its center by <div id="banner">, so a click there would miss it\./);
+  assert.equal(await inPage(url, "clicks"), 0);
+  assert.match(await browser({ action: "click", ref: ref(page, 'checkbox "Agree"') }), /^Clicked/);
+  assert.equal(await inPage(url, "agree.checked"), true);
+  for (const label of ["Slotted label", "Slotted text"]) await browser({ action: "click", ref: ref(page, `button "${label}"`) });
+  assert.deepEqual(await inPage(url, "slotted"), ["Slotted label", "Slotted text"]);
+});
+
 test("scroll brings a ref below the fold into view", async () => {
   const url = `${form}?scroll`;
   await browser({ action: "navigate", url, newTab: true });

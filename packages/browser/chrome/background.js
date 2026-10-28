@@ -69,14 +69,16 @@ const handlers = {
 
   async click({ tabId, ref }, caller) {
     const tab = await piTab(caller, tabId);
-    await overlay(tab.id, "aim", await point(tab.id, ref));
-    const at = await center(tab.id, ref);
-    if (!at) throw new Error(`Ref [${ref}] has no visible box to click.`);
-    await guarded(tab.id, async () => {
-      await cdp(tab.id, "Input.dispatchMouseEvent", { type: "mousePressed", ...at, button: "left", clickCount: 1 });
-      await cdp(tab.id, "Input.dispatchMouseEvent", { type: "mouseReleased", ...at, button: "left", clickCount: 1 });
-    });
-    overlay(tab.id, "show");
+    await inFront(tab, async () => {
+      await overlay(tab.id, "aim", await point(tab.id, ref));
+      const at = await center(tab.id, ref);
+      if (!at) throw new Error(`Ref [${ref}] has no visible box to click.`);
+      await uncovered(tab.id, ref, at);
+      await guarded(tab.id, async () => {
+        await cdp(tab.id, "Input.dispatchMouseEvent", { type: "mousePressed", ...at, button: "left", clickCount: 1 });
+        await cdp(tab.id, "Input.dispatchMouseEvent", { type: "mouseReleased", ...at, button: "left", clickCount: 1 });
+      });
+    }).finally(() => { overlay(tab.id, "show"); });
     return acted(tab.id, `Clicked [${ref}]`);
   },
 
@@ -95,9 +97,11 @@ const handlers = {
     const mac = (await chrome.runtime.getPlatformInfo()).os === "mac";
     const presses = combos.map(combo => parseCombo(combo, mac));
     const tab = await piTab(caller, tabId);
-    await overlay(tab.id, "show", ref === undefined ? undefined : await point(tab.id, ref).catch(() => undefined));
-    if (ref !== undefined) await node(tab.id, "DOM.focus", ref);
-    await guarded(tab.id, async () => { for (const press of presses) await pressKeys(tab.id, press); });
+    await inFront(tab, async () => {
+      await overlay(tab.id, "show", ref === undefined ? undefined : await point(tab.id, ref).catch(() => undefined));
+      if (ref !== undefined) await node(tab.id, "DOM.focus", ref);
+      await guarded(tab.id, async () => { for (const press of presses) await pressKeys(tab.id, press); });
+    });
     return acted(tab.id, `Pressed ${combos.join(" ")}`);
   },
 
@@ -109,8 +113,7 @@ const handlers = {
 
   async screenshot({ tabId }, caller) {
     const tab = await piTab(caller, tabId);
-    const { data } = await serial(`window ${tab.windowId}`, async () => {
-      await chrome.tabs.update(tab.id, { active: true });
+    const { data } = await inFront(tab, async () => {
       const { cssVisualViewport: css, visualViewport: device } = await cdp(tab.id, "Page.getLayoutMetrics");
       const clip = { x: css.pageX, y: css.pageY, width: css.clientWidth, height: css.clientHeight, scale: css.clientWidth / device.clientWidth };
       await overlay(tab.id, "conceal");
@@ -533,7 +536,42 @@ async function center(tabId, ref) {
   const { quads } = await node(tabId, "DOM.getContentQuads", ref);
   if (!quads?.length) return undefined;
   const [quad] = quads;
-  return { x: (quad[0] + quad[2] + quad[4] + quad[6]) / 4, y: (quad[1] + quad[3] + quad[5] + quad[7]) / 4 };
+  return { x: Math.round((quad[0] + quad[2] + quad[4] + quad[6]) / 4), y: Math.round((quad[1] + quad[3] + quad[5] + quad[7]) / 4) };
+}
+
+function inFront(tab, run) {
+  return serial(`window ${tab.windowId}`, async () => {
+    await chrome.tabs.update(tab.id, { active: true });
+    const { result } = await cdp(tab.id, "Runtime.evaluate", { expression: "document.visibilityState", returnByValue: true });
+    if (result.value !== "visible") throw new Error(`Tab ${tab.id}'s window is hidden (minimized, fully covered, on another desktop, or the screen is locked), and Chrome drops clicks and key presses there and may not render the page. Ask the user to bring that window into view.`);
+    return run();
+  });
+}
+
+async function uncovered(tabId, ref, at) {
+  const hit = await cdp(tabId, "DOM.getNodeForLocation", at).catch(() => undefined);
+  if (!hit) throw new Error(`Ref [${ref}] has no point on the page to click.`);
+  const frameId = [...refs.get(tabId) ?? []].find(([, found]) => found.has(ref))?.[0];
+  if (hit.frameId === frameId) {
+    const objectGroup = "pi-hit";
+    try {
+      const resolve = async backendNodeId => (await cdp(tabId, "DOM.resolveNode", { backendNodeId, objectGroup })).object.objectId;
+      const { result } = await cdp(tabId, "Runtime.callFunctionOn", {
+        objectId: await resolve(ref), arguments: [{ objectId: await resolve(hit.backendNodeId) }], returnByValue: true,
+        functionDeclaration: "function (hit) { if (this.getRootNode().host === hit) return true; for (let node = hit; node; node = node.assignedSlot ?? node.parentNode ?? node.host) if (node === this || [...this.labels ?? []].includes(node)) return true; return false; }",
+      });
+      if (result.value) return;
+    } finally {
+      chrome.debugger.sendCommand({ tabId }, "Runtime.releaseObjectGroup", { objectGroup }).catch(() => {});
+    }
+  }
+  throw new Error(`Ref [${ref}] is covered at its center by ${await tag(tabId, hit.backendNodeId)}, so a click there would miss it. Close or move what covers it, then read for fresh refs.`);
+}
+
+async function tag(tabId, backendNodeId) {
+  const { node: { localName, attributes = [] } } = await cdp(tabId, "DOM.describeNode", { backendNodeId });
+  const id = attributes.findIndex((name, index) => index % 2 === 0 && name === "id");
+  return `<${localName}${id < 0 ? "" : ` id="${attributes[id + 1]}"`}>`;
 }
 
 function overlay(tabId, command, at) {
