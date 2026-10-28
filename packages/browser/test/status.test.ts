@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Handlers } from "../src/bridge.ts";
@@ -66,4 +69,42 @@ test("/browser says how to reconnect when no browser is connected", async () => 
 
 test("/browser on Windows says it is not supported until the port transport", async () => {
   assert.match(await browser({ result: { browser: "Google Chrome 156" } }, "win32")(), /^The browser is not supported on Windows until the port transport lands/);
+});
+
+test("/browser settings toggles eval confirmation and forgets one or all approved sites", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "pi-browser-settings-"));
+  const previous = process.env.PI_CODING_AGENT_DIR;
+  process.env.PI_CODING_AGENT_DIR = dir;
+  const path = join(dir, "pi-browser", "config.json");
+  try {
+    let command!: (args: string, ctx: ExtensionContext) => Promise<void>;
+    const pi = { on: () => {}, registerTool: () => {}, registerCommand: (_name: string, options: { handler: typeof command }) => { command = options.handler; } } as unknown as ExtensionAPI;
+    browserExtension({ platform: "linux" })(pi);
+    const notes: string[] = [];
+    const menus: string[][] = [];
+    const picks: (string | undefined)[] = [];
+    const select = async (_title: string, options: string[]) => { menus.push(options); return picks.shift(); };
+    const ctx = { hasUI: true, ui: { notify: (text: string) => notes.push(text), select } } as unknown as ExtensionContext;
+    const settings = async (...choices: (string | undefined)[]) => { picks.push(...choices); await command("settings", ctx); return notes.splice(0).join("\n"); };
+
+    assert.equal(await settings("Ask before eval: off"), "Eval now asks before running.");
+    assert.deepEqual(menus.splice(0), [["Ask before eval: off"]]);
+    assert.equal(await settings("Ask before eval: on"), "Eval now runs without asking on approved sites.");
+    assert.equal(JSON.parse(await readFile(path, "utf8")).confirmEval, false);
+
+    await writeFile(path, JSON.stringify({ allowedHosts: ["a.test", "b.test"], confirmEval: false }));
+    menus.splice(0);
+    assert.equal(await settings("Remove an approved site", "a.test"), "Removed a.test; the agent asks before using it again.");
+    assert.deepEqual(menus.splice(0), [["Ask before eval: off", "Remove an approved site", "Forget all approved sites (2)"], ["a.test", "b.test"]]);
+    assert.equal(await settings("Remove an approved site", undefined), "");
+    assert.equal(await settings("Forget all approved sites (1)"), "Forgot all approved sites; the agent asks before using each one again.");
+    assert.deepEqual(JSON.parse(await readFile(path, "utf8")), { allowedHosts: [], confirmEval: false });
+    assert.equal(await settings(undefined), "");
+    await command("nope", ctx);
+    assert.equal(notes.splice(0).join(), "Usage: /browser [settings]");
+  } finally {
+    if (previous === undefined) delete process.env.PI_CODING_AGENT_DIR;
+    else process.env.PI_CODING_AGENT_DIR = previous;
+    await rm(dir, { recursive: true, force: true });
+  }
 });
