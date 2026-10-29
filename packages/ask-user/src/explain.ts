@@ -36,9 +36,9 @@ export function explainer(ctx: ExtensionContext, params: Params, lastRequest: ()
     const transcript = convertToLlm(ctx.sessionManager.buildSessionProjection().messages);
     const last = transcript.findLastIndex(message => message.role === "assistant");
     const cut = last >= 0 ? last : transcript.length;
-    const captured = lastRequest();
-    const request = captured ? convertToLlm(captured) : [{ role: "system" as const, content: ctx.getSystemPrompt(), timestamp: Date.now() }, ...transcript.slice(0, cut)];
-    const messages = explainMessages(request, transcript.slice(cut), explainPrompt(params, index));
+    const request = lastRequest();
+    if (!request) throw new Error("Explanations are unavailable.");
+    const messages = explainMessages(convertToLlm(request), transcript.slice(cut), explainPrompt(params, index));
     const stream = ctx.modelRegistry.streamSimple(model, { messages }, { signal, sessionId: ctx.sessionManager.getSessionId(), reasoning: ctx.thinkingLevel === "off" ? undefined : ctx.thinkingLevel });
     let text = "";
     for await (const event of stream) if (event.type === "text_delta") onText(text += event.delta);

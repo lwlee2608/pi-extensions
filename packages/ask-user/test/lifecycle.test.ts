@@ -184,7 +184,7 @@ test("tool sends the captured request and reports the summed usage of every expl
   const replies = [{ text: "First.", stopReason: "stop", cost: 0.25 }, { text: "", stopReason: "error", cost: 0.5 }];
   const requests: { role: string; content: unknown }[][] = [];
   Object.assign(view.ctx, {
-    model: { id: "m" }, thinkingLevel: "off", getSystemPrompt: () => "fallback",
+    model: { id: "m" }, thinkingLevel: "off",
     sessionManager: { buildSessionProjection: () => ({ messages: [] }), getSessionId: () => "s" },
     modelRegistry: {
       streamSimple: (_model: unknown, context: { messages: { role: string; content: unknown }[] }) => {
