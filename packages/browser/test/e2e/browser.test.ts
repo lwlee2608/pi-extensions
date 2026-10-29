@@ -836,3 +836,10 @@ test("frames: on a scrolled page, a point in a frame nested in the scrolled cros
   assert.deepEqual(asked.splice(0), ["nested.test"]);
   assert.match(await browser({ action: "read" }), /frame got click in nested\.test; clicks 1; field ""/);
 });
+
+test("frames: a cross-site frame that navigated itself to about:blank is refused, not treated as the tab's site", async () => {
+  await browser({ action: "navigate", url: `${framed}?frame=blank` });
+  await shoot();
+  await assert.rejects(browser({ action: "click", point: await pixel("frame") }), /^Error: Point \(\d+, \d+\) is in a frame showing an about: page, and Pi Browser acts only in http and https pages, so nothing was done\.$/);
+  assert.deepEqual(asked, []);
+});

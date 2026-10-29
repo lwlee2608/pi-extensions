@@ -638,14 +638,14 @@ async function uncovered(tabId, ref, at) {
 }
 
 async function frameAt(tabId, at, where) {
-  let sessionId, place, main, { x, y } = at;
+  let sessionId, main, { x, y } = at;
   for (;;) {
     const { cssVisualViewport: { pageX, pageY } } = await cdp(tabId, "Page.getLayoutMetrics", undefined, sessionId);
     const hit = await cdp(tabId, "DOM.getNodeForLocation", { x: Math.round(x + pageX), y: Math.round(y + pageY) }, sessionId).catch(() => undefined);
     if (!hit) throw new Error(`${where} has nothing on the page under it in tab ${tabId}.`);
     const { node } = await cdp(tabId, "DOM.describeNode", { backendNodeId: hit.backendNodeId }, sessionId);
     const { frameTree } = await cdp(tabId, "Page.getFrameTree", undefined, sessionId);
-    place = placeIn(frameTree, hit.frameId, place);
+    const place = placeIn(frameTree, hit.frameId);
     main ??= placeIn(frameTree, frameTree.frame.id);
     if (!node.frameId || node.frameId === hit.frameId || node.contentDocument) return { ...place, main, sessionId, hit, node };
     const { model: { content } } = await cdp(tabId, "DOM.getBoxModel", { backendNodeId: hit.backendNodeId }, sessionId);
@@ -658,12 +658,12 @@ async function frameAt(tabId, at, where) {
 async function focusIn(tabId) {
   const objectGroup = "pi-focus";
   const sessions = new Set([undefined]);
-  let sessionId, frameId, place, main;
+  let sessionId, frameId, main;
   try {
     for (;;) {
       const { frameTree } = await cdp(tabId, "Page.getFrameTree", undefined, sessionId);
       frameId ??= frameTree.frame.id;
-      place = placeIn(frameTree, frameId, place);
+      const place = placeIn(frameTree, frameId);
       main ??= place;
       const { executionContextId: contextId } = await cdp(tabId, "Page.createIsolatedWorld", { frameId, worldName: OVERLAY_WORLD }, sessionId);
       const { result } = await cdp(tabId, "Runtime.evaluate", { contextId, objectGroup, expression: FOCUSED }, sessionId);
@@ -678,13 +678,13 @@ async function focusIn(tabId) {
   }
 }
 
-function placeIn(frameTree, frameId, outer) {
+function placeIn(frameTree, frameId) {
   for (const frame of (lineage(frameTree, frameId) ?? []).toReversed()) {
     const url = frame.url.replace(/^blob:/i, "");
     if (/^https?:/i.test(url)) return { url, site: frame.domainAndRegistry || hostOf(url) };
     if (!/^(about|data):/i.test(url)) return { url };
   }
-  return outer;
+  return { url: frameTree.frame.url };
 }
 
 function lineage({ frame, childFrames = [] }, frameId) {
@@ -708,7 +708,8 @@ async function child(tabId, sessionId, owner, where) {
 
 function unapproved({ url = "", site, main }, hosts, where) {
   const host = hostOf(url);
-  if (!host) throw new Error(`${where} is in a frame showing a ${/^[\w-]+:/.exec(url)?.[0] ?? "non-web"} page, and Pi Browser acts only in http and https pages, so nothing was done.`);
+  const scheme = /^[\w-]+:/.exec(url)?.[0] ?? "non-web";
+  if (!host) throw new Error(`${where} is in a frame showing ${/^[aeiou]/.test(scheme) ? "an" : "a"} ${scheme} page, and Pi Browser acts only in http and https pages, so nothing was done.`);
   return site === main.site || hosts.includes(host) ? undefined : url;
 }
 

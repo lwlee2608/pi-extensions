@@ -53,7 +53,7 @@
         frame.style.top = `${event.clientY + scrollY - 60}px`;
       }, { once: true });
     }
-    frame.src = `http://frame.test:${location.port}/points-frame.html`;
+    frame.src = `http://frame.test:${location.port}/points-frame.html?${new URLSearchParams(location.search).get("frame") ?? ""}`;
     addEventListener("message", event => { if (/^http:\/\/(frame|nested)\.test:/.test(event.origin)) framed.textContent = `frame got ${event.data}`; });
   </script>
 </body>

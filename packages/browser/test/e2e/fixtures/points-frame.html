@@ -11,6 +11,7 @@
 <body>
   <input id="field" aria-label="Frame note">
   <script>
+    if (location.search === "?blank") location.replace("about:blank");
     let clicks = 0;
     if (location.search !== "?nested") document.body.appendChild(Object.assign(document.createElement("iframe"), { id: "nested", title: "Nested frame", src: `http://nested.test:${location.port}/points-frame.html?nested` }));
     scrollTo(0, 100);
