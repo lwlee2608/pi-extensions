@@ -79,7 +79,7 @@ const handlers = {
     await inFront(tab, async () => {
       if (at) {
         await overlay(tab.id, "aim", at);
-        what = `at (${point.join(", ")})`;
+        what = `at (${point.join(", ")}) on ${await under(tab.id, at, point)}`;
       } else {
         await overlay(tab.id, "aim", await reveal(tab.id, ref));
         at = await center(tab.id, ref);
@@ -603,8 +603,32 @@ async function uncovered(tabId, ref, at) {
   throw new Error(`Ref [${ref}] is covered at its center by ${await tag(tabId, hit.backendNodeId)}, so a click there would miss it. Close or move what covers it, then read for fresh refs.`);
 }
 
+async function under(tabId, at, point) {
+  const hit = await cdp(tabId, "DOM.getNodeForLocation", at).catch(() => undefined);
+  if (!hit) throw new Error(`Point (${point.join(", ")}) has nothing on the page under it in tab ${tabId}.`);
+  const { node } = await cdp(tabId, "DOM.describeNode", { backendNodeId: hit.backendNodeId });
+  if (node.frameId && node.frameId !== hit.frameId && !node.contentDocument) {
+    throw new Error(`Point (${point.join(", ")}) is inside ${label(node)}, a frame from another site, and Pi Browser does not act inside cross-site frames yet, so nothing was clicked.`);
+  }
+  return named(tabId, hit.backendNodeId, node);
+}
+
+async function named(tabId, backendNodeId, node) {
+  const { nodes } = await cdp(tabId, "Accessibility.getPartialAXTree", { backendNodeId, fetchRelatives: true }).catch(() => ({ nodes: [] }));
+  const byId = new Map(nodes.map(ax => [ax.nodeId, ax]));
+  for (let ax = nodes.find(ax => ax.backendDOMNodeId === backendNodeId); ax; ax = byId.get(ax.parentId)) {
+    const role = ax.role?.value;
+    const name = String(ax.name?.value ?? "").trim();
+    if (!ax.ignored && role && role !== "StaticText" && !SKIP.has(role)) return `${role}${name ? ` ${JSON.stringify(name)}` : ""}`;
+  }
+  return label(node);
+}
+
 async function tag(tabId, backendNodeId) {
-  const { node: { localName, attributes = [] } } = await cdp(tabId, "DOM.describeNode", { backendNodeId });
+  return label((await cdp(tabId, "DOM.describeNode", { backendNodeId })).node);
+}
+
+function label({ localName, attributes = [] }) {
   const id = attributes.findIndex((name, index) => index % 2 === 0 && name === "id");
   return `<${localName}${id < 0 ? "" : ` id="${attributes[id + 1]}"`}>`;
 }

@@ -43,7 +43,7 @@ Carried over from `plans/browser.md`; these rules bind every phase, review round
 - **Setup** — Chrome for Testing stays cached outside the repo; e2e keeps its own port so it never clashes with an open pi session.
 
 ## Progress
-Active: 1 · 3/22 tasks
+Active: 1 · 5/22 tasks
 
 ### Phase 1 — Click and type at a point from a screenshot
 The agent can click anywhere it sees in a screenshot (left, right, double, triple) and type into whatever that focused, on canvas and unlabeled widgets.
@@ -51,8 +51,8 @@ The agent can click anywhere it sees in a screenshot (left, right, double, tripl
 - [x] Capture screenshots within the size cap, report the image's width and height, and keep the tab's scale (`chrome/background.js`)
 - [x] Accept a point on `click`, with button and click count for refs and points alike (`chrome/background.js`, `src/index.ts`)
 - [x] Fail a point action on a tab with no screenshot, or a point outside the image (`chrome/background.js`)
-- [ ] Refuse a point that lands in a cross-site frame (`chrome/background.js`)
-- [ ] Name the element under the point in the result, and move the overlay dot to it (`chrome/background.js`)
+- [x] Refuse a point that lands in a cross-site frame (`chrome/background.js`)
+- [x] Name the element under the point in the result, and move the overlay dot to it (`chrome/background.js`)
 - [ ] Let `type` run without a ref, into the current focus (`chrome/background.js`, `src/index.ts`)
 - [ ] Bump `PROTOCOL` so a stale extension reports a mismatch instead of failing on point params and new actions (`src/host.js`, `chrome/background.js`)
 - [ ] Describe points, their coordinate space, and going stale in the tool description and README (`src/index.ts`, `README.md`)
