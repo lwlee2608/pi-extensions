@@ -703,8 +703,8 @@ async function layout(): Promise<Record<string, [number, number]>> {
 }
 
 async function pixel(name: string): Promise<[number, number]> {
-  const { viewport, [name]: [x, y] } = await layout();
-  return [Math.round(x * image.width / viewport[0]), Math.round(y * image.height / viewport[1])];
+  const { viewport: [width], [name]: [x, y] } = await layout();
+  return [Math.round(x * image.width / width), Math.round(y * image.width / width)];
 }
 
 test("points: a point before any screenshot fails asking for one, and click takes a ref or a point, not both", async () => {
