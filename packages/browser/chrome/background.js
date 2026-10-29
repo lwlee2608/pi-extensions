@@ -83,9 +83,9 @@ const handlers = {
     await inFront(tab, async () => {
       const where = at ? `Point (${point.join(", ")})` : `Ref [${ref}]`;
       if (at) {
+        await overlay(tab.id, "aim", at);
         const frame = await frameAt(tab.id, at, where);
         if ((ask = unapproved(frame, hosts, where))) return;
-        await overlay(tab.id, "aim", at);
         what = `at (${point.join(", ")}) on ${await nameOf(tab.id, frame)}`;
       } else {
         await overlay(tab.id, "aim", await reveal(tab.id, ref));
@@ -660,6 +660,7 @@ function wheel(tabId, delta) {
 async function pointing(tab, spots, hosts, act) {
   let ask, what;
   await inFront(tab, async () => {
+    await overlay(tab.id, "move", spots[0].at);
     const frames = [];
     for (const { at, where } of spots) {
       const frame = await frameAt(tab.id, at, where);
@@ -668,7 +669,6 @@ async function pointing(tab, spots, hosts, act) {
     }
     const names = [];
     for (const frame of frames) names.push(await nameOf(tab.id, frame));
-    await overlay(tab.id, "move", spots[0].at);
     what = await act(names);
   }).finally(() => { overlay(tab.id, "show"); });
   if (ask) return { ...(await reply(tab.id, "")), ask };

@@ -15,6 +15,7 @@
     #bin { position: absolute; left: 220px; top: 260px; width: 200px; height: 100px; background: #fc9; }
     #frame { position: absolute; left: 660px; top: 260px; width: 300px; height: 120px; border: 0; }
     #info { position: absolute; left: 20px; top: 420px; }
+    #under { position: fixed; z-index: 1; left: 50%; bottom: 4px; width: 400px; height: 60px; margin-left: -200px; }
   </style>
 </head>
 <body>
@@ -25,6 +26,7 @@
   <div id="card" draggable="true">Card</div>
   <div id="bin">Bin</div>
   <iframe id="frame" title="Cross-site frame"></iframe>
+  <button id="under">Under stop</button>
   <div id="info">
     <p id="layout"></p>
     <p id="drawn">pad got nothing</p>
@@ -37,7 +39,8 @@
     const at = (element, x = 0.5, y = 0.5) => (box => `${Math.round(box.x + box.width * x)},${Math.round(box.y + box.height * y)}`)(element.getBoundingClientRect());
     const measure = () => {
       layout.textContent = `viewport ${document.documentElement.clientWidth}x${document.documentElement.clientHeight}; menu ${at(menu)}; padstart ${at(pad, 0.1, 0.2)}; padend ${at(pad, 0.8, 0.9)}; `
-        + `volume ${at(volume)}; volumeend ${at(volume, 0.98)}; panel ${at(panel)}; card ${at(card)}; bin ${at(bin)}; frame ${at(frame)}; framefield ${at(frame, 80 / 300, 52 / 120)}; scroll ${scrollX},${scrollY}`;
+        + `volume ${at(volume)}; volumeend ${at(volume, 0.98)}; panel ${at(panel)}; card ${at(card)}; bin ${at(bin)}; frame ${at(frame)}; framefield ${at(frame, 80 / 300, 52 / 120)}; `
+        + `stop ${Math.round(innerWidth / 2)},${innerHeight - 34}; scroll ${scrollX},${scrollY}`;
     };
     measure();
     addEventListener("resize", measure);
@@ -55,6 +58,8 @@
       }
     });
     addEventListener("mouseup", event => { if (stroke.length) { stroke.push(`up at ${event.clientX},${event.clientY}`); report(); } });
+    under.addEventListener("mouseover", () => { under.textContent = "Under stop hovered"; });
+    under.addEventListener("click", () => { under.textContent = "Under stop clicked"; });
     panel.addEventListener("scroll", () => { scrolled.textContent = `panel at ${Math.round(panel.scrollTop)}`; });
     const dragged = [];
     for (const [element, type] of [[card, "dragstart"], [card, "dragend"], [bin, "dragenter"], [bin, "dragover"], [bin, "drop"]]) {

@@ -1044,3 +1044,15 @@ test("pointer: a page that slides the cross-site frame under a drag's end mid-dr
   near([upX, upY], padstart, "the release");
   assert.match(page, /frame got (nothing|pointer in slid\.test)$/m, "the slid-in frame got at most the moves after it slid, never the press or release");
 });
+
+test("pointer: a hover or click at a point under the overlay's Stop button reaches and names the page's element there", async () => {
+  await browser({ action: "navigate", url: pointer });
+  await shoot();
+  const point = await pixel("stop");
+  const stops = stopped.length;
+  assert.match(await browser({ action: "hover", point }), /^Hovered at \(\d+, \d+\) on button "Under stop" in tab \d+\.$/);
+  assert.match(await browser({ action: "read" }), /button "Under stop hovered"/);
+  assert.match(await browser({ action: "click", point }), /^Clicked at \(\d+, \d+\) on button "Under stop hovered" in tab \d+\.$/);
+  assert.match(await browser({ action: "read" }), /button "Under stop clicked"/);
+  assert.equal(stopped.length, stops, "the Stop button was not pressed");
+});
