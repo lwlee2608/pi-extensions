@@ -689,7 +689,9 @@ async function focusIn(tabId) {
 }
 
 function placeIn(frameTree, frameId) {
-  for (const frame of (lineage(frameTree, frameId) ?? []).toReversed()) {
+  const chain = lineage(frameTree, frameId);
+  if (!chain) return {};
+  for (const frame of chain.toReversed()) {
     const url = frame.url.replace(/^blob:/i, "");
     if (/^https?:/i.test(url)) return { url, site: frame.domainAndRegistry || hostOf(url) };
     if (!/^(about|data):/i.test(url)) return { url };
