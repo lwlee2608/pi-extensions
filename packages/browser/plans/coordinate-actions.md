@@ -44,7 +44,7 @@ Carried over from `plans/browser.md`; these rules bind every phase, review round
 - **Setup** — Chrome for Testing stays cached outside the repo; e2e keeps its own port so it never clashes with an open pi session.
 
 ## Progress
-Active: 4 · 21/23 tasks
+Active: 4 · 22/23 tasks
 
 ### Phase 1 — Click and type at a point from a screenshot
 The agent can click anywhere it sees in a screenshot (left, right, double, triple) and type into whatever that focused, on canvas and unlabeled widgets.
@@ -99,7 +99,7 @@ The agent can look closer at a small part of the screen before clicking, without
 **Blocked by:** 3
 - [x] Add `zoom` on a rectangle in the last screenshot's pixels, returning that region at higher detail (`chrome/background.js`, `src/index.ts`)
 - [x] Keep the stored scale untouched by `zoom` (`chrome/background.js`)
-- [ ] Describe `zoom` in the tool description and README (`src/index.ts`, `README.md`)
+- [x] Describe `zoom` in the tool description and README (`src/index.ts`, `README.md`)
 - [ ] Add e2e cases for zoom detail and clicks after a zoom (`test/e2e/browser.test.ts`)
 **Note:** `zoom` takes `region: [x0, y0, x1, y1]` and renders it at up to 4 image pixels per CSS pixel, within the screenshot's 1568 px / 1.15 MP cap; Chrome re-rasterizes text and vector content at that scale, while bitmaps and canvases are only upscaled past the device pixel ratio.
 **Note:** `PROTOCOL` not bumped: `zoom` only exists on the unreleased integrate branch, already at 2 versus main's 1.
