@@ -13,7 +13,8 @@ Which features should we include?
   3. [ ] Type something.
      Next
 ────────────────────────────────────────
-  4. Chat about this
+  4. Explain this question
+  5. Chat about this
 
 Space/Enter toggle · ↑/↓ navigate · Tab/←→ switch · n note · Esc cancel
 ```
@@ -30,6 +31,7 @@ Start a new session afterward. Requires Node.js 22.19+ and Pi 1.0.0+. Don't load
 
 - 1–8 questions per call, each with 2–8 options. Single-select or multi-select (checkboxes).
 - **Type something.**: write your own answer inline, right after the options. In multi-select it can go along with checked options.
+- **Explain this question**: asks the session's current model to explain the question and its options in plain terms. The explanation appears above the options while the questionnaire stays open; Esc stops it. It's a separate model request that resends the conversation; its tokens count toward the session's usage, and the explanation is returned to the agent with your answers.
 - **Chat about this**: closes the questionnaire and tells the agent you want to talk it over first. Any answers and notes you've already given are sent along.
 - **Notes**: press `n` to attach a note to a question, or a global note from the review screen.
 - **Previews**: options can carry Markdown previews, shown beside the options on wide terminals and below them on tall ones.

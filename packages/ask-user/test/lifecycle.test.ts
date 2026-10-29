@@ -176,3 +176,58 @@ test("already-aborted and unavailable UI fail without reporting user cancellatio
   const noUI = { mode: "tui", ui: { custom: async () => undefined } } as unknown as ExtensionContext;
   await assert.rejects(runQuestionnaire(noUI, core), /unavailable/);
 });
+
+test("tool sends the captured request and reports the summed usage of every explain request", async () => {
+  const h = host(), view = ui();
+  const settle = () => new Promise(resolve => setImmediate(resolve));
+  const usage = (total: number) => ({ input: 300, output: 150, cacheRead: 6500, cacheWrite: 0, totalTokens: 6950, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total } });
+  const replies = [{ text: "First.", stopReason: "stop", cost: 0.25 }, { text: "", stopReason: "error", cost: 0.5 }];
+  const requests: { role: string; content: unknown }[][] = [];
+  Object.assign(view.ctx, {
+    model: { id: "m" }, thinkingLevel: "off",
+    sessionManager: { buildSessionProjection: () => ({ messages: [] }), getSessionId: () => "s" },
+    modelRegistry: {
+      streamSimple: (_model: unknown, context: { messages: { role: string; content: unknown }[] }) => {
+        const reply = replies[requests.push(context.messages) - 1];
+        return {
+          async *[Symbol.asyncIterator]() { if (reply.text) yield { type: "text_delta", delta: reply.text }; },
+          result: async () => ({ stopReason: reply.stopReason, errorMessage: "boom", usage: usage(reply.cost) }),
+        };
+      },
+    },
+  });
+  h.handlers.get("context_with_system")!({ type: "context_with_system", messages: [{ role: "system", content: "captured", timestamp: 0 }] });
+  const pending = h.tool.execute("id", { questions: core.questions.slice(0, 1) }, undefined, undefined, view.ctx);
+  await new Promise(resolve => setTimeout(resolve, 450));
+  view.input("4");
+  await settle();
+  view.input("4");
+  await settle();
+  view.input("1");
+  const output = await pending;
+  assert.equal(requests.length, 2);
+  assert.deepEqual([requests[0][0].role, requests[0][0].content], ["system", "captured"]);
+  assert.deepEqual(output.details, { cancelled: false, answers: [{ questionIndex: 1, selected: ["SQLite"], explanation: "First." }] });
+  assert.deepEqual(output.usage, { input: 600, output: 300, cacheRead: 13000, cacheWrite: 0, totalTokens: 13900, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.75 } });
+});
+
+test("closing mid-explanation waits for the aborted request so its usage is still reported", async () => {
+  const h = host(), view = ui();
+  const usage = { input: 300, output: 0, cacheRead: 6500, cacheWrite: 0, totalTokens: 6800, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.1 } };
+  Object.assign(view.ctx, {
+    model: { id: "m" }, thinkingLevel: "off",
+    sessionManager: { buildSessionProjection: () => ({ messages: [] }), getSessionId: () => "s" },
+    modelRegistry: {
+      streamSimple: (_model: unknown, _context: unknown, options: { signal: AbortSignal }) => {
+        const result = new Promise(resolve => options.signal.addEventListener("abort", () => setTimeout(() => resolve({ stopReason: "aborted", usage }), 10)));
+        return { async *[Symbol.asyncIterator]() {}, result: () => result };
+      },
+    },
+  });
+  h.handlers.get("context_with_system")!({ type: "context_with_system", messages: [{ role: "system", content: "captured", timestamp: 0 }] });
+  const pending = h.tool.execute("id", { questions: core.questions.slice(0, 1) }, undefined, undefined, view.ctx);
+  await new Promise(resolve => setTimeout(resolve, 450));
+  view.input("4");
+  view.input("1");
+  assert.deepEqual((await pending).usage, usage);
+});
