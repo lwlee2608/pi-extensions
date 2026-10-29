@@ -15,11 +15,11 @@ const parameters = Type.Object({
   action: Type.Union(["tabs", "navigate", "read", "click", "hover", "drag", "type", "keys", "scroll", "screenshot", "zoom", "console", "network", "eval"].map(action => Type.Literal(action))),
   url: Type.Optional(Type.String({ description: "navigate: http or https URL to load" })),
   tabId: Type.Optional(Type.Number({ description: "Pi tab to act on; defaults to the current pi tab" })),
-  newTab: Type.Optional(Type.Boolean({ description: "navigate: open the URL in a new pi tab" })),
+  newTab: Type.Optional(Type.Boolean({ description: "navigate only: true only to keep the current page open in another pi tab; false or omitted reuses the current pi tab" })),
   ref: Type.Optional(Type.Number({ description: "click, type: element ref, the n in [n] from read. keys: focus this ref first. scroll: ref to bring into view" })),
-  point: Type.Optional(Type.Array(Type.Number(), { minItems: 2, maxItems: 2, description: "click, scroll: [x, y] in pixels of the tab's last screenshot, instead of a ref. hover: where to move the mouse. drag: where it starts" })),
+  point: Type.Optional(Type.Array(Type.Number(), { minItems: 2, maxItems: 2, description: "click, scroll: [x, y] in pixels of the tab's last screenshot, instead of a ref; ignored for click and scroll when a ref is given. hover: where to move the mouse. drag: where it starts" })),
   to: Type.Optional(Type.Array(Type.Number(), { minItems: 2, maxItems: 2, description: "drag: [x, y] in pixels of the tab's last screenshot where it ends" })),
-  delta: Type.Optional(Type.Array(Type.Number(), { minItems: 2, maxItems: 2, description: "scroll with a point: [x, y] wheel amount in pixels of the tab's last screenshot; positive y scrolls down" })),
+  delta: Type.Optional(Type.Array(Type.Number(), { minItems: 2, maxItems: 2, description: "scroll with a point: [x, y] wheel amount in pixels of the tab's last screenshot; positive y scrolls down; ignored when a ref is given" })),
   region: Type.Optional(Type.Array(Type.Number(), { minItems: 4, maxItems: 4, description: "zoom: [x0, y0, x1, y1], the top-left and bottom-right corners of a rectangle in pixels of the tab's last screenshot" })),
   button: Type.Optional(Type.Union([Type.Literal("left"), Type.Literal("right")], { description: "click: mouse button; left by default" })),
   clickCount: Type.Optional(Type.Integer({ minimum: 1, maximum: 3, description: "click: 2 for a double click, 3 for a triple click; 1 by default" })),
@@ -36,11 +36,9 @@ function checkUrl(url: string | undefined): void {
 
 const ONLY: Record<string, string[]> = { point: ["click", "hover", "drag", "scroll"], button: ["click"], clickCount: ["click"], to: ["drag"], delta: ["scroll"], region: ["zoom"] };
 
-export function checkParams(action: string, params: object): void {
-  const wrong = Object.keys(ONLY).filter(name => name in params && !ONLY[name].includes(action));
-  if (!wrong.length) return;
-  const tip = wrong.includes("point") && (action === "type" || action === "keys") ? " To type at a point, click it first, then use type with no ref." : "";
-  throw new Error(`${wrong.map(name => `${name} works only with ${ONLY[name].join(", ")}`).join("; ")}, not ${action}.${tip}`);
+export function taken<T extends object>(action: string, params: T): T {
+  const byRef = "ref" in params && (action === "click" || action === "scroll");
+  return Object.fromEntries(Object.entries(params).filter(([name]) => (ONLY[name]?.includes(action) ?? true) && !(byRef && (name === "point" || name === "delta")))) as T;
 }
 
 const FRAMED = new Set(["click", "hover", "drag", "scroll", "type", "keys"]);
@@ -169,7 +167,7 @@ export function browserExtension({ browserDirs, platform = process.platform, ...
         + "navigate loads an http/https URL in the current pi tab, or a new one with newTab; read returns the page as an accessibility tree "
         + "where [n] marks an element ref. click, type, and keys act on a ref with real input events; scroll brings a ref into view; "
         + "screenshot returns a JPEG of the tab, bringing it to the front of its window, states its size in pixels, and saves it to a file whose path it gives. "
-        + "click can take a point [x, y] in pixels of the tab's last screenshot instead of a ref, for canvas apps and widgets without a ref; its result names the element hit. "
+        + "click can take a point [x, y] in pixels of the tab's last screenshot instead of a ref, for canvas apps and widgets without a ref; its result names the element hit. With both a ref and a point, click and scroll use the ref. Params an action does not take are ignored. "
         + "zoom takes region [x0, y0, x1, y1], a rectangle in pixels of the tab's last screenshot, and returns it as a larger, sharper JPEG saved like a screenshot, bringing the tab to the front of its window, to read small text or aim at small targets; it is for looking only, so points still refer to the last screenshot, not the zoom. "
         + "hover moves the mouse to a point, for menus and tooltips that open on hover; drag presses at point, moves to to, and releases there, for sliders, canvas strokes, maps, and drag and drop; "
         + "scroll with a point and delta [x, y] in screenshot pixels turns the mouse wheel there, scrolling whatever is under the point, such as an inner panel. These bring the tab to the front of its window and name the element under each point. "
@@ -184,8 +182,7 @@ export function browserExtension({ browserDirs, platform = process.platform, ...
       parameters,
       executionMode: "sequential",
       async execute(_id, { action, ...raw }, signal, _update, ctx) {
-        const params = given(raw);
-        checkParams(action, params);
+        const params = taken(action, given(raw));
         const bridge = use(ctx);
         used = true;
         const granted = new Set<string>();

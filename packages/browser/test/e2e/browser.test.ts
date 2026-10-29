@@ -707,13 +707,12 @@ async function pixel(name: string): Promise<[number, number]> {
   return [Math.round(x * image.width / width), Math.round(y * image.width / width)];
 }
 
-test("points: a point before any screenshot fails asking for one, and click takes a ref or a point, not both", async () => {
+test("points: a point before any screenshot fails asking for one, and click needs a ref or a point", async () => {
   const [, tabId] = (await browser({ action: "navigate", url: points, newTab: true }, "Allow for this session")).match(/^Tab (\d+): Pi points/)!;
   assert.deepEqual(asked.splice(0), ["points.test"]);
   await inWorker(`chrome.tabs.update(${tabId}, { active: true }).then(tab => chrome.windows.update(tab.windowId, { width: 1800, height: 800 }))`);
   await until(async () => (await layout()).viewport[0] > 1568);
   await assert.rejects(browser({ action: "click", point: [10, 10] }), new RegExp(`^Error: Tab ${tabId} has no screenshot to take a point from\\. Use screenshot first`));
-  await assert.rejects(browser({ action: "click", ref: 1, point: [10, 10] }), /click needs either a ref from read or a point from a screenshot, not both/);
   await assert.rejects(browser({ action: "click" }), /click needs either a ref from read or a point from a screenshot/);
   assert.doesNotMatch(await browser({ action: "read" }), /mousedown/);
 });
@@ -768,6 +767,15 @@ test("points: on a scrolled page, a click names the field under the point", asyn
 test("points: a ref below the fold is hit-tested where it scrolled to, so its click is not refused as covered", async () => {
   await browser({ action: "navigate", url: at("points", "form.html?below") });
   assert.match(await browser({ action: "click", ref: ref(await browser({ action: "read" }), 'button "Below the fold"') }), /^Clicked \[\d+\]/);
+  assert.match(await browser({ action: "read" }), /button "Clicked below"/);
+});
+
+test("points: a model that fills every field with placeholders can navigate, and scroll and click by ref with a placeholder point", async () => {
+  const filled = { tabId: 0, newTab: false, ref: 0, point: [0, 0], to: [0, 0], delta: [0, 0], region: [0, 0, 1, 1], button: "left", clickCount: 1, text: "", code: "", keys: "" };
+  const [, tabId] = (await browser({ ...filled, action: "navigate", url: at("points", "form.html?below") })).match(/^Tab (\d+): Pi form/)!;
+  const below = ref(await browser({ action: "read" }), 'button "Below the fold"');
+  assert.match(await browser({ ...filled, tabId: Number(tabId), action: "scroll", ref: below }), new RegExp(`^Scrolled \\[${below}\\] into view in tab ${tabId}\\.$`));
+  assert.match(await browser({ ...filled, tabId: Number(tabId), action: "click", ref: below }), new RegExp(`^Clicked \\[${below}\\] in tab ${tabId}\\.$`));
   assert.match(await browser({ action: "read" }), /button "Clicked below"/);
 });
 
@@ -947,7 +955,6 @@ test("pointer: hover, drag, and scroll at a point refuse missing or empty points
   await assert.rejects(browser({ action: "drag", point: [10, 10] }), /^Error: drag needs a point from a screenshot where it starts and to, the point where it ends\.$/);
   await assert.rejects(browser({ action: "scroll", point: [10, 10] }), /^Error: scroll at a point needs delta: \[x, y\]/);
   await assert.rejects(browser({ action: "scroll", point: [10, 10], delta: [0, 0] }), /^Error: scroll at a point needs delta/);
-  await assert.rejects(browser({ action: "scroll", ref: 1, delta: [0, 10] }), /^Error: scroll's delta goes with a point; a ref is only brought into view\.$/);
   await assert.rejects(browser({ action: "drag", point: [10, 10], to: [image.width, 10] }), /^Error: Point \(\d+, 10\) is outside tab \d+'s last screenshot/);
   assert.match(await browser({ action: "read" }), /pad got nothing/);
 });
