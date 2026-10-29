@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><title>Pi points frame</title>
+  <style>html, body { margin: 0; height: 100%; background: #20c050; }</style>
+</head>
+<body>
+  <script>
+    for (const type of ["mousedown", "click", "keydown"]) addEventListener(type, () => parent.postMessage(type, "*"));
+  </script>
+</body>
+</html>
