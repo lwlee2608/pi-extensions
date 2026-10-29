@@ -78,24 +78,25 @@ const handlers = {
     const tab = await piTab(caller, tabId);
     let at = point === undefined ? undefined : spot(tab.id, point);
     let what = `[${ref}]`;
-    let ask, check;
+    let ask;
     await inFront(tab, async () => {
+      const where = at ? `Point (${point.join(", ")})` : `Ref [${ref}]`;
       if (at) {
-        const where = `Point (${point.join(", ")})`;
         const frame = await frameAt(tab.id, at, where);
         if ((ask = unapproved(frame, hosts, where))) return;
         await overlay(tab.id, "aim", at);
         what = `at (${point.join(", ")}) on ${await named(tab.id, frame.hit.backendNodeId, frame.node, frame.sessionId)}${foreign(frame)}`;
-        check = async done => {
-          const url = unapproved(await frameAt(tab.id, at, where), hosts, where);
-          if (url) throw new Error(`During the click the page put content from ${hostOf(url) ?? url} under ${where.toLowerCase()}, so it stopped after ${done} of ${clickCount} presses. Take a new screenshot and try again.`);
-        };
       } else {
         await overlay(tab.id, "aim", await reveal(tab.id, ref));
         at = await center(tab.id, ref);
         if (!at) throw new Error(`Ref [${ref}] has no visible box to click.`);
         await uncovered(tab.id, ref, at);
+        if ((ask = unapproved(await frameAt(tab.id, at, where), hosts, where))) return;
       }
+      const check = async done => {
+        const url = unapproved(await frameAt(tab.id, at, where), hosts, where);
+        if (url) throw new Error(`During the click the page put content from ${hostOf(url) ?? url} under ${where.toLowerCase()}, so it stopped after ${done} of ${clickCount} presses. ${point ? "Take a new screenshot" : "Read again"} and try again.`);
+      };
       await guarded(tab.id, () => press(tab.id, at, button, clickCount, check));
     }).finally(() => { overlay(tab.id, "show"); });
     if (ask) return { ...(await reply(tab.id, "")), ask };
@@ -106,15 +107,12 @@ const handlers = {
     if (typeof text !== "string") throw new Error("type needs text.");
     const tab = await piTab(caller, tabId);
     await overlay(tab.id, "show", ref === undefined ? undefined : await reveal(tab.id, ref).catch(() => undefined));
-    let into = `[${ref}]`;
     if (ref !== undefined) await node(tab.id, "DOM.focus", ref);
-    else {
-      const focus = await focusIn(tab.id);
-      if (!focus.node) throw new Error(`Nothing has focus in tab ${tab.id}, so there is nowhere to type. Click a field first, by ref or point, or use keys for canvas apps that read key presses.`);
-      const ask = unapproved(focus, hosts, "Focus");
-      if (ask) return { ...(await reply(tab.id, "")), ask };
-      into = `${await named(tab.id, focus.node.backendNodeId, focus.node, focus.sessionId)}${foreign(focus)}`;
-    }
+    const focus = await focusIn(tab.id);
+    if (ref === undefined && !focus.node) throw new Error(`Nothing has focus in tab ${tab.id}, so there is nowhere to type. Click a field first, by ref or point, or use keys for canvas apps that read key presses.`);
+    const ask = unapproved(focus, hosts, "Focus");
+    if (ask) return { ...(await reply(tab.id, "")), ask };
+    const into = ref === undefined ? `${await named(tab.id, focus.node.backendNodeId, focus.node, focus.sessionId)}${foreign(focus)}` : `[${ref}]`;
     await guarded(tab.id, () => cdp(tab.id, "Input.insertText", { text }));
     return acted(tab.id, `Typed ${text.length} characters into ${into}`);
   },

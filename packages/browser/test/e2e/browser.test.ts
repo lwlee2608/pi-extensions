@@ -873,3 +873,15 @@ test("frames: type with no ref and keys into a focused cross-site frame inside a
     assert.match(await browser({ action: "read" }), /frame got click in shadow\.test; clicks 1; field ""/);
   }
 });
+
+test("frames: a click on a ref that is a cross-site frame, and type into a ref that forwards focus into one, ask for the frame's host", async () => {
+  await browser({ action: "navigate", url: `${framed}?button=button&host=forward&forward` });
+  const page = await browser({ action: "read" });
+  await assert.rejects(browser({ action: "click", ref: ref(page, 'button "Embed button"') }, "Deny"), /^Error: The user did not allow the browser on button\.test\.$/);
+  assert.match(await browser({ action: "read" }), /frame got nothing/);
+  assert.match(await browser({ action: "click", ref: ref(page, 'button "Embed button"') }, "Allow once"), /^Clicked \[\d+\] in tab \d+\.$/);
+  assert.match(await browser({ action: "read" }), /frame got click in button\.test; clicks 1/);
+  await assert.rejects(browser({ action: "type", ref: ref(page, 'textbox "Note"'), text: "denied" }, "Deny"), /^Error: The user did not allow the browser on forward\.test\.$/);
+  assert.deepEqual(asked.splice(0), ["button.test", "button.test", "forward.test"]);
+  assert.match(await browser({ action: "read" }), /frame got click in button\.test; clicks 1/);
+});
