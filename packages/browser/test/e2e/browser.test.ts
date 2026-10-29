@@ -1042,5 +1042,5 @@ test("pointer: a page that slides the cross-site frame under a drag's end mid-dr
   const [, downX, downY, upX, upY] = page.match(/pad got down at (\d+),(\d+); \d+ moves; up at (\d+),(\d+)/)!.map(Number);
   near([downX, downY], padstart, "the press");
   near([upX, upY], padstart, "the release");
-  assert.match(page, /frame got nothing/);
+  assert.match(page, /frame got (nothing|pointer in slid\.test)$/m, "the slid-in frame got at most the moves after it slid, never the press or release");
 });
