@@ -234,7 +234,9 @@ const handlers = {
     const corners = `(${x0}, ${y0})-(${x1}, ${y1})`;
     if (x0 < 0 || y0 < 0 || x1 > shot.width || y1 > shot.height) throw new Error(`Region ${corners} is outside tab ${tab.id}'s last screenshot, which is ${shot.width}x${shot.height} pixels.`);
     const [scaleX, scaleY] = [shot.cssWidth / shot.width, shot.cssHeight / shot.height];
-    const { data, width, height } = await capture(tab, () => ({ x: x0 * scaleX, y: y0 * scaleY, width: (x1 - x0) * scaleX, height: (y1 - y0) * scaleY }), ZOOM_MAX);
+    const [left, top] = [Math.floor(x0 * scaleX), Math.floor(y0 * scaleY)];
+    const [right, bottom] = [Math.min(Math.ceil(x1 * scaleX), Math.floor(shot.cssWidth)), Math.min(Math.ceil(y1 * scaleY), Math.floor(shot.cssHeight))];
+    const { data, width, height } = await capture(tab, () => ({ x: left, y: top, width: right - left, height: bottom - top }), ZOOM_MAX);
     return { ...(await reply(tab.id, `Zoom of ${corners} in tab ${tab.id}'s last screenshot, ${width}x${height} pixels. Points still refer to that screenshot, not this zoom.`)), data };
   },
 

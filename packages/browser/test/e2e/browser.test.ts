@@ -1118,7 +1118,14 @@ test("zoom: zoom on the small print returns that region at least twice as large 
   await shoot();
   const region = [...await pixel("finestart"), ...await pixel("fineend")];
   const [x0, y0, x1, y1] = region;
-  const { text, width, height } = await zoom(region);
+  await inWorker(`globalThis.clips = []; globalThis.send = chrome.debugger.sendCommand; chrome.debugger.sendCommand = (target, method, params) => {
+    if (method === "Page.captureScreenshot") clips.push(params.clip);
+    return send.call(chrome.debugger, target, method, params);
+  }`);
+  let clips: { width: number; height: number }[] = [];
+  const { text, width, height } = await zoom(region).finally(async () => { clips = await inWorker("chrome.debugger.sendCommand = send; clips"); });
+  assert.equal(clips.length, 1);
+  assert.ok(clips.every(clip => Number.isInteger(clip.width) && Number.isInteger(clip.height)), `clip ${JSON.stringify(clips)} has a whole CSS px size, which Chrome before 156 would otherwise truncate`);
   assert.match(text, new RegExp(`^Zoom of \\(${x0}, ${y0}\\)-\\(${x1}, ${y1}\\) in tab \\d+'s last screenshot, ${width}x${height} pixels\\. Points still refer to that screenshot, not this zoom\\.`));
   assert.ok(width >= 2 * (x1 - x0) && height >= 2 * (y1 - y0), `zoom ${width}x${height} is at least twice the region's ${x1 - x0}x${y1 - y0} in the screenshot`);
   assert.ok(width <= 1568 && height <= 1568 && width * height <= 1_150_000, `${width}x${height} is within the cap`);
