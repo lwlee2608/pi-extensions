@@ -46,12 +46,14 @@ const options = { browserDirs: [profile], connectTimeout: 10_000, callTimeout: 1
 
 const stopped: string[] = [];
 
+type Reply = string | boolean | (() => Promise<string>);
+
 function session(id = "e2e", name = id, overrides = {}) {
   const handlers = new Map<string, ((event: unknown, ctx: ExtensionContext) => unknown)[]>();
   const tools = new Map<string, any>();
   const asked: string[] = [];
   const confirmed: string[][] = [];
-  const answers: (string | boolean)[] = [];
+  const answers: Reply[] = [];
   const notes: string[] = [];
   let command: (args: string, ctx: ExtensionContext) => Promise<void>;
   const pi = {
@@ -62,7 +64,8 @@ function session(id = "e2e", name = id, overrides = {}) {
     setActiveTools: () => {},
   } as unknown as ExtensionAPI;
   const select = async (title: string, options: string[]) => {
-    const answer = answers.shift();
+    const next = answers.shift();
+    const answer = typeof next === "function" ? await next() : next;
     if (title.startsWith("Run this JavaScript")) {
       confirmed.push([title, ...options]);
       if (typeof answer !== "boolean") throw new Error(`Unexpected eval prompt: ${title}`);
@@ -76,7 +79,7 @@ function session(id = "e2e", name = id, overrides = {}) {
   const emit = (event: string) => { for (const handler of handlers.get(event) ?? []) handler({}, ctx); };
   browserExtension({ ...options, ...overrides })(pi);
   emit("session_start");
-  const call = async (params: object, ...replies: (string | boolean)[]): Promise<{ content: any[] }> => {
+  const call = async (params: object, ...replies: Reply[]): Promise<{ content: any[] }> => {
     answers.push(...replies);
     try {
       return await tools.get("browser").execute("call", params, undefined, () => {}, ctx);
@@ -84,7 +87,7 @@ function session(id = "e2e", name = id, overrides = {}) {
       assert.deepEqual(answers.splice(0), [], "every queued answer was asked for");
     }
   };
-  const browser = async (params: object, ...replies: (string | boolean)[]): Promise<string> => (await call(params, ...replies)).content[0].text;
+  const browser = async (params: object, ...replies: Reply[]): Promise<string> => (await call(params, ...replies)).content[0].text;
   const status = async () => { await command("", ctx); return notes.splice(0).join("\n"); };
   return { asked, confirmed, emit, call, browser, status, rename: (next: string) => { name = next; } };
 }
@@ -787,7 +790,7 @@ test("frames: a click inside the cross-site frame asks for the frame's host, not
 test("frames: a page that slides the cross-site frame under the pointer as it moves gets no press", async () => {
   await browser({ action: "navigate", url: `${framed}?slide` });
   await shoot();
-  await assert.rejects(browser({ action: "click", point: await pixel("board") }), /^Error: Point \(\d+, \d+\) came to lie inside a frame from frame\.test during the click, so it stopped after 0 of 1 presses\./);
+  await assert.rejects(browser({ action: "click", point: await pixel("board") }), /^Error: During the click the page put content from frame\.test under point \(\d+, \d+\), so it stopped after 0 of 1 presses\./);
   assert.deepEqual(asked, []);
   const page = await browser({ action: "read" });
   assert.match(page, /frame got nothing/);
@@ -842,4 +845,19 @@ test("frames: a cross-site frame that navigated itself to about:blank is refused
   await shoot();
   await assert.rejects(browser({ action: "click", point: await pixel("frame") }), /^Error: Point \(\d+, \d+\) is in a frame showing an about: page, and Pi Browser acts only in http and https pages, so nothing was done\.$/);
   assert.deepEqual(asked, []);
+});
+
+test("frames: a page that navigates to another host while the user decides on its frame gets no input, and the new host is asked for", async () => {
+  await browser({ action: "navigate", url: framed });
+  await shoot();
+  const away = at("away", "points.html");
+  const leave = async () => {
+    await inPage(framed, `location.href = ${JSON.stringify(away)}`);
+    await until(async () => await inWorker(`chrome.tabs.query({ url: "${away}" }).then(([tab]) => tab?.status)`) === "complete");
+    return "Allow once";
+  };
+  await assert.rejects(browser({ action: "click", point: await pixel("nested") }, leave, "Deny"), /^Error: The user did not allow the browser on away\.test\.$/);
+  assert.deepEqual(asked.splice(0), ["nested.test", "away.test"]);
+  assert.match(await browser({ action: "read" }, "Allow once"), /frame got nothing/);
+  asked.splice(0);
 });

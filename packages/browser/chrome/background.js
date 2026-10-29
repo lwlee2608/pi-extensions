@@ -87,8 +87,8 @@ const handlers = {
         await overlay(tab.id, "aim", at);
         what = `at (${point.join(", ")}) on ${await named(tab.id, frame.hit.backendNodeId, frame.node, frame.sessionId)}${foreign(frame)}`;
         check = async done => {
-          const now = await frameAt(tab.id, at, where);
-          if (unapproved(now, hosts, where)) throw new Error(`${where} came to lie inside a frame from ${hostOf(now.url)} during the click, so it stopped after ${done} of ${clickCount} presses. Take a new screenshot and try again.`);
+          const url = unapproved(await frameAt(tab.id, at, where), hosts, where);
+          if (url) throw new Error(`During the click the page put content from ${hostOf(url) ?? url} under ${where.toLowerCase()}, so it stopped after ${done} of ${clickCount} presses. Take a new screenshot and try again.`);
         };
       } else {
         await overlay(tab.id, "aim", await reveal(tab.id, ref));
@@ -132,7 +132,7 @@ const handlers = {
       for (const [index, press] of presses.entries()) {
         const url = unapproved(await focusIn(tab.id), hosts, "Focus");
         if (url && !index) return void (ask = url);
-        if (url) throw new Error(`Pressed ${combos.slice(0, index).join(" ")}, then focus moved into a frame from ${hostOf(url)}, so ${combos.slice(index).join(" ")} was not pressed. Use keys again for the rest; the user is asked about ${hostOf(url)} first.`);
+        if (url) throw new Error(`Pressed ${combos.slice(0, index).join(" ")}, then focus moved to content from ${hostOf(url) ?? url}, so ${combos.slice(index).join(" ")} was not pressed. Use keys again for the rest; the user is asked about ${hostOf(url)} first.`);
         await guarded(tab.id, () => pressKeys(tab.id, press));
       }
     });
@@ -710,6 +710,7 @@ function unapproved({ url = "", site, main }, hosts, where) {
   const host = hostOf(url);
   const scheme = /^[\w-]+:/.exec(url)?.[0] ?? "non-web";
   if (!host) throw new Error(`${where} is in a frame showing ${/^[aeiou]/.test(scheme) ? "an" : "a"} ${scheme} page, and Pi Browser acts only in http and https pages, so nothing was done.`);
+  if (!hosts.includes(hostOf(main.url))) return main.url;
   return site === main.site || hosts.includes(host) ? undefined : url;
 }
 
