@@ -215,7 +215,9 @@ test("pointer params are refused on actions that do not take them", () => {
   assert.throws(() => checkParams("hover", { point: [1, 2], button: "right" }), /^Error: button works only with click, not hover\.$/);
   assert.throws(() => checkParams("click", { point: [1, 2], to: [3, 4] }), /^Error: to works only with drag, not click\.$/);
   assert.throws(() => checkParams("drag", { point: [1, 2], to: [3, 4], delta: [0, 5] }), /^Error: delta works only with scroll, not drag\.$/);
-  for (const [action, params] of [["click", { point: [1, 2], button: "right", clickCount: 2 }], ["hover", { point: [1, 2] }], ["drag", { point: [1, 2], to: [3, 4] }], ["scroll", { point: [1, 2], delta: [0, 5] }], ["type", { text: "x" }]] as const) {
+  assert.throws(() => checkParams("screenshot", { region: [0, 0, 5, 5] }), /^Error: region works only with zoom, not screenshot\.$/);
+  assert.throws(() => checkParams("zoom", { region: [0, 0, 5, 5], point: [1, 2] }), /^Error: point works only with click, hover, drag, scroll, not zoom\.$/);
+  for (const [action, params] of [["click", { point: [1, 2], button: "right", clickCount: 2 }], ["hover", { point: [1, 2] }], ["drag", { point: [1, 2], to: [3, 4] }], ["scroll", { point: [1, 2], delta: [0, 5] }], ["type", { text: "x" }], ["zoom", { region: [0, 0, 5, 5] }]] as const) {
     checkParams(action, params);
   }
 });
