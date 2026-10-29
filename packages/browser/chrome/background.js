@@ -94,7 +94,9 @@ const handlers = {
         if ((ask = unapproved(await frameAt(tab.id, at, where), hosts, where))) return;
       }
       const check = async done => {
-        const url = unapproved(await frameAt(tab.id, at, where), hosts, where);
+        const url = await frameAt(tab.id, at, where).then(frame => unapproved(frame, hosts, where)).catch(error => {
+          throw done ? new Error(`Stopped after ${done} of ${clickCount} presses, since checking ${where.toLowerCase()} again failed (${error.message.replace(/\.$/, "")}).`) : error;
+        });
         if (url) throw new Error(`During the click the page put content from ${hostOf(url) ?? url} under ${where.toLowerCase()}, so it stopped after ${done} of ${clickCount} presses. ${point ? "Take a new screenshot" : "Read again"} and try again.`);
       };
       await guarded(tab.id, () => press(tab.id, at, button, clickCount, check));
@@ -128,7 +130,9 @@ const handlers = {
       await overlay(tab.id, "show", ref === undefined ? undefined : await reveal(tab.id, ref).catch(() => undefined));
       if (ref !== undefined) await node(tab.id, "DOM.focus", ref);
       for (const [index, press] of presses.entries()) {
-        const url = unapproved(await focusIn(tab.id), hosts, "Focus");
+        const url = await focusIn(tab.id).then(focus => unapproved(focus, hosts, "Focus")).catch(error => {
+          throw index ? new Error(`Pressed ${combos.slice(0, index).join(" ")}, then checking where focus went failed (${error.message.replace(/\.$/, "")}), so ${combos.slice(index).join(" ")} was not pressed.`) : error;
+        });
         if (url && !index) return void (ask = url);
         if (url) throw new Error(`Pressed ${combos.slice(0, index).join(" ")}, then focus moved to content from ${hostOf(url) ?? url}, so ${combos.slice(index).join(" ")} was not pressed. Use keys again for the rest; the user is asked about ${hostOf(url)} first.`);
         await guarded(tab.id, () => pressKeys(tab.id, press));
