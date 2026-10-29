@@ -33,8 +33,10 @@
       context.fill();
       measure();
     };
+    const inFrame = (x, y) => (box => `${Math.round(box.x + x)},${Math.round(box.y + y)}`)(frame.getBoundingClientRect());
     const measure = () => {
-      layout.textContent = `viewport ${document.documentElement.clientWidth}x${document.documentElement.clientHeight}; target ${target.x},${target.y}; field ${center(field)}; frame ${center(frame)}; scroll ${scrollX},${scrollY}`;
+      layout.textContent = `viewport ${document.documentElement.clientWidth}x${document.documentElement.clientHeight}; target ${target.x},${target.y}; board ${center(board)}; field ${center(field)}; `
+        + `frame ${center(frame)}; framefield ${inFrame(80, 52)}; nested ${inFrame(230, 60)}; scroll ${scrollX},${scrollY}`;
     };
     draw();
     addEventListener("resize", draw);
@@ -45,8 +47,14 @@
         log.appendChild(document.createElement("li")).textContent = `${type} ${["left", "middle", "right"][event.button]} ${event.detail} at ${event.clientX},${event.clientY}`;
       });
     }
+    if (location.search === "?slide") {
+      board.addEventListener("mousemove", event => {
+        frame.style.left = `${event.clientX - 150}px`;
+        frame.style.top = `${event.clientY + scrollY - 60}px`;
+      }, { once: true });
+    }
     frame.src = `http://frame.test:${location.port}/points-frame.html`;
-    addEventListener("message", event => { if (event.origin === new URL(frame.src).origin) framed.textContent = `frame got ${event.data}`; });
+    addEventListener("message", event => { if (/^http:\/\/(frame|nested)\.test:/.test(event.origin)) framed.textContent = `frame got ${event.data}`; });
   </script>
 </body>
 </html>

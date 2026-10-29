@@ -767,3 +767,72 @@ test("points: a ref below the fold is hit-tested where it scrolled to, so its cl
   assert.match(await browser({ action: "click", ref: ref(await browser({ action: "read" }), 'button "Below the fold"') }), /^Clicked \[\d+\]/);
   assert.match(await browser({ action: "read" }), /button "Clicked below"/);
 });
+
+const framed = at("frames", "points.html");
+
+async function shoot(): Promise<void> {
+  const [, width, height] = (await browser({ action: "screenshot" })).match(/, (\d+)x(\d+) pixels\./)!.map(Number);
+  image = { width, height };
+}
+
+test("frames: a click inside the cross-site frame asks for the frame's host, not the tab's, and deny fails with the frame recording nothing", async () => {
+  await browser({ action: "navigate", url: framed, newTab: true }, "Allow for this session");
+  assert.deepEqual(asked.splice(0), ["frames.test"]);
+  await shoot();
+  await assert.rejects(browser({ action: "click", point: await pixel("frame") }, "Deny"), /^Error: The user did not allow the browser on frame\.test\.$/);
+  assert.deepEqual(asked.splice(0), ["frame.test"]);
+  assert.match(await browser({ action: "read" }), /frame got nothing/);
+});
+
+test("frames: a page that slides the cross-site frame under the pointer as it moves gets no press", async () => {
+  await browser({ action: "navigate", url: `${framed}?slide` });
+  await shoot();
+  await assert.rejects(browser({ action: "click", point: await pixel("board") }), /^Error: Point \(\d+, \d+\) came to lie inside a frame from frame\.test during the click, so it stopped after 0 of 1 presses\./);
+  assert.deepEqual(asked, []);
+  const page = await browser({ action: "read" });
+  assert.match(page, /frame got nothing/);
+  assert.doesNotMatch(page, /mousedown/);
+});
+
+test("frames: allow once lets a triple click reach the frame's field asking once, and type with no ref and keys into it ask again, deny leaving it empty", async () => {
+  await browser({ action: "navigate", url: framed });
+  await shoot();
+  assert.match(await browser({ action: "click", point: await pixel("framefield"), clickCount: 3 }, "Allow once"), /^Triple-clicked at \(\d+, \d+\) on textbox "Frame note" in a frame from frame\.test in tab \d+\.$/);
+  assert.deepEqual(asked.splice(0), ["frame.test"]);
+  assert.match(await browser({ action: "read" }), /frame got click in frame\.test; clicks 3; field ""/);
+  await assert.rejects(browser({ action: "type", text: "denied" }, "Deny"), /^Error: The user did not allow the browser on frame\.test\.$/);
+  await assert.rejects(browser({ action: "keys", keys: "a" }, "Deny"), /^Error: The user did not allow the browser on frame\.test\.$/);
+  assert.deepEqual(asked.splice(0), ["frame.test", "frame.test"]);
+  assert.match(await browser({ action: "read" }), /frame got click in frame\.test; clicks 3; field ""/);
+  assert.match(await browser({ action: "type", text: "typed" }, "Allow once"), /^Typed 5 characters into textbox "Frame note" in a frame from frame\.test in tab \d+\.$/);
+  assert.match(await browser({ action: "keys", keys: "s" }, "Allow once"), /^Pressed s in tab \d+\.$/);
+  assert.deepEqual(asked.splice(0), ["frame.test", "frame.test"]);
+  assert.match(await browser({ action: "read" }), /frame got input in frame\.test; clicks 3; field "typeds"/);
+});
+
+test("frames: after allow for this session on a click in the cross-site frame, more clicks, type with no ref, and keys there do not ask", async () => {
+  await browser({ action: "navigate", url: framed });
+  await shoot();
+  const field = await pixel("framefield");
+  await browser({ action: "click", point: field }, "Allow for this session");
+  assert.deepEqual(asked.splice(0), ["frame.test"]);
+  await browser({ action: "click", point: field });
+  assert.match(await browser({ action: "type", text: "session" }), /^Typed 7 characters into textbox "Frame note" in a frame from frame\.test/);
+  await browser({ action: "keys", keys: "Enter" });
+  assert.deepEqual(asked, []);
+  assert.match(await browser({ action: "read" }), /frame got keydown in frame\.test; clicks 2; field "session"/);
+});
+
+test("frames: on a scrolled page, a point in a frame nested in the scrolled cross-site frame asks for the innermost frame's host", async () => {
+  await browser({ action: "navigate", url: framed });
+  await inPage(framed, "scrollTo(0, 200)");
+  await until(async () => (await layout()).scroll[1] === 200);
+  await shoot();
+  const nested = await pixel("nested");
+  await assert.rejects(browser({ action: "click", point: nested }, "Deny"), /^Error: The user did not allow the browser on nested\.test\.$/);
+  assert.deepEqual(asked.splice(0), ["nested.test"]);
+  assert.match(await browser({ action: "read" }), /frame got nothing/);
+  assert.match(await browser({ action: "click", point: nested }, "Allow once"), /on textbox "Frame note" in a frame from nested\.test in tab \d+\.$/);
+  assert.deepEqual(asked.splice(0), ["nested.test"]);
+  assert.match(await browser({ action: "read" }), /frame got click in nested\.test; clicks 1; field ""/);
+});
