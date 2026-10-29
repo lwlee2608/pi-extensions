@@ -6,7 +6,7 @@ import test from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Approvals, confirmEval, type Choice } from "../src/approval.ts";
 import { loadHosts, setConfirmEval } from "../src/config.ts";
-import { browserExtension, given, listTabs, truncate } from "../src/index.ts";
+import { browserExtension, given, listTabs, taken, truncate } from "../src/index.ts";
 
 const dir = await mkdtemp(join(tmpdir(), "pi-browser-approval-"));
 test.after(() => rm(dir, { recursive: true, force: true }));
@@ -205,6 +205,19 @@ test("without a UI the tool is hidden and never reaches the bridge", async () =>
 });
 
 test("zero and empty params count as not given, other values pass through", () => {
-  assert.deepEqual(given({ tabId: 0, ref: 0, url: "", text: "", code: "", keys: "", newTab: false }), { newTab: false });
-  assert.deepEqual(given({ tabId: -1, ref: -2, text: " ", keys: "Enter" }), { tabId: -1, ref: -2, text: " ", keys: "Enter" });
+  assert.deepEqual(given({ tabId: 0, ref: 0, url: "", text: "", code: "", keys: "", newTab: false, point: [], button: "", clickCount: 0 }), { newTab: false });
+  assert.deepEqual(given({ tabId: -1, ref: -2, text: " ", keys: "Enter", point: [0, 0] }), { tabId: -1, ref: -2, text: " ", keys: "Enter", point: [0, 0] });
+});
+
+test("params an action does not take are dropped, and a ref beats a point", () => {
+  const filled = { url: "https://excalidraw.com", tabId: 0, newTab: false, ref: 0, point: [0, 0], to: [0, 0], delta: [0, 0], region: [0, 0, 1, 1], button: "left", clickCount: 1, text: "", code: "", keys: "" };
+  assert.deepEqual(taken("navigate", given(filled)), { url: "https://excalidraw.com", newTab: false });
+  assert.deepEqual(taken("click", { ref: 5, point: [0, 0], button: "left", clickCount: 1, to: [0, 0], delta: [0, 0], region: [0, 0, 1, 1] }), { ref: 5, button: "left", clickCount: 1 });
+  assert.deepEqual(taken("scroll", { ref: 5, point: [10, 20], delta: [0, 300] }), { ref: 5 });
+  assert.deepEqual(taken("type", { text: "x", point: [1, 2], button: "right" }), { text: "x" });
+  assert.deepEqual(taken("drag", { point: [1, 2], to: [3, 4], delta: [0, 5] }), { point: [1, 2], to: [3, 4] });
+  assert.deepEqual(taken("screenshot", { region: [0, 0, 5, 5], point: [1, 2] }), {});
+  for (const [action, params] of [["click", { point: [1, 2], button: "right", clickCount: 2 }], ["hover", { point: [1, 2] }], ["drag", { point: [1, 2], to: [3, 4] }], ["scroll", { point: [1, 2], delta: [0, 5] }], ["type", { text: "x" }], ["zoom", { region: [0, 0, 5, 5] }]] as const) {
+    assert.deepEqual(taken(action, params), params);
+  }
 });

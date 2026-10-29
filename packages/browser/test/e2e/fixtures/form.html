@@ -18,6 +18,7 @@
     remove.onclick = () => { removed.textContent = confirm("Sure?") ? "deleted" : "declined"; };
     let clicks = 0;
     count.onclick = event => { if (event.isTrusted) count.textContent = `Clicked ${++clicks} times`; };
+    below.onclick = event => { if (event.isTrusted) below.textContent = "Clicked below"; };
   </script>
 </body>
 </html>

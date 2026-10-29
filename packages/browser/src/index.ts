@@ -12,12 +12,18 @@ import { detectBrowserDirs, installHost } from "./install.ts";
 const CHROME_DIR = fileURLToPath(new URL("../chrome/", import.meta.url));
 
 const parameters = Type.Object({
-  action: Type.Union(["tabs", "navigate", "read", "click", "type", "keys", "scroll", "screenshot", "console", "network", "eval"].map(action => Type.Literal(action))),
+  action: Type.Union(["tabs", "navigate", "read", "click", "hover", "drag", "type", "keys", "scroll", "screenshot", "zoom", "console", "network", "eval"].map(action => Type.Literal(action))),
   url: Type.Optional(Type.String({ description: "navigate: http or https URL to load" })),
   tabId: Type.Optional(Type.Number({ description: "Pi tab to act on; defaults to the current pi tab" })),
-  newTab: Type.Optional(Type.Boolean({ description: "navigate: open the URL in a new pi tab" })),
+  newTab: Type.Optional(Type.Boolean({ description: "navigate only: true only to keep the current page open in another pi tab; false or omitted reuses the current pi tab" })),
   ref: Type.Optional(Type.Number({ description: "click, type: element ref, the n in [n] from read. keys: focus this ref first. scroll: ref to bring into view" })),
-  text: Type.Optional(Type.String({ description: "type: text to insert at the cursor of the ref" })),
+  point: Type.Optional(Type.Array(Type.Number(), { minItems: 2, maxItems: 2, description: "click, scroll: [x, y] in pixels of the tab's last screenshot, instead of a ref; ignored for click and scroll when a ref is given. hover: where to move the mouse. drag: where it starts" })),
+  to: Type.Optional(Type.Array(Type.Number(), { minItems: 2, maxItems: 2, description: "drag: [x, y] in pixels of the tab's last screenshot where it ends" })),
+  delta: Type.Optional(Type.Array(Type.Number(), { minItems: 2, maxItems: 2, description: "scroll with a point: [x, y] wheel amount in pixels of the tab's last screenshot; positive y scrolls down; ignored when a ref is given" })),
+  region: Type.Optional(Type.Array(Type.Number(), { minItems: 4, maxItems: 4, description: "zoom: [x0, y0, x1, y1], the top-left and bottom-right corners of a rectangle in pixels of the tab's last screenshot" })),
+  button: Type.Optional(Type.Union([Type.Literal("left"), Type.Literal("right")], { description: "click: mouse button; left by default" })),
+  clickCount: Type.Optional(Type.Integer({ minimum: 1, maximum: 3, description: "click: 2 for a double click, 3 for a triple click; 1 by default" })),
+  text: Type.Optional(Type.String({ description: "type: text to insert at the cursor of the ref, or of the focused element when no ref is given" })),
   code: Type.Optional(Type.String({ description: "eval: JavaScript to run in the page's main frame, like the DevTools console: statements, top-level await, and const or let that may repeat across calls are allowed; the last expression's value is returned and a promise is awaited. At most 20 lines and 1500 characters, no two blank lines in a row, and no invisible or control characters other than newline and tab" })),
   keys: Type.Optional(Type.String({ description: "keys: space-separated keys or combos, like \"Enter\" or \"Shift+Tab\"; editing shortcuts use Meta on macOS and Control elsewhere, like \"Meta+a\" or \"Control+a\" to select all" })),
 });
@@ -26,6 +32,22 @@ function checkUrl(url: string | undefined): void {
   if (!url) throw new Error("navigate needs a url.");
   const { protocol } = parse(url);
   if (protocol !== "http:" && protocol !== "https:") throw new Error(`navigate only opens http and https URLs, not ${protocol}`);
+}
+
+const ONLY: Record<string, string[]> = { point: ["click", "hover", "drag", "scroll"], button: ["click"], clickCount: ["click"], to: ["drag"], delta: ["scroll"], region: ["zoom"] };
+
+export function taken<T extends object>(action: string, params: T): T {
+  const byRef = "ref" in params && (action === "click" || action === "scroll");
+  return Object.fromEntries(Object.entries(params).filter(([name]) => (ONLY[name]?.includes(action) ?? true) && !(byRef && (name === "point" || name === "delta")))) as T;
+}
+
+const FRAMED = new Set(["click", "hover", "drag", "scroll", "type", "keys"]);
+
+interface Page {
+  url: string;
+  text: string;
+  data?: string;
+  ask?: string;
 }
 
 const CHOICES: Record<string, Choice> = { "Allow once": "once", "Allow for this session": "session", "Always allow": "always", Deny: "deny" };
@@ -56,7 +78,7 @@ export async function listTabs({ tabs, others }: TabList, allowed: (url: string)
 }
 
 export function given<T extends object>(params: T): T {
-  return Object.fromEntries(Object.entries(params).filter(([, value]) => value !== 0 && value !== "")) as T;
+  return Object.fromEntries(Object.entries(params).filter(([, value]) => value !== 0 && value !== "" && !(Array.isArray(value) && !value.length))) as T;
 }
 
 let screenshots: Promise<string> | undefined;
@@ -144,7 +166,14 @@ export function browserExtension({ browserDirs, platform = process.platform, ...
         + "a tab on a host the user has not approved shows only its host; a non-http(s) tab shows only its scheme and is refused until navigated); "
         + "navigate loads an http/https URL in the current pi tab, or a new one with newTab; read returns the page as an accessibility tree "
         + "where [n] marks an element ref. click, type, and keys act on a ref with real input events; scroll brings a ref into view; "
-        + "screenshot returns a JPEG of the tab, bringing it to the front of its window, and saves it to a file whose path it gives. console and network list the tab's console messages "
+        + "screenshot returns a JPEG of the tab, bringing it to the front of its window, states its size in pixels, and saves it to a file whose path it gives. "
+        + "click can take a point [x, y] in pixels of the tab's last screenshot instead of a ref, for canvas apps and widgets without a ref; its result names the element hit. With both a ref and a point, click and scroll use the ref. Params an action does not take are ignored. "
+        + "zoom takes region [x0, y0, x1, y1], a rectangle in pixels of the tab's last screenshot, and returns it as a larger, sharper JPEG saved like a screenshot, bringing the tab to the front of its window, to read small text or aim at small targets; it is for looking only, so points still refer to the last screenshot, not the zoom. "
+        + "hover moves the mouse to a point, for menus and tooltips that open on hover; drag presses at point, moves to to, and releases there, for sliders, canvas strokes, maps, and drag and drop; "
+        + "scroll with a point and delta [x, y] in screenshot pixels turns the mouse wheel there, scrolling whatever is under the point, such as an inner panel. These bring the tab to the front of its window and name the element under each point. "
+        + "Points do not follow the page: after it scrolls, navigates, or changes, take a new screenshot. A click, hover, drag (at either end or any of the four points it moves through), or wheel inside a cross-site frame, and type or keys into one that has focus, need the user to approve that frame's host like any new host. "
+        + "click takes button right for a right click, and clickCount 2 or 3 for a double or triple click. type with no ref inserts text into whatever has focus and fails if nothing has, "
+        + "such as a field you just clicked by point; canvas apps that read key presses need keys instead. console and network list the tab's console messages "
         + "and requests (method, status, type, URL) since its page loaded, newest last; when the debugger attached after the page loaded, network says so and only a reload shows every request. eval runs code in the page and returns its JSON value; "
         + "eval runs on approved hosts without asking unless the user turned on eval confirmation, which shows them the code. Refs go stale when the page navigates; "
         + "read again. Actions do not wait for a page they trigger to load; read to see the result. The user approves each new host; "
@@ -153,11 +182,12 @@ export function browserExtension({ browserDirs, platform = process.platform, ...
       parameters,
       executionMode: "sequential",
       async execute(_id, { action, ...raw }, signal, _update, ctx) {
-        const params = given(raw);
+        const params = taken(action, given(raw));
         const bridge = use(ctx);
         used = true;
         const granted = new Set<string>();
         const approve = (url: string) => approvals.approve(url, host => ask(ctx, host, signal), granted);
+        let hosts: Set<string> | undefined;
         if (action === "tabs") {
           const text = await listTabs(await bridge.call(action, {}, signal) as TabList, url => approvals.allowed(url, granted));
           return { content: [{ type: "text", text: truncate(text) }], details: undefined };
@@ -169,13 +199,18 @@ export function browserExtension({ browserDirs, platform = process.platform, ...
           const tab = await bridge.call("tab", { tabId: params.tabId }, signal) as { id: number; url: string };
           await approve(loaded(tab.url));
           params.tabId = tab.id;
+          if (FRAMED.has(action)) hosts = new Set([hostOf(tab.url)!, ...granted, ...await approvals.hosts()]);
           if (action === "eval") {
             const host = hostOf(tab.url)!;
             await confirmEval(params.code, host, (title, options) => ctx.ui.select(title, options, { signal }), configPath);
             Object.assign(params, { host });
           }
         }
-        const page = await bridge.call(action, params, signal) as { url: string; text: string; data?: string };
+        let page: Page;
+        while ((page = await bridge.call(action, hosts ? { ...params, hosts: [...hosts] } : params, signal) as Page).ask) {
+          await approve(page.ask);
+          hosts!.add(hostOf(page.ask)!);
+        }
         await approve(loaded(page.url));
         if (page.data) {
           const file = await saveScreenshot(page.data, params.tabId!);
