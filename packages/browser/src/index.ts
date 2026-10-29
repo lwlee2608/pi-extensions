@@ -36,6 +36,15 @@ export function checkClickOnly(action: string, params: object): void {
   if (action !== "click" && given.length) throw new Error(`${given.join(", ")} only work with click, not ${action}. To type at a point, click it first, then use type with no ref.`);
 }
 
+const FRAMED = new Set(["click", "type", "keys"]);
+
+interface Page {
+  url: string;
+  text: string;
+  data?: string;
+  ask?: string;
+}
+
 const CHOICES: Record<string, Choice> = { "Allow once": "once", "Allow for this session": "session", "Always allow": "always", Deny: "deny" };
 
 async function ask(ctx: ExtensionContext, host: string, signal?: AbortSignal): Promise<Choice> {
@@ -154,7 +163,7 @@ export function browserExtension({ browserDirs, platform = process.platform, ...
         + "where [n] marks an element ref. click, type, and keys act on a ref with real input events; scroll brings a ref into view; "
         + "screenshot returns a JPEG of the tab, bringing it to the front of its window, states its size in pixels, and saves it to a file whose path it gives. "
         + "click can take a point [x, y] in pixels of the tab's last screenshot instead of a ref, for canvas apps and widgets without a ref; its result names the element hit. "
-        + "Points do not follow the page: after it scrolls, navigates, or changes, take a new screenshot. A point inside a cross-site frame is refused. "
+        + "Points do not follow the page: after it scrolls, navigates, or changes, take a new screenshot. A click inside a cross-site frame, by point or ref, and type or keys into one that has focus, need the user to approve that frame's host like any new host. "
         + "click takes button right for a right click, and clickCount 2 or 3 for a double or triple click. type with no ref inserts text into whatever has focus and fails if nothing has, "
         + "such as a field you just clicked by point; canvas apps that read key presses need keys instead. console and network list the tab's console messages "
         + "and requests (method, status, type, URL) since its page loaded, newest last; when the debugger attached after the page loaded, network says so and only a reload shows every request. eval runs code in the page and returns its JSON value; "
@@ -171,6 +180,7 @@ export function browserExtension({ browserDirs, platform = process.platform, ...
         used = true;
         const granted = new Set<string>();
         const approve = (url: string) => approvals.approve(url, host => ask(ctx, host, signal), granted);
+        let hosts: Set<string> | undefined;
         if (action === "tabs") {
           const text = await listTabs(await bridge.call(action, {}, signal) as TabList, url => approvals.allowed(url, granted));
           return { content: [{ type: "text", text: truncate(text) }], details: undefined };
@@ -182,13 +192,18 @@ export function browserExtension({ browserDirs, platform = process.platform, ...
           const tab = await bridge.call("tab", { tabId: params.tabId }, signal) as { id: number; url: string };
           await approve(loaded(tab.url));
           params.tabId = tab.id;
+          if (FRAMED.has(action)) hosts = new Set([hostOf(tab.url)!, ...granted, ...await approvals.hosts()]);
           if (action === "eval") {
             const host = hostOf(tab.url)!;
             await confirmEval(params.code, host, (title, options) => ctx.ui.select(title, options, { signal }), configPath);
             Object.assign(params, { host });
           }
         }
-        const page = await bridge.call(action, params, signal) as { url: string; text: string; data?: string };
+        let page: Page;
+        while ((page = await bridge.call(action, hosts ? { ...params, hosts: [...hosts] } : params, signal) as Page).ask) {
+          await approve(page.ask);
+          hosts!.add(hostOf(page.ask)!);
+        }
         await approve(loaded(page.url));
         if (page.data) {
           const file = await saveScreenshot(page.data, params.tabId!);

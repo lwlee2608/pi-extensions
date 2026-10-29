@@ -6,7 +6,6 @@
     body { margin: 0; height: 2000px; background: #fff; }
     #board { position: absolute; left: 0; top: 0; width: 100%; height: 300px; }
     #field { position: absolute; left: 20px; top: 340px; }
-    #frame { position: absolute; left: 400px; top: 320px; width: 300px; height: 120px; border: 0; }
     #info { position: absolute; left: 20px; top: 460px; }
     #log { list-style: none; }
   </style>
@@ -14,7 +13,7 @@
 <body>
   <canvas id="board"></canvas>
   <input id="field" aria-label="Note">
-  <iframe id="frame" title="Cross-site frame"></iframe>
+  <iframe id="frame" title="Cross-site frame" style="position: absolute; left: 400px; top: 320px; width: 300px; height: 120px; border: 0;"></iframe>
   <div id="info">
     <p id="layout"></p>
     <p id="framed">frame got nothing</p>
@@ -22,6 +21,9 @@
   </div>
   <script>
     const target = { x: 1400, y: 150 };
+    const params = new URLSearchParams(location.search);
+    const embed = document.getElementById("frame");
+    if (params.has("shadow")) document.body.appendChild(document.createElement("div")).attachShadow({ mode: params.get("shadow") }).appendChild(embed);
     const center = element => (box => `${Math.round(box.x + box.width / 2)},${Math.round(box.y + box.height / 2)}`)(element.getBoundingClientRect());
     const draw = () => {
       board.width = board.clientWidth;
@@ -33,8 +35,10 @@
       context.fill();
       measure();
     };
+    const inFrame = (x, y) => (box => `${Math.round(box.x + x)},${Math.round(box.y + y)}`)(embed.getBoundingClientRect());
     const measure = () => {
-      layout.textContent = `viewport ${document.documentElement.clientWidth}x${document.documentElement.clientHeight}; target ${target.x},${target.y}; field ${center(field)}; frame ${center(frame)}; scroll ${scrollX},${scrollY}`;
+      layout.textContent = `viewport ${document.documentElement.clientWidth}x${document.documentElement.clientHeight}; target ${target.x},${target.y}; board ${center(board)}; field ${center(field)}; `
+        + `frame ${center(embed)}; framefield ${inFrame(80, 52)}; nested ${inFrame(230, 60)}; scroll ${scrollX},${scrollY}`;
     };
     draw();
     addEventListener("resize", draw);
@@ -45,8 +49,20 @@
         log.appendChild(document.createElement("li")).textContent = `${type} ${["left", "middle", "right"][event.button]} ${event.detail} at ${event.clientX},${event.clientY}`;
       });
     }
-    frame.src = `http://frame.test:${location.port}/points-frame.html`;
-    addEventListener("message", event => { if (event.origin === new URL(frame.src).origin) framed.textContent = `frame got ${event.data}`; });
+    if (params.has("slide")) {
+      board.addEventListener("mousemove", event => {
+        embed.style.left = `${event.clientX - 150}px`;
+        embed.style.top = `${event.clientY + scrollY - 60}px`;
+      }, { once: true });
+    }
+    if (params.has("button")) {
+      const button = document.body.appendChild(document.createElement("iframe"));
+      for (const [name, value] of [["role", "button"], ["aria-label", "Embed button"], ["style", "position: absolute; left: 750px; top: 320px; width: 120px; height: 100px; border: 0;"]]) button.setAttribute(name, value);
+      button.src = `http://${params.get("button")}.test:${location.port}/points-frame.html?nested`;
+    }
+    if (params.has("forward")) field.addEventListener("focus", () => embed.contentWindow.focus());
+    embed.src =`http://${params.get("host") ?? "frame"}.test:${location.port}/points-frame.html?${params.get("frame") ?? ""}`;
+    addEventListener("message", event => { if (event.origin !== location.origin) framed.textContent = `frame got ${event.data}`; });
   </script>
 </body>
 </html>

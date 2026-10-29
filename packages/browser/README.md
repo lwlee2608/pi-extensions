@@ -39,7 +39,7 @@ Each Pi session listens on its own Unix socket under `~/.pi/agent/pi-browser/ses
 
 ## Install
 
-**Requirements:** desktop Google Chrome 120+, Brave, or Chromium on Linux or macOS; Node.js 22.19+; Pi 1.0.0 installed with npm. Windows is not supported yet, and neither are Snap or Flatpak browsers, which can't start the native host.
+**Requirements:** desktop Google Chrome 125+, Brave, or Chromium on Linux or macOS; Node.js 22.19+; Pi 1.0.0 installed with npm. Windows is not supported yet, and neither are Snap or Flatpak browsers, which can't start the native host.
 
 1. Install the Pi package:
 
@@ -89,7 +89,7 @@ The agent gets one `browser` tool:
 
 Page actions take an optional tab id and default to the current pi tab. Refs come from the tab's last `read` and go stale when the page navigates (or, for refs inside a frame, when that frame does); the agent reads again to get fresh ones. `click`, `type`, and `keys` don't wait for a page they trigger to load; the agent reads to see the result.
 
-A point is `[x, y]` in pixels of the tab's last screenshot, for canvas apps and widgets `read` gives no ref; the extension maps it back to the page, so the model never scales it. A point on a tab with no screenshot fails and asks for one. Points don't follow the page: after it scrolls, navigates, or changes, the agent takes a new screenshot. A point inside a cross-site frame is refused.
+A point is `[x, y]` in pixels of the tab's last screenshot, for canvas apps and widgets `read` gives no ref; the extension maps it back to the page, so the model never scales it. A point on a tab with no screenshot fails and asks for one. Points don't follow the page: after it scrolls, navigates, or changes, the agent takes a new screenshot. A point inside a cross-site frame first asks you to approve that frame's host; see [Site approval](#site-approval).
 
 `network` only sees requests made since the agent first acted on the tab, or since Pi last reconnected; when that came after the page loaded, it says so, and reloading the page shows every request. Both logs start over when the tab's page navigates, so they only ever show the page the agent is looking at. They keep the last 200 entries per tab and cut each message or URL at 1,000 characters. Requests and messages from cross-site frames aren't recorded. `eval` returns values that survive JSON, so for a DOM node it should return a property such as `outerHTML`. Synchronous code is stopped after 10 seconds. Output is truncated to 2,000 lines or 50KB, keeping the start of a page and the newest log entries.
 
@@ -108,6 +108,8 @@ The first action on a new host, reads included, asks you in Pi:
 - **Deny:** the action fails. The next action on that host asks again.
 
 Approval matches the exact hostname, so `github.com` doesn't cover `gist.github.com`. It covers the tab's page and the same-site frames inside it, so a `github.com` page that embeds a `gist.github.com` frame shows that frame's text too. `read` skips cross-site frames, but `screenshot` shows whatever is visible in the tab, cross-site frames included. It is checked against the tab's page before every action, against the target before every navigation, and against where the page ended up after it, so a redirect or link to a new host asks again. `tabs` asks nothing; a pi tab on a host you haven't approved shows only its host, never its title or full URL. `eval` doesn't ask on its own: once a site is approved, eval runs there like any other action, as in Claude in Chrome. A page can carry text that steers the agent into an eval that reads your cookies or sends them elsewhere, so turn on **Ask before eval** in `/browser settings` if you use the browser on sites you don't trust. Then Pi shows you the code and runs it only if you pick **Run all N lines**; anything else fails the call. Eval code is capped at 20 lines and 1,500 characters, may not have two blank lines in a row, and may not contain invisible or control characters other than newline and tab. On a short terminal the top of the code can still scroll out of view, so check that the line count in that option matches the code you see.
+
+A cross-site frame, such as an embed from another site, needs its own host approved before the agent acts in it. A click, at a point or a ref, finds the innermost frame under where it presses, through frames nested in frames; `type` and `keys` find the frame that has focus, through shadow roots too. If that frame is cross-site to the tab's page, Pi asks for the frame's host, not the tab's, with the same choices as above and the same store, so a host approved by navigating to it, clicking in it, or typing into it isn't asked again by another route. One action asks at most once per host: **Allow once** covers that one click, `type`, or `keys`, and the next action in that frame asks again. **Deny** fails the action before any input reaches the frame. If the tab's page itself moved to a new host while you were deciding, Pi asks for that host before any input. A frame on the tab's own site never asks. A click checks the point again after the pointer moves and before each press, and stops if the page slid an unapproved frame under it; `keys` stops if a key moves focus into one, leaving the rest unpressed.
 
 A pi tab showing anything other than an `http`/`https` page, such as `about:blank`, `data:`, or `chrome:`, has no host to approve, so every action on it is refused and `tabs` shows only its scheme. That stops a page from writing into a blank tab it opened and having the agent read it unasked. Navigate the tab to use it again.
 
@@ -149,7 +151,7 @@ Once the agent uses `console` on a tab, Chrome reports that tab's console to the
 - Each session goes to one browser: the first Chrome profile to reach it. Another profile with the extension is refused for that session until the first lets go.
 - The socket path, `~/.pi/agent/pi-browser/sessions/<session id>.sock`, must fit the OS limit (104 bytes on macOS, 108 on Linux). If `PI_CODING_AGENT_DIR` is very long, the browser fails with an error naming the path.
 - A session that exits while Chrome has the extension's worker asleep keeps its live group title until Chrome restarts.
-- Cross-site iframes are out of reach: `read` skips them, and a click at a point inside one is refused.
+- `read` skips cross-site iframes, so they have no refs. The agent reaches them by points from a screenshot, by `type` or `keys` into one that has focus, or by a ref click that lands on one, always after you approve the frame's host.
 - Points assume the model sees the screenshot at the size it was taken. A provider that shrinks images further on its side, such as OpenAI's 768-pixel short side, can make points miss.
 - Native dialogs, file pickers, password-manager popups, passkeys, and CAPTCHAs are out of reach.
 - An action or `eval` that opens an `alert`, `confirm`, or `prompt` dialog fails at once and leaves the dialog for you to answer in Chrome; the tab is blocked until you do.

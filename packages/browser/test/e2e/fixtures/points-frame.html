@@ -2,11 +2,26 @@
 <html lang="en">
 <head>
   <meta charset="utf-8"><title>Pi points frame</title>
-  <style>html, body { margin: 0; height: 100%; background: #20c050; }</style>
+  <style>
+    html, body { margin: 0; height: 400px; background: #20c050; }
+    #field { position: absolute; left: 20px; top: 140px; width: 120px; height: 24px; box-sizing: border-box; }
+    #nested { position: absolute; left: 170px; top: 110px; width: 120px; height: 100px; border: 0; }
+  </style>
 </head>
 <body>
+  <input id="field" aria-label="Frame note">
   <script>
-    for (const type of ["mousedown", "click", "keydown"]) addEventListener(type, () => parent.postMessage(type, "*"));
+    if (location.search === "?blank") location.replace("about:blank");
+    let clicks = 0;
+    if (location.search !== "?nested") document.body.appendChild(Object.assign(document.createElement("iframe"), { id: "nested", title: "Nested frame", src: `http://nested.test:${location.port}/points-frame.html?nested` }));
+    scrollTo(0, 100);
+    for (const type of ["mousedown", "click", "keydown", "input"]) {
+      addEventListener(type, () => {
+        if (type === "click") clicks++;
+        top.postMessage(`${type} in ${location.hostname}; clicks ${clicks}; field "${field.value}"`, "*");
+      });
+    }
+    if (location.search === "?alert") addEventListener("click", () => alert("Frame alert"));
   </script>
 </body>
 </html>
