@@ -1031,18 +1031,18 @@ test("pointer: a drag, hover, or wheel over the cross-site frame asks for its ho
   assert.match(page, /pad got nothing/);
 });
 
-test("pointer: a page that slides the cross-site frame under a drag's end mid-drag gets the release back at the start", async () => {
+test("pointer: a page that slides the cross-site frame onto a drag's path mid-drag gets no move and the release back at the start", async () => {
   const url = `${pointer}?slide&host=slid`;
   await browser({ action: "navigate", url });
   await shoot();
   const { padstart } = await layout();
-  await assert.rejects(browser({ action: "drag", point: await pixel("padstart"), to: await pixel("padend") }), /^Error: During the drag the page put content from slid\.test under end point \(\d+, \d+\), so it released the button back at the start point\. Take a new screenshot and try again\.$/);
+  await assert.rejects(browser({ action: "drag", point: await pixel("padstart"), to: await pixel("padend") }), /^Error: During the drag the page put content from slid\.test under path point \(\d+, \d+\), so it released the button back at the start point\. Take a new screenshot and try again\.$/);
   assert.deepEqual(asked, []);
   const page = await browser({ action: "read" });
   const [, downX, downY, upX, upY] = page.match(/pad got down at (\d+),(\d+); \d+ moves; up at (\d+),(\d+)/)!.map(Number);
   near([downX, downY], padstart, "the press");
   near([upX, upY], padstart, "the release");
-  assert.match(page, /frame got (nothing|pointer in slid\.test)$/m, "the slid-in frame got at most the moves after it slid, never the press or release");
+  assert.match(page, /frame got nothing$/m);
 });
 
 test("pointer: a hover or click at a point under the overlay's Stop button reaches and names the page's element there", async () => {

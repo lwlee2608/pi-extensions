@@ -167,13 +167,17 @@ const handlers = {
         await recheck(tab.id, from, start, hosts, before);
         await recheck(tab.id, end, finish, hosts, before);
         await mouse({ type: "mousePressed", ...from, buttons: 1 });
+        const after = { action: "drag", stopped: "released the button back at the start point", pressed: true };
         try {
           await Promise.all([overlay(tab.id, "move", end), (async () => {
             for (let step = 1; step <= DRAG_STEPS; step++) {
-              await mouse({ type: "mouseMoved", x: from.x + (end.x - from.x) * step / DRAG_STEPS, y: from.y + (end.y - from.y) * step / DRAG_STEPS, buttons: 1 });
+              const along = (a, b) => a + (b - a) * step / DRAG_STEPS;
+              const at = { x: along(from.x, end.x), y: along(from.y, end.y) };
+              await recheck(tab.id, at, step === DRAG_STEPS ? finish : `Path point (${Math.round(along(point[0], to[0]))}, ${Math.round(along(point[1], to[1]))})`, hosts, after);
+              await mouse({ type: "mouseMoved", ...at, buttons: 1 });
             }
           })()]);
-          await recheck(tab.id, end, finish, hosts, { action: "drag", stopped: "released the button back at the start point", pressed: true });
+          await recheck(tab.id, end, finish, hosts, after);
         } catch (error) {
           await mouse({ type: "mouseMoved", ...from, buttons: 1 }).then(() => mouse({ type: "mouseReleased", ...from, buttons: 0 })).catch(() => {});
           throw error;
