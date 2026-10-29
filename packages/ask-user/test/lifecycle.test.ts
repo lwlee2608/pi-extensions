@@ -210,3 +210,24 @@ test("tool sends the captured request and reports the summed usage of every expl
   assert.deepEqual(output.details, { cancelled: false, answers: [{ questionIndex: 1, selected: ["SQLite"], explanation: "First." }] });
   assert.deepEqual(output.usage, { input: 600, output: 300, cacheRead: 13000, cacheWrite: 0, totalTokens: 13900, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.75 } });
 });
+
+test("closing mid-explanation waits for the aborted request so its usage is still reported", async () => {
+  const h = host(), view = ui();
+  const usage = { input: 300, output: 0, cacheRead: 6500, cacheWrite: 0, totalTokens: 6800, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.1 } };
+  Object.assign(view.ctx, {
+    model: { id: "m" }, thinkingLevel: "off",
+    sessionManager: { buildSessionProjection: () => ({ messages: [] }), getSessionId: () => "s" },
+    modelRegistry: {
+      streamSimple: (_model: unknown, _context: unknown, options: { signal: AbortSignal }) => {
+        const result = new Promise(resolve => options.signal.addEventListener("abort", () => setTimeout(() => resolve({ stopReason: "aborted", usage }), 10)));
+        return { async *[Symbol.asyncIterator]() {}, result: () => result };
+      },
+    },
+  });
+  h.handlers.get("context_with_system")!({ type: "context_with_system", messages: [{ role: "system", content: "captured", timestamp: 0 }] });
+  const pending = h.tool.execute("id", { questions: core.questions.slice(0, 1) }, undefined, undefined, view.ctx);
+  await new Promise(resolve => setTimeout(resolve, 450));
+  view.input("4");
+  view.input("1");
+  assert.deepEqual((await pending).usage, usage);
+});

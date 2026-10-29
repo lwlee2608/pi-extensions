@@ -416,6 +416,7 @@ export async function runQuestionnaire(ctx: ExtensionContext, params: Params, si
   validate(params);
   signal?.throwIfAborted();
   let abort: (() => void) | undefined;
+  const runs: Promise<string>[] = [];
   try {
     const outcome = await ctx.ui.custom<Result | Error>((tui, theme, keys, done) => {
       if ((tui as TUI & { readonly hasOverlayEntries: boolean }).hasOverlayEntries) throw new Error("Close the existing dialog before opening a questionnaire.");
@@ -428,10 +429,15 @@ export async function runQuestionnaire(ctx: ExtensionContext, params: Params, si
       abort = () => finish(new Error("Questionnaire aborted."));
       signal?.addEventListener("abort", abort, { once: true });
       const explain = explainer(ctx, params, options.lastRequest ?? (() => undefined), options.onUsage ?? (() => {}));
-      return new Questionnaire(params, tui, theme, keys, finish, Date.now, (index, own, onText) => explain(index, signal ? AbortSignal.any([own, signal]) : own, onText));
+      return new Questionnaire(params, tui, theme, keys, finish, Date.now, (index, own, onText) => {
+        const run = explain(index, signal ? AbortSignal.any([own, signal]) : own, onText);
+        runs.push(run);
+        return run;
+      });
     });
     if (outcome instanceof Error) throw outcome;
     if (!outcome) throw new Error("Questionnaire UI unavailable.");
+    await Promise.allSettled(runs);
     return outcome;
   } finally {
     if (abort) signal?.removeEventListener("abort", abort);
