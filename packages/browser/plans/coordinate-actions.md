@@ -118,5 +118,8 @@ In your own Chrome with Pi Browser reloaded, in a pi session, ask the agent to:
 5. Zoom into small text, then click a small link near it.
 Each step works without an `eval` prompt, and the blue dot lands where the agent acts.
 
+**Result (2026-10-29):** Passed in the user's Chrome 153 on Linux with gpt-6-astra. Steps 1, 2, 3 and 5 worked with no `eval`; step 4 on stripe.dev hit a same-site frame (docs.stripe.com / js.stripe.com), so cross-site approval was rerun on a YouTube embed on w3schools.com and passed. The first run found models that fill every field with placeholders, fixed in #62. Not run: the right-click menu check and the macOS/Windows native drag check.
+**Note:** In step 3 a click on python.org's "Source code" dropdown link was named `menubar "Main Navigation"`; the click itself landed. The model also sent `newTab: true` on every navigate.
+
 ## After merge
 - Bump and release the browser package once the demo passes, as in `8ac23dc`.
