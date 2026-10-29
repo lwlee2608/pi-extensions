@@ -78,16 +78,18 @@ The agent gets one `browser` tool:
 | `tabs` | List tabs in your session's group. Other tabs are only counted, never listed. |
 | `navigate` | Load an `http`/`https` URL in the current pi tab, or a new one. Other schemes are refused. |
 | `read` | Page text plus numbered element refs from the accessibility tree. |
-| `click` | Click a ref with real mouse events. Brings that tab to the front of its window first, and fails naming the element on top if something else covers the ref's center. |
-| `type` | Focus a ref and insert text at its cursor. |
+| `click` | Click a ref, or a point in the tab's last screenshot, with real mouse events: left or right button, once, twice, or three times. Brings that tab to the front of its window first. Fails naming the element on top if something else covers a ref's center; a point's result names the element under it. |
+| `type` | Focus a ref and insert text at its cursor, or with no ref, insert it into whatever has focus, such as a field just clicked by point. |
 | `keys` | Press keys or combos, like `Enter`, `Shift+Tab`, or select-all (`Meta+a` on macOS, `Control+a` elsewhere), after focusing a ref if given. Brings that tab to the front of its window first. |
 | `scroll` | Scroll a ref into view. |
-| `screenshot` | JPEG of a pi tab's visible area at CSS pixel size, so high-density screens don't produce oversized images. Brings that tab to the front of its window first. Also saved to a private `pi-browser-*` folder in the system temp dir; the result gives the path. |
+| `screenshot` | JPEG of a pi tab's visible area at CSS pixel size, so high-density screens don't produce oversized images, shrunk to at most 1568 pixels on its long edge and about 1.15 megapixels so models see it unshrunk. The result states its size. Brings that tab to the front of its window first. Also saved to a private `pi-browser-*` folder in the system temp dir; the result gives the path. |
 | `console` | Console messages, uncaught exceptions, and Chrome's own warnings from the tab's current page. |
 | `network` | Requests from the tab's current page: method, status, type, and URL. Never headers or bodies. |
 | `eval` | Run JavaScript in the page's main frame like the DevTools console, and return the last value as JSON, awaiting a promise. Runs without asking on approved sites unless you turn on **Ask before eval** in `/browser settings`. |
 
 Page actions take an optional tab id and default to the current pi tab. Refs come from the tab's last `read` and go stale when the page navigates (or, for refs inside a frame, when that frame does); the agent reads again to get fresh ones. `click`, `type`, and `keys` don't wait for a page they trigger to load; the agent reads to see the result.
+
+A point is `[x, y]` in pixels of the tab's last screenshot, for canvas apps and widgets `read` gives no ref; the extension maps it back to the page, so the model never scales it. A point on a tab with no screenshot fails and asks for one. Points don't follow the page: after it scrolls, navigates, or changes, the agent takes a new screenshot. A point inside a cross-site frame is refused.
 
 `network` only sees requests made since the agent first acted on the tab, or since Pi last reconnected; when that came after the page loaded, it says so, and reloading the page shows every request. Both logs start over when the tab's page navigates, so they only ever show the page the agent is looking at. They keep the last 200 entries per tab and cut each message or URL at 1,000 characters. Requests and messages from cross-site frames aren't recorded. `eval` returns values that survive JSON, so for a DOM node it should return a property such as `outerHTML`. Synchronous code is stopped after 10 seconds. Output is truncated to 2,000 lines or 50KB, keeping the start of a page and the newest log entries.
 
@@ -123,7 +125,7 @@ The tool only exists in interactive sessions. Print mode, JSON/RPC mode, and sub
 
 Chrome shows a "Pi Browser started debugging this browser" bar while the agent is attached. It goes away when no Pi session is attached. Clicking **Cancel** on the bar takes control away from every session: Pi Browser refuses every action until you click its toolbar icon.
 
-A tab the agent is using glows blue at its edges. A blue dot slides to each element the agent clicks, types into, or scrolls to, and pulses on a click. **Stop pi · <name>** at the bottom aborts that session's turn only. All three disappear when the turn ends and are left out of screenshots. The page's own scripts can't see or press them.
+A tab the agent is using glows blue at its edges. A blue dot slides to each element or point the agent clicks, types into, or scrolls to, and pulses on a click. **Stop pi · <name>** at the bottom aborts that session's turn only. All three disappear when the turn ends and are left out of screenshots. The page's own scripts can't see or press them.
 
 Once the agent uses `console` on a tab, Chrome reports that tab's console to the debugger, which some sites detect as automation and answer with a challenge. Other actions don't turn this on.
 
@@ -147,7 +149,9 @@ Once the agent uses `console` on a tab, Chrome reports that tab's console to the
 - Each session goes to one browser: the first Chrome profile to reach it. Another profile with the extension is refused for that session until the first lets go.
 - The socket path, `~/.pi/agent/pi-browser/sessions/<session id>.sock`, must fit the OS limit (104 bytes on macOS, 108 on Linux). If `PI_CODING_AGENT_DIR` is very long, the browser fails with an error naming the path.
 - A session that exits while Chrome has the extension's worker asleep keeps its live group title until Chrome restarts.
-- Cross-origin iframes, native dialogs, file pickers, password-manager popups, passkeys, and CAPTCHAs are out of reach.
+- Cross-site iframes are out of reach: `read` skips them, and a click at a point inside one is refused.
+- Points assume the model sees the screenshot at the size it was taken. A provider that shrinks images further on its side, such as OpenAI's 768-pixel short side, can make points miss.
+- Native dialogs, file pickers, password-manager popups, passkeys, and CAPTCHAs are out of reach.
 - An action or `eval` that opens an `alert`, `confirm`, or `prompt` dialog fails at once and leaves the dialog for you to answer in Chrome; the tab is blocked until you do.
 - No hover and no wheel scrolling: Chrome doesn't answer those events in a tab that isn't in front. `scroll` brings a ref into view instead.
 - Chrome drops clicks and key presses in a tab that isn't in front, and may not render it, so `click`, `keys`, and `screenshot` switch to the pi tab in its window. In a hidden window (minimized, fully covered, on another desktop, or with the screen locked) they fail until you bring it into view.
