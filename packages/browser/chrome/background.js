@@ -96,8 +96,9 @@ const handlers = {
     const tab = await piTab(caller, tabId);
     await overlay(tab.id, "show", ref === undefined ? undefined : await reveal(tab.id, ref).catch(() => undefined));
     if (ref !== undefined) await node(tab.id, "DOM.focus", ref);
+    const into = ref === undefined ? await focused(tab.id) : `[${ref}]`;
     await guarded(tab.id, () => cdp(tab.id, "Input.insertText", { text }));
-    return acted(tab.id, `Typed ${text.length} characters into ${ref === undefined ? "the focused element" : `[${ref}]`}`);
+    return acted(tab.id, `Typed ${text.length} characters into ${into}`);
   },
 
   async keys({ tabId, ref, keys }, caller) {
@@ -611,6 +612,22 @@ async function under(tabId, at, point) {
     throw new Error(`Point (${point.join(", ")}) is inside ${label(node)}, a frame from another site, and Pi Browser does not act inside cross-site frames yet, so nothing was clicked.`);
   }
   return named(tabId, hit.backendNodeId, node);
+}
+
+async function focused(tabId) {
+  const objectGroup = "pi-focus";
+  try {
+    const { frameTree } = await cdp(tabId, "Page.getFrameTree");
+    const { executionContextId: contextId } = await cdp(tabId, "Page.createIsolatedWorld", { frameId: frameTree.frame.id, worldName: OVERLAY_WORLD });
+    const { result } = await cdp(tabId, "Runtime.evaluate", {
+      contextId, objectGroup, expression: "(element => element && (element.isContentEditable || (element !== document.body && element !== document.documentElement)) ? element : null)(document.activeElement)",
+    });
+    if (!result.objectId) throw new Error(`Nothing has focus in tab ${tabId}, so there is nowhere to type. Click a field first, by ref or point, or use keys for canvas apps that read key presses.`);
+    const { node } = await cdp(tabId, "DOM.describeNode", { objectId: result.objectId });
+    return await named(tabId, node.backendNodeId, node);
+  } finally {
+    chrome.debugger.sendCommand({ tabId }, "Runtime.releaseObjectGroup", { objectGroup }).catch(() => {});
+  }
 }
 
 async function named(tabId, backendNodeId, node) {

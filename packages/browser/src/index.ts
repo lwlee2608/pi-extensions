@@ -155,7 +155,7 @@ export function browserExtension({ browserDirs, platform = process.platform, ...
         + "screenshot returns a JPEG of the tab, bringing it to the front of its window, states its size in pixels, and saves it to a file whose path it gives. "
         + "click can take a point [x, y] in pixels of the tab's last screenshot instead of a ref, for canvas apps and widgets without a ref; its result names the element hit. "
         + "Points do not follow the page: after it scrolls, navigates, or changes, take a new screenshot. A point inside a cross-site frame is refused. "
-        + "click takes button right for a right click, and clickCount 2 or 3 for a double or triple click. type with no ref inserts text into whatever has focus, "
+        + "click takes button right for a right click, and clickCount 2 or 3 for a double or triple click. type with no ref inserts text into whatever has focus and fails if nothing has, "
         + "such as a field you just clicked by point; canvas apps that read key presses need keys instead. console and network list the tab's console messages "
         + "and requests (method, status, type, URL) since its page loaded, newest last; when the debugger attached after the page loaded, network says so and only a reload shows every request. eval runs code in the page and returns its JSON value; "
         + "eval runs on approved hosts without asking unless the user turned on eval confirmation, which shows them the code. Refs go stale when the page navigates; "

@@ -743,9 +743,15 @@ test("points: right, double, and triple clicks reach the canvas with their butto
   assert.doesNotMatch(page, /click right/, "a right click fires no click event");
 });
 
+test("points: type with no ref and nothing focused fails, pointing to clicking a field first", async () => {
+  await browser({ action: "navigate", url: points });
+  await assert.rejects(browser({ action: "type", text: "lost" }), /^Error: Nothing has focus in tab \d+, so there is nowhere to type\. Click a field first/);
+  assert.match(await browser({ action: "read" }), /textbox "Note"\n/);
+});
+
 test("points: clicking a text field by point, then type with no ref, puts the text in it", async () => {
   assert.match(await browser({ action: "click", point: await pixel("field") }), /on textbox "Note"/);
-  assert.match(await browser({ action: "type", text: "by point" }), /^Typed 8 characters into the focused element in tab \d+\.$/);
+  assert.match(await browser({ action: "type", text: "by point" }), /^Typed 8 characters into textbox "Note" in tab \d+\.$/);
   assert.match(await browser({ action: "read" }), /textbox "Note" = "by point"/);
 });
 

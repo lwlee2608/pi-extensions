@@ -79,7 +79,7 @@ The agent gets one `browser` tool:
 | `navigate` | Load an `http`/`https` URL in the current pi tab, or a new one. Other schemes are refused. |
 | `read` | Page text plus numbered element refs from the accessibility tree. |
 | `click` | Click a ref, or a point in the tab's last screenshot, with real mouse events: left or right button, once, twice, or three times. Brings that tab to the front of its window first. Fails naming the element on top if something else covers a ref's center; a point's result names the element under it. |
-| `type` | Focus a ref and insert text at its cursor, or with no ref, insert it into whatever has focus, such as a field just clicked by point. |
+| `type` | Focus a ref and insert text at its cursor, or with no ref, insert it into whatever has focus, such as a field just clicked by point, and fail if nothing has. |
 | `keys` | Press keys or combos, like `Enter`, `Shift+Tab`, or select-all (`Meta+a` on macOS, `Control+a` elsewhere), after focusing a ref if given. Brings that tab to the front of its window first. |
 | `scroll` | Scroll a ref into view. |
 | `screenshot` | JPEG of a pi tab's visible area at CSS pixel size, so high-density screens don't produce oversized images, shrunk to at most 1568 pixels on its long edge and about 1.15 megapixels so models see it unshrunk. The result states its size. Brings that tab to the front of its window first. Also saved to a private `pi-browser-*` folder in the system temp dir; the result gives the path. |
