@@ -249,6 +249,19 @@ test("Explain streams inline, Esc stops it without cancelling, failures show, an
   assert.deepEqual(h.output(), { cancelled: false, chat: true, answers: [{ questionIndex: 1, selected: [], explanation: "SQLite is a file." }] });
 });
 
+test("Explain belongs to its tab: another tab's Explain replaces it and Esc there cancels the questionnaire", () => {
+  const calls: { index: number; signal: AbortSignal }[] = [];
+  const h = harness(core, 30, undefined, (index, signal) => { calls.push({ index, signal }); return new Promise(() => {}); });
+  h.input("4", "\t");
+  assert.match(h.text(), /5\. Explain this question/);
+  assert.match(h.text(), /Esc cancel$/);
+  h.input("5");
+  assert.deepEqual(calls.map(call => [call.index, call.signal.aborted]), [[0, true], [1, false]]);
+  h.input("\x1b[Z", esc);
+  assert.deepEqual(h.output(), { cancelled: true, answers: [] });
+  assert.equal(calls[1].signal.aborted, true);
+});
+
 test("explain request answers pending tool calls and omits previews", () => {
   const prompt = explainPrompt(rich, 1);
   assert.match(prompt, /question 2/);

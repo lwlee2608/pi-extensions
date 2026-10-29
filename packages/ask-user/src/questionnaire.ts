@@ -131,7 +131,8 @@ export class Questionnaire implements Component, Focusable {
   }
 
   private startExplain(): void {
-    if (this.explaining) return;
+    if (this.explaining?.tab === this.state.tab) return;
+    this.stopExplain();
     const tab = this.state.tab;
     const run = { tab, controller: new AbortController(), text: "" };
     this.explaining = run;
@@ -197,7 +198,7 @@ export class Questionnaire implements Component, Focusable {
         if (this.discard) this.done(result(this.state, true));
         else this.confirming = false;
       }
-    } else if (cancel && this.explaining) {
+    } else if (cancel && this.explaining?.tab === this.state.tab) {
       this.stopExplain();
     } else if (cancel) {
       this.requestCancel();
