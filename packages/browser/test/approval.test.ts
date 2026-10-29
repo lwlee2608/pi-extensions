@@ -205,6 +205,6 @@ test("without a UI the tool is hidden and never reaches the bridge", async () =>
 });
 
 test("zero and empty params count as not given, other values pass through", () => {
-  assert.deepEqual(given({ tabId: 0, ref: 0, url: "", text: "", code: "", keys: "", newTab: false }), { newTab: false });
-  assert.deepEqual(given({ tabId: -1, ref: -2, text: " ", keys: "Enter" }), { tabId: -1, ref: -2, text: " ", keys: "Enter" });
+  assert.deepEqual(given({ tabId: 0, ref: 0, url: "", text: "", code: "", keys: "", newTab: false, point: [], button: "", clickCount: 0 }), { newTab: false });
+  assert.deepEqual(given({ tabId: -1, ref: -2, text: " ", keys: "Enter", point: [0, 0] }), { tabId: -1, ref: -2, text: " ", keys: "Enter", point: [0, 0] });
 });
