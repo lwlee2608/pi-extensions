@@ -885,3 +885,17 @@ test("frames: a click on a ref that is a cross-site frame, and type into a ref t
   assert.deepEqual(asked.splice(0), ["button.test", "button.test", "forward.test"]);
   assert.match(await browser({ action: "read" }), /frame got click in button\.test; clicks 1/);
 });
+
+test("frames: a click in the cross-site frame that opens a dialog fails at once instead of hanging", async () => {
+  const url = `${framed}?host=dialog&frame=alert`;
+  await browser({ action: "navigate", url });
+  await shoot();
+  const point = await pixel("frame");
+  const start = Date.now();
+  await assert.rejects(browser({ action: "click", point }, "Allow once"), /^Error: The page opened a alert dialog, which blocks the tab\./);
+  assert.ok(Date.now() - start < 2_000, `failed after ${Date.now() - start}ms`);
+  assert.deepEqual(asked.splice(0), ["dialog.test"]);
+  const tabId = await inWorker(`chrome.tabs.query({ url: "${url}" }).then(([tab]) => tab.id)`);
+  await inWorker(`chrome.debugger.sendCommand({ tabId: ${tabId} }, "Page.handleJavaScriptDialog", { accept: true })`);
+  assert.match(await browser({ action: "read" }), /frame got click in dialog\.test; clicks 1/);
+});

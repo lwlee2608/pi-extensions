@@ -21,6 +21,7 @@
         top.postMessage(`${type} in ${location.hostname}; clicks ${clicks}; field "${field.value}"`, "*");
       });
     }
+    if (location.search === "?alert") addEventListener("click", () => alert("Frame alert"));
   </script>
 </body>
 </html>
