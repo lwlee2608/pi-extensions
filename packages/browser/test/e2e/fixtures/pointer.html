@@ -61,15 +61,16 @@
     under.addEventListener("mouseover", () => { under.textContent = "Under stop hovered"; });
     under.addEventListener("click", () => { under.textContent = "Under stop clicked"; });
     panel.addEventListener("scroll", () => { scrolled.textContent = `panel at ${Math.round(panel.scrollTop)}`; });
+    document.addEventListener("dragover", event => event.preventDefault());
     const dragged = [];
-    for (const [element, type] of [[card, "dragstart"], [card, "dragend"], [bin, "dragenter"], [bin, "dragover"], [bin, "drop"]]) {
+    for (const [element, type] of [[card, "dragstart"], [card, "dragend"], [bin, "dragenter"], [bin, "dragover"], [document, "drop"]]) {
       element.addEventListener(type, event => {
         if (type === "dragover" || type === "drop") event.preventDefault();
-        const seen = type === "drop" ? `drop at ${event.clientX},${event.clientY}` : type;
+        const seen = type === "drop" ? `drop on ${event.target.id} at ${event.clientX},${event.clientY}` : type;
         if (!dragged.includes(seen)) dragged.push(seen);
         if (type === "dragstart" && params.has("dragslide")) {
           const [x, y] = at(bin).split(",").map(Number);
-          Object.assign(frame.style, { left: `${x + scrollX - 150}px`, top: `${y + scrollY - 60}px` });
+          Object.assign(frame.style, { left: `${x + scrollX - 20}px`, top: `${y + scrollY - 60}px` });
         }
         dropped.textContent = `drag and drop got ${dragged.join(", ")}`;
       });

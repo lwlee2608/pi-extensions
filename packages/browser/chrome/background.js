@@ -169,58 +169,31 @@ const handlers = {
     return pointing(tab, path, hosts, async ([first, last]) => {
       const before = { action: "drag", stopped: "did not press" };
       const after = { action: "drag", stopped: "released the button back at the start point", pressed: true };
-      let data, entered = false, ended = false;
-      const onDrag = ({ tabId, sessionId }, method, params) => { if (tabId === tab.id && !sessionId && method === "Input.dragIntercepted") data = params.data; };
-      const dragEvent = (type, at) => cdp(tab.id, "Input.dispatchDragEvent", { type, ...at, data });
-      const go = async at => {
-        if (!data) return mouse({ type: "mouseMoved", ...at, buttons: 1 });
-        if (!entered) await dragEvent("dragEnter", at);
-        entered = true;
-        await dragEvent("dragOver", at);
-      };
-      chrome.debugger.onEvent.addListener(onDrag);
-      try {
-        await cdp(tab.id, "Input.setInterceptDrags", { enabled: true });
-        await guarded(tab.id, async () => {
-          await mouse({ type: "mouseMoved", ...from, button: "none" });
-          await recheck(tab.id, from, start, hosts, before);
-          await recheck(tab.id, end, finish, hosts, before);
-          await mouse({ type: "mousePressed", ...from, buttons: 1 });
-          let failure;
-          try {
-            await Promise.all([overlay(tab.id, "move", end), (async () => {
-              for (const { at, where } of path.slice(1)) {
-                await recheck(tab.id, at, where, hosts, after);
-                await go(at);
-              }
-            })()]);
-            await recheck(tab.id, end, finish, hosts, after);
-          } catch (error) {
-            failure = error;
-          }
-          if (failure) {
-            if (data) {
-              ended = true;
-              await dragEvent("dragCancel", from).catch(() => {});
+      await guarded(tab.id, async () => {
+        await mouse({ type: "mouseMoved", ...from, button: "none" });
+        await recheck(tab.id, from, start, hosts, before);
+        await recheck(tab.id, end, finish, hosts, before);
+        await mouse({ type: "mousePressed", ...from, buttons: 1 });
+        let failure;
+        try {
+          await Promise.all([overlay(tab.id, "move", end), (async () => {
+            for (const { at, where } of path.slice(1)) {
+              await recheck(tab.id, at, where, hosts, after);
+              await mouse({ type: "mouseMoved", ...at, buttons: 1 });
             }
-            await mouse({ type: "mouseMoved", ...from, buttons: 1 }).catch(() => {});
-            await mouse({ type: "mouseReleased", ...from, buttons: 0 }).catch(() => {});
-            await overlay(tab.id, "move", from);
-            throw failure;
-          }
-          if (data) {
-            if (!entered) await go(end);
-            ended = true;
-            await dragEvent("drop", end);
-          }
-          await mouse({ type: "mouseReleased", ...end, buttons: 0 });
-        });
-      } finally {
-        chrome.debugger.onEvent.removeListener(onDrag);
-        if (data && !ended) await dragEvent("dragCancel", end).catch(() => {});
-        await chrome.debugger.sendCommand({ tabId: tab.id }, "Input.setInterceptDrags", { enabled: false }).catch(() => {});
-      }
-      return `${data ? "Dragged and dropped" : "Dragged"} from (${point.join(", ")}) on ${first} to (${to.join(", ")}) on ${last}`;
+          })()]);
+          await recheck(tab.id, end, finish, hosts, after);
+        } catch (error) {
+          failure = error;
+        }
+        if (!failure) return mouse({ type: "mouseReleased", ...end, buttons: 0 });
+        await cdp(tab.id, "Input.cancelDragging").catch(() => {});
+        await mouse({ type: "mouseMoved", ...from, buttons: 1 }).catch(() => {});
+        await mouse({ type: "mouseReleased", ...from, buttons: 0 }).catch(() => {});
+        await overlay(tab.id, "move", from);
+        throw failure;
+      });
+      return `Dragged from (${point.join(", ")}) on ${first} to (${to.join(", ")}) on ${last}`;
     });
   },
 

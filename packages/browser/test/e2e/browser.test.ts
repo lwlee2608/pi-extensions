@@ -1006,20 +1006,20 @@ test("pointer: drag on a pi tab behind another carries a native HTML5 drag and d
   await shoot();
   const [card, bin] = [await pixel("card"), await pixel("bin")];
   await behind();
-  assert.match(await browser({ action: "drag", point: card, to: bin }), /^Dragged and dropped from \(\d+, \d+\) on group to \(\d+, \d+\) on <div id="bin"> in tab \d+\.$/);
-  const [, x, y] = (await browser({ action: "read" })).match(/^drag and drop got dragstart, dragenter, dragover, drop at (\d+),(\d+), dragend$/m)!.map(Number);
+  assert.match(await browser({ action: "drag", point: card, to: bin }), /^Dragged from \(\d+, \d+\) on group to \(\d+, \d+\) on <div id="bin"> in tab \d+\.$/);
+  const [, x, y] = (await browser({ action: "read" })).match(/^drag and drop got dragstart, dragenter, dragover, drop on bin at (\d+),(\d+), dragend$/m)!.map(Number);
   near([x, y], (await layout()).bin, "the drop");
   assert.equal(await frontmost(), true);
 });
 
-test("pointer: a page that slides the cross-site frame onto a native drag's path gets the drag cancelled, with no drop and nothing in the frame", async () => {
+test("pointer: a page that slides the cross-site frame onto a native drag's end gets the drag cancelled, with no drop and nothing in the frame", async () => {
   const url = `${pointer}?dragslide&host=slid`;
   await browser({ action: "navigate", url });
   await shoot();
   await assert.rejects(browser({ action: "drag", point: await pixel("card"), to: await pixel("bin") }), /^Error: During the drag the page put content from slid\.test under (path|end) point \(\d+, \d+\), so it released the button back at the start point\./);
   assert.deepEqual(asked, []);
   const page = await browser({ action: "read" });
-  assert.match(page, /^drag and drop got dragstart, dragend$/m);
+  assert.match(page, /^drag and drop got dragstart, dragenter, dragover, dragend$/m, "the drag reached the bin but did not drop there");
   assert.match(page, /frame got nothing/);
 });
 
