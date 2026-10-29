@@ -908,3 +908,12 @@ test("frames: keys that Tab into a session-approved cross-site frame keep pressi
   assert.deepEqual(asked, []);
   assert.match(await browser({ action: "read" }), /frame got input in frame\.test; clicks 0; field "x"/);
 });
+
+test("frames: keys that Tab into an unapproved cross-site frame stop there, naming what was not pressed", async () => {
+  await browser({ action: "navigate", url: `${framed}?host=tabbed` });
+  await shoot();
+  await browser({ action: "click", point: await pixel("field") });
+  await assert.rejects(browser({ action: "keys", keys: "Tab x Enter" }), /^Error: Pressed Tab, then focus moved to content from tabbed\.test, so x Enter was not pressed\. Use keys again for the rest; the user is asked about tabbed\.test first\.$/);
+  assert.deepEqual(asked, []);
+  assert.match(await browser({ action: "read" }), /frame got nothing/);
+});
