@@ -83,9 +83,10 @@ const handlers = {
     await inFront(tab, async () => {
       const where = at ? `Point (${point.join(", ")})` : `Ref [${ref}]`;
       if (at) {
-        await overlay(tab.id, "aim", at);
+        await overlay(tab.id, "move", at);
         const frame = await frameAt(tab.id, at, where);
         if ((ask = unapproved(frame, hosts, where))) return;
+        await overlay(tab.id, "aim", at);
         what = `at (${point.join(", ")}) on ${await nameOf(tab.id, frame)}`;
       } else {
         await overlay(tab.id, "aim", await reveal(tab.id, ref));
