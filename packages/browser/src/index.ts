@@ -31,6 +31,11 @@ function checkUrl(url: string | undefined): void {
   if (protocol !== "http:" && protocol !== "https:") throw new Error(`navigate only opens http and https URLs, not ${protocol}`);
 }
 
+export function checkClickOnly(action: string, params: object): void {
+  const given = ["point", "button", "clickCount"].filter(name => name in params);
+  if (action !== "click" && given.length) throw new Error(`${given.join(", ")} only work with click, not ${action}. To type at a point, click it first, then use type with no ref.`);
+}
+
 const CHOICES: Record<string, Choice> = { "Allow once": "once", "Allow for this session": "session", "Always allow": "always", Deny: "deny" };
 
 async function ask(ctx: ExtensionContext, host: string, signal?: AbortSignal): Promise<Choice> {
@@ -161,6 +166,7 @@ export function browserExtension({ browserDirs, platform = process.platform, ...
       executionMode: "sequential",
       async execute(_id, { action, ...raw }, signal, _update, ctx) {
         const params = given(raw);
+        checkClickOnly(action, params);
         const bridge = use(ctx);
         used = true;
         const granted = new Set<string>();
