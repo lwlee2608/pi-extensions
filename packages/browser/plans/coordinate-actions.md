@@ -9,10 +9,10 @@
 - **Intent** — Parity with Claude in Chrome
 - **Which actions** — Full Claude in Chrome parity: click at a point (left, right, double, triple), hover, drag from one point to another, wheel scroll at a point, type into whatever has focus, and a zoomed screenshot of a region for small targets
 - **Coordinate space** — x,y are pixels in the extension's own screenshot. The extension captures at a size models do not shrink, states the image's width and height in the result, and maps points back to the page itself; the model never scales
-- **Cross-site frames at a point** — Before acting, find the frame under each point; if its host differs from the tab's, it needs approval like any new host, with the same choices
+- **Cross-site frames at a point** — Before acting, find the innermost frame under each point; if it is cross-site to the tab's page, its host needs approval like any new host, with the same choices
 - **Demo** — User runs a short script in their own Chrome on real sites
-- **Pointer actions on a tab not in front** — Hover, drag, and wheel bring the pi tab to the front of its window first, as `screenshot` and `click` do; type at a point does not
-- **Tool shape** — `click`, `type`, and `scroll` take either a ref or a point, never both; new actions `hover`, `drag`, and `zoom`. `click` gains a button (left or right) and a click count (1–3), for refs too `agent`
+- **Pointer actions on a tab not in front** — Hover, drag, and wheel bring the pi tab to the front of its window first, as `screenshot` and `click` do; `type` does not
+- **Tool shape** — `click` and `scroll` take either a ref or a point, never both; `type` takes a ref or nothing, typing into the current focus; new actions `hover`, `drag`, and `zoom`. `click` gains a button (left or right) and a click count (1–3), for refs too `agent`
 - **Which screenshot a point refers to** — The tab's last screenshot; its scale is kept per tab. A point action on a tab with no screenshot fails and asks for one. Points are not invalidated on scroll or navigation; the tool description says to screenshot again after the page moves `agent`
 - **Capture size** — Long edge at most 1568 px and about 1.15 megapixels, which Anthropic models take unshrunk and pi's 2000 px default leaves alone; Chrome scales during capture. Providers that shrink further on their side (OpenAI's 768 px short side) can still skew points; accepted and noted in README Limits `agent`
 - **Zoom** — Takes a rectangle in the last screenshot's pixels and returns it at higher detail; it is for looking only, so points stay in the full screenshot's space and `zoom` does not replace the stored scale `agent`
@@ -42,7 +42,7 @@ Carried over from `plans/browser.md`; these rules bind every phase, review round
 - **Setup** — Chrome for Testing stays cached outside the repo; e2e keeps its own port so it never clashes with an open pi session.
 
 ## Progress
-Active: 1 · 0/21 tasks
+Active: 1 · 0/22 tasks
 
 ### Phase 1 — Click and type at a point from a screenshot
 The agent can click anywhere it sees in a screenshot (left, right, double, triple) and type into whatever that focused, on canvas and unlabeled widgets.
@@ -53,6 +53,7 @@ The agent can click anywhere it sees in a screenshot (left, right, double, tripl
 - [ ] Refuse a point that lands in a cross-site frame (`chrome/background.js`)
 - [ ] Name the element under the point in the result, and move the overlay dot to it (`chrome/background.js`)
 - [ ] Let `type` run without a ref, into the current focus (`chrome/background.js`, `src/index.ts`)
+- [ ] Bump `PROTOCOL` so a stale extension reports a mismatch instead of failing on point params and new actions (`src/host.js`, `chrome/background.js`)
 - [ ] Describe points, their coordinate space, and going stale in the tool description and README (`src/index.ts`, `README.md`)
 - [ ] Add a canvas fixture that records each input it receives, and e2e cases for this phase (`test/e2e/fixtures`, `test/e2e/browser.test.ts`)
 **Verify:** `node --test --test-name-pattern "^points:" test/e2e/browser.test.ts` from `packages/browser`, plus `npm test -w packages/browser`. With a viewport wider than 1568 px: `screenshot` reports an image at most 1568 px wide; a click at the fixture target's position in that image makes `read` show the canvas got a click within 2 CSS px of the target, and right, double, and triple clicks show their button and count; clicking a text field by point then `type` with no ref puts the text in it; a point action before any screenshot fails asking for one; a point inside the fixture's cross-site frame fails and the frame records nothing.
@@ -60,7 +61,7 @@ The agent can click anywhere it sees in a screenshot (left, right, double, tripl
 ### Phase 2 — Act inside cross-site iframes, with approval
 A point inside an embed from another host asks the user to approve that host, then acts there.
 **Blocked by:** 1
-- [ ] Find the host of the frame under a point and pass it to pi's approval before acting (`chrome/background.js`, `src/index.ts`)
+- [ ] Find the host of the innermost frame under a point, through nested cross-site frames, and pass it to pi's approval before acting (`chrome/background.js`, `src/index.ts`)
 - [ ] Replace phase 1's refusal with that approval, same choices and denial behavior as navigate (`chrome/background.js`, `src/index.ts`)
 - [ ] Explain frame approval for points in the README's Site approval section (`README.md`)
 - [ ] Add e2e cases for allow, deny, and an already-approved frame host (`test/e2e/browser.test.ts`)
