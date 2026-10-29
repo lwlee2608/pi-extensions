@@ -6,7 +6,7 @@ import test from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Approvals, confirmEval, type Choice } from "../src/approval.ts";
 import { loadHosts, setConfirmEval } from "../src/config.ts";
-import { browserExtension, checkClickOnly, given, listTabs, truncate } from "../src/index.ts";
+import { browserExtension, checkParams, given, listTabs, truncate } from "../src/index.ts";
 
 const dir = await mkdtemp(join(tmpdir(), "pi-browser-approval-"));
 test.after(() => rm(dir, { recursive: true, force: true }));
@@ -209,11 +209,13 @@ test("zero and empty params count as not given, other values pass through", () =
   assert.deepEqual(given({ tabId: -1, ref: -2, text: " ", keys: "Enter", point: [0, 0] }), { tabId: -1, ref: -2, text: " ", keys: "Enter", point: [0, 0] });
 });
 
-test("point, button, and clickCount are refused on any action but click", () => {
-  for (const params of [{ point: [1, 2] }, { button: "right" }, { clickCount: 2 }]) {
-    assert.throws(() => checkClickOnly("type", { text: "x", ...params }), /only work with click, not type\. To type at a point, click it first, then use type with no ref\./);
-    assert.throws(() => checkClickOnly("keys", { keys: "Enter", ...params }), /only work with click, not keys/);
-    checkClickOnly("click", params);
+test("pointer params are refused on actions that do not take them", () => {
+  assert.throws(() => checkParams("type", { text: "x", point: [1, 2] }), /^Error: point works only with click, hover, drag, scroll, not type\. To type at a point, click it first, then use type with no ref\.$/);
+  assert.throws(() => checkParams("keys", { keys: "Enter", button: "right", clickCount: 2 }), /^Error: button works only with click; clickCount works only with click, not keys\.$/);
+  assert.throws(() => checkParams("hover", { point: [1, 2], button: "right" }), /^Error: button works only with click, not hover\.$/);
+  assert.throws(() => checkParams("click", { point: [1, 2], to: [3, 4] }), /^Error: to works only with drag, not click\.$/);
+  assert.throws(() => checkParams("drag", { point: [1, 2], to: [3, 4], delta: [0, 5] }), /^Error: delta works only with scroll, not drag\.$/);
+  for (const [action, params] of [["click", { point: [1, 2], button: "right", clickCount: 2 }], ["hover", { point: [1, 2] }], ["drag", { point: [1, 2], to: [3, 4] }], ["scroll", { point: [1, 2], delta: [0, 5] }], ["type", { text: "x" }]] as const) {
+    checkParams(action, params);
   }
-  checkClickOnly("type", { text: "x" });
 });

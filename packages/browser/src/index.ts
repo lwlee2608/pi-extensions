@@ -12,12 +12,14 @@ import { detectBrowserDirs, installHost } from "./install.ts";
 const CHROME_DIR = fileURLToPath(new URL("../chrome/", import.meta.url));
 
 const parameters = Type.Object({
-  action: Type.Union(["tabs", "navigate", "read", "click", "type", "keys", "scroll", "screenshot", "console", "network", "eval"].map(action => Type.Literal(action))),
+  action: Type.Union(["tabs", "navigate", "read", "click", "hover", "drag", "type", "keys", "scroll", "screenshot", "console", "network", "eval"].map(action => Type.Literal(action))),
   url: Type.Optional(Type.String({ description: "navigate: http or https URL to load" })),
   tabId: Type.Optional(Type.Number({ description: "Pi tab to act on; defaults to the current pi tab" })),
   newTab: Type.Optional(Type.Boolean({ description: "navigate: open the URL in a new pi tab" })),
   ref: Type.Optional(Type.Number({ description: "click, type: element ref, the n in [n] from read. keys: focus this ref first. scroll: ref to bring into view" })),
-  point: Type.Optional(Type.Array(Type.Number(), { minItems: 2, maxItems: 2, description: "click: [x, y] in pixels of the tab's last screenshot, instead of a ref" })),
+  point: Type.Optional(Type.Array(Type.Number(), { minItems: 2, maxItems: 2, description: "click, scroll: [x, y] in pixels of the tab's last screenshot, instead of a ref. hover: where to move the mouse. drag: where it starts" })),
+  to: Type.Optional(Type.Array(Type.Number(), { minItems: 2, maxItems: 2, description: "drag: [x, y] in pixels of the tab's last screenshot where it ends" })),
+  delta: Type.Optional(Type.Array(Type.Number(), { minItems: 2, maxItems: 2, description: "scroll with a point: [x, y] wheel amount in pixels of the tab's last screenshot; positive y scrolls down" })),
   button: Type.Optional(Type.Union([Type.Literal("left"), Type.Literal("right")], { description: "click: mouse button; left by default" })),
   clickCount: Type.Optional(Type.Integer({ minimum: 1, maximum: 3, description: "click: 2 for a double click, 3 for a triple click; 1 by default" })),
   text: Type.Optional(Type.String({ description: "type: text to insert at the cursor of the ref, or of the focused element when no ref is given" })),
@@ -31,12 +33,16 @@ function checkUrl(url: string | undefined): void {
   if (protocol !== "http:" && protocol !== "https:") throw new Error(`navigate only opens http and https URLs, not ${protocol}`);
 }
 
-export function checkClickOnly(action: string, params: object): void {
-  const given = ["point", "button", "clickCount"].filter(name => name in params);
-  if (action !== "click" && given.length) throw new Error(`${given.join(", ")} only work with click, not ${action}. To type at a point, click it first, then use type with no ref.`);
+const ONLY: Record<string, string[]> = { point: ["click", "hover", "drag", "scroll"], button: ["click"], clickCount: ["click"], to: ["drag"], delta: ["scroll"] };
+
+export function checkParams(action: string, params: object): void {
+  const wrong = Object.keys(ONLY).filter(name => name in params && !ONLY[name].includes(action));
+  if (!wrong.length) return;
+  const tip = wrong.includes("point") && (action === "type" || action === "keys") ? " To type at a point, click it first, then use type with no ref." : "";
+  throw new Error(`${wrong.map(name => `${name} works only with ${ONLY[name].join(", ")}`).join("; ")}, not ${action}.${tip}`);
 }
 
-const FRAMED = new Set(["click", "type", "keys"]);
+const FRAMED = new Set(["click", "hover", "drag", "scroll", "type", "keys"]);
 
 interface Page {
   url: string;
@@ -163,7 +169,9 @@ export function browserExtension({ browserDirs, platform = process.platform, ...
         + "where [n] marks an element ref. click, type, and keys act on a ref with real input events; scroll brings a ref into view; "
         + "screenshot returns a JPEG of the tab, bringing it to the front of its window, states its size in pixels, and saves it to a file whose path it gives. "
         + "click can take a point [x, y] in pixels of the tab's last screenshot instead of a ref, for canvas apps and widgets without a ref; its result names the element hit. "
-        + "Points do not follow the page: after it scrolls, navigates, or changes, take a new screenshot. A click inside a cross-site frame, by point or ref, and type or keys into one that has focus, need the user to approve that frame's host like any new host. "
+        + "hover moves the mouse to a point, for menus and tooltips that open on hover; drag presses at point, moves to to, and releases there, for sliders, canvas strokes, maps, and drag and drop; "
+        + "scroll with a point and delta [x, y] in screenshot pixels turns the mouse wheel there, scrolling whatever is under the point, such as an inner panel. These bring the tab to the front of its window and name the element under each point. "
+        + "Points do not follow the page: after it scrolls, navigates, or changes, take a new screenshot. A click, hover, drag (at either end or any of the four points it moves through), or wheel inside a cross-site frame, and type or keys into one that has focus, need the user to approve that frame's host like any new host. "
         + "click takes button right for a right click, and clickCount 2 or 3 for a double or triple click. type with no ref inserts text into whatever has focus and fails if nothing has, "
         + "such as a field you just clicked by point; canvas apps that read key presses need keys instead. console and network list the tab's console messages "
         + "and requests (method, status, type, URL) since its page loaded, newest last; when the debugger attached after the page loaded, network says so and only a reload shows every request. eval runs code in the page and returns its JSON value; "
@@ -175,7 +183,7 @@ export function browserExtension({ browserDirs, platform = process.platform, ...
       executionMode: "sequential",
       async execute(_id, { action, ...raw }, signal, _update, ctx) {
         const params = given(raw);
-        checkClickOnly(action, params);
+        checkParams(action, params);
         const bridge = use(ctx);
         used = true;
         const granted = new Set<string>();

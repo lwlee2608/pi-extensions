@@ -11,6 +11,7 @@ const LOG_LIMIT = 200;
 const TEXT_LIMIT = 1_000;
 const EVAL_TIMEOUT_MS = 10_000;
 const CURSOR_MOVE_MS = 250;
+const DRAG_STEPS = 5;
 const OVERLAY_IDLE_MS = 120_000;
 const OVERLAY_WAIT_MS = 1_000;
 const OVERLAY_WORLD = "pi-overlay";
@@ -82,10 +83,11 @@ const handlers = {
     await inFront(tab, async () => {
       const where = at ? `Point (${point.join(", ")})` : `Ref [${ref}]`;
       if (at) {
+        await overlay(tab.id, "move", at);
         const frame = await frameAt(tab.id, at, where);
         if ((ask = unapproved(frame, hosts, where))) return;
         await overlay(tab.id, "aim", at);
-        what = `at (${point.join(", ")}) on ${await named(tab.id, frame.hit.backendNodeId, frame.node, frame.sessionId)}${foreign(frame)}`;
+        what = `at (${point.join(", ")}) on ${await nameOf(tab.id, frame)}`;
       } else {
         await overlay(tab.id, "aim", await reveal(tab.id, ref));
         at = await center(tab.id, ref);
@@ -93,12 +95,9 @@ const handlers = {
         await uncovered(tab.id, ref, at);
         if ((ask = unapproved(await frameAt(tab.id, at, where), hosts, where))) return;
       }
-      const check = async done => {
-        const url = await frameAt(tab.id, at, where).then(frame => unapproved(frame, hosts, where)).catch(error => {
-          throw done ? new Error(`Stopped after ${done} of ${clickCount} presses, since checking ${where.toLowerCase()} again failed (${error.message.replace(/(, so nothing was done)?\.$/, "")}).`) : error;
-        });
-        if (url) throw new Error(`During the click the page put content from ${hostOf(url) ?? url} under ${where.toLowerCase()}, so it stopped after ${done} of ${clickCount} presses. ${point ? "Take a new screenshot" : "Read again"} and try again.`);
-      };
+      const check = done => recheck(tab.id, at, where, hosts, {
+        action: "click", stopped: `stopped after ${done} of ${clickCount} presses`, pressed: done > 0, again: point ? "Take a new screenshot" : "Read again",
+      });
       await guarded(tab.id, () => press(tab.id, at, button, clickCount, check));
     }).finally(() => { overlay(tab.id, "show"); });
     if (ask) return { ...(await reply(tab.id, "")), ask };
@@ -142,10 +141,78 @@ const handlers = {
     return acted(tab.id, `Pressed ${combos.join(" ")}`);
   },
 
-  async scroll({ tabId, ref }, caller) {
+  async hover({ tabId, point, hosts = [] }, caller) {
+    if (point === undefined) throw new Error("hover needs a point from a screenshot.");
     const tab = await piTab(caller, tabId);
-    await overlay(tab.id, "show", await reveal(tab.id, ref));
-    return acted(tab.id, `Scrolled [${ref}] into view`);
+    const at = spot(tab.id, point);
+    const where = `Point (${point.join(", ")})`;
+    return pointing(tab, [{ at, where }], hosts, async ([name]) => {
+      await recheck(tab.id, at, where, hosts, { action: "hover", stopped: "did not move the pointer there" });
+      await guarded(tab.id, () => cdp(tab.id, "Input.dispatchMouseEvent", { type: "mouseMoved", ...at, button: "none" }));
+      return `Hovered at (${point.join(", ")}) on ${name}`;
+    });
+  },
+
+  async drag({ tabId, point, to, hosts = [] }, caller) {
+    if (point === undefined || to === undefined) throw new Error("drag needs a point from a screenshot where it starts and to, the point where it ends.");
+    const tab = await piTab(caller, tabId);
+    const from = spot(tab.id, point);
+    const end = spot(tab.id, to);
+    const start = `Start point (${point.join(", ")})`;
+    const finish = `End point (${to.join(", ")})`;
+    const mouse = params => cdp(tab.id, "Input.dispatchMouseEvent", { button: "left", clickCount: 1, ...params });
+    const path = Array.from({ length: DRAG_STEPS + 1 }, (_, step) => {
+      const along = (a, b) => a + (b - a) * step / DRAG_STEPS;
+      const where = step === 0 ? start : step === DRAG_STEPS ? finish : `Path point (${Math.round(along(point[0], to[0]))}, ${Math.round(along(point[1], to[1]))})`;
+      return { at: { x: along(from.x, end.x), y: along(from.y, end.y) }, where };
+    });
+    return pointing(tab, path, hosts, async ([first, last]) => {
+      const before = { action: "drag", stopped: "did not press" };
+      const after = { action: "drag", stopped: "released the button back at the start point", pressed: true };
+      await guarded(tab.id, async () => {
+        await mouse({ type: "mouseMoved", ...from, button: "none" });
+        await recheck(tab.id, from, start, hosts, before);
+        await recheck(tab.id, end, finish, hosts, before);
+        await mouse({ type: "mousePressed", ...from, buttons: 1 });
+        let failure;
+        try {
+          await Promise.all([overlay(tab.id, "move", end), (async () => {
+            for (const { at, where } of path.slice(1)) {
+              await recheck(tab.id, at, where, hosts, after);
+              await mouse({ type: "mouseMoved", ...at, buttons: 1 });
+            }
+          })()]);
+          await recheck(tab.id, end, finish, hosts, after);
+        } catch (error) {
+          failure = error;
+        }
+        if (!failure) return mouse({ type: "mouseReleased", ...end, buttons: 0 });
+        await cdp(tab.id, "Input.cancelDragging").catch(() => {});
+        await mouse({ type: "mouseMoved", ...from, buttons: 1 }).catch(() => {});
+        await mouse({ type: "mouseReleased", ...from, buttons: 0 }).catch(() => {});
+        await overlay(tab.id, "move", from);
+        throw failure;
+      });
+      return `Dragged from (${point.join(", ")}) on ${first} to (${to.join(", ")}) on ${last}`;
+    });
+  },
+
+  async scroll({ tabId, ref, point, delta, hosts = [] }, caller) {
+    if ((ref === undefined) === (point === undefined)) throw new Error("scroll needs either a ref from read to bring into view, or a point from a screenshot and a delta to wheel there, not both.");
+    if (ref !== undefined && delta !== undefined) throw new Error("scroll's delta goes with a point; a ref is only brought into view.");
+    const tab = await piTab(caller, tabId);
+    if (ref !== undefined) {
+      await overlay(tab.id, "show", await reveal(tab.id, ref));
+      return acted(tab.id, `Scrolled [${ref}] into view`);
+    }
+    const at = spot(tab.id, point);
+    const [deltaX, deltaY] = wheel(tab.id, delta);
+    const where = `Point (${point.join(", ")})`;
+    return pointing(tab, [{ at, where }], hosts, async ([name]) => {
+      await recheck(tab.id, at, where, hosts, { action: "scroll", stopped: "did not scroll" });
+      await guarded(tab.id, () => cdp(tab.id, "Input.dispatchMouseEvent", { type: "mouseWheel", ...at, deltaX, deltaY }));
+      return `Scrolled by (${delta.join(", ")}) at (${point.join(", ")}) on ${name}`;
+    });
   },
 
   async screenshot({ tabId }, caller) {
@@ -595,6 +662,39 @@ function spot(tabId, point) {
   return { x: Math.min(Math.round(x * shot.cssWidth / shot.width), shot.cssWidth - 1), y: Math.min(Math.round(y * shot.cssHeight / shot.height), shot.cssHeight - 1) };
 }
 
+function wheel(tabId, delta) {
+  if (!Array.isArray(delta) || delta.length !== 2 || !delta.every(Number.isFinite) || delta.every(amount => amount === 0)) {
+    throw new Error("scroll at a point needs delta: [x, y] in pixels of the tab's last screenshot, like [0, 300] to scroll down.");
+  }
+  const shot = shots.get(tabId);
+  return [delta[0] * shot.cssWidth / shot.width, delta[1] * shot.cssHeight / shot.height];
+}
+
+async function pointing(tab, spots, hosts, act) {
+  let ask, what;
+  await inFront(tab, async () => {
+    await overlay(tab.id, "move", spots[0].at);
+    const frames = [];
+    for (const { at, where } of spots) {
+      const frame = await frameAt(tab.id, at, where);
+      if ((ask = unapproved(frame, hosts, where))) return;
+      frames.push(frame);
+    }
+    const names = [];
+    for (const frame of new Set([frames[0], frames.at(-1)])) names.push(await nameOf(tab.id, frame));
+    what = await act(names);
+  }).finally(() => { overlay(tab.id, "show"); });
+  if (ask) return { ...(await reply(tab.id, "")), ask };
+  return acted(tab.id, what);
+}
+
+async function recheck(tabId, at, where, hosts, { action, stopped, pressed = false, again = "Take a new screenshot" }) {
+  const url = await frameAt(tabId, at, where).then(frame => unapproved(frame, hosts, where)).catch(error => {
+    throw pressed ? new Error(`${stopped[0].toUpperCase()}${stopped.slice(1)}, since checking ${where.toLowerCase()} again failed (${error.message.replace(/(, so nothing was done)?\.$/, "")}).`) : error;
+  });
+  if (url) throw new Error(`During the ${action} the page put content from ${hostOf(url) ?? url} under ${where.toLowerCase()}, so it ${stopped}. ${again} and try again.`);
+}
+
 async function press(tabId, at, button, count, check) {
   const mouse = params => cdp(tabId, "Input.dispatchMouseEvent", { ...at, button, ...params });
   await mouse({ type: "mouseMoved", button: "none" });
@@ -745,6 +845,10 @@ async function named(tabId, backendNodeId, node, sessionId) {
   return label(node);
 }
 
+async function nameOf(tabId, frame) {
+  return `${await named(tabId, frame.hit.backendNodeId, frame.node, frame.sessionId)}${foreign(frame)}`;
+}
+
 async function tag(tabId, backendNodeId) {
   return label((await cdp(tabId, "DOM.describeNode", { backendNodeId })).node);
 }
@@ -782,7 +886,7 @@ function paint(command, at, { move, idle, binding, label }) {
   if (command === "hide") return ui.remove();
   ui.timer = setTimeout(ui.remove, idle);
   ui.frame.classList.toggle("concealed", command === "conceal");
-  ui.stop.style.pointerEvents = command === "aim" ? "none" : "";
+  ui.stop.style.pointerEvents = command === "aim" || command === "move" ? "none" : "";
   ui.stop.textContent = label;
   const moved = at && (at.x !== ui.x || at.y !== ui.y);
   if (moved) {

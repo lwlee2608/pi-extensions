@@ -15,11 +15,16 @@
     let clicks = 0;
     if (location.search !== "?nested") document.body.appendChild(Object.assign(document.createElement("iframe"), { id: "nested", title: "Nested frame", src: `http://nested.test:${location.port}/points-frame.html?nested` }));
     scrollTo(0, 100);
+    let recorded = false;
     for (const type of ["mousedown", "click", "keydown", "input"]) {
       addEventListener(type, () => {
         if (type === "click") clicks++;
+        recorded = true;
         top.postMessage(`${type} in ${location.hostname}; clicks ${clicks}; field "${field.value}"`, "*");
       });
+    }
+    for (const [type, what] of [["mouseover", "pointer"], ["mousemove", "pointer"], ["wheel", "wheel"]]) {
+      addEventListener(type, () => { if (!recorded) top.postMessage(`${what} in ${location.hostname}`, "*"); }, { passive: false });
     }
     if (location.search === "?alert") addEventListener("click", () => alert("Frame alert"));
   </script>
