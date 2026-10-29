@@ -4,16 +4,19 @@ import { display } from "./display.ts";
 import { runQuestionnaire } from "./questionnaire.ts";
 import { description, parameters } from "./schema.ts";
 import type { Result } from "./result.ts";
+import type { Request } from "./explain.ts";
 
 export default function (pi: ExtensionAPI): void {
   const pending = new Set<AbortController>();
+  let lastRequest: Request | undefined;
+  pi.on("context_with_system", event => { lastRequest = event.messages; });
   const excludeOutsideTerminal = (_event: unknown, ctx: ExtensionContext) => {
     if (ctx.mode !== "tui") {
       const active = pi.getActiveTools();
       if (active.includes("ask_user_question")) pi.setActiveTools(active.filter(name => name !== "ask_user_question"));
     }
   };
-  pi.on("session_start", excludeOutsideTerminal);
+  pi.on("session_start", (event, ctx) => { lastRequest = undefined; excludeOutsideTerminal(event, ctx); });
   pi.on("before_agent_start", excludeOutsideTerminal);
   pi.on("session_shutdown", () => {
     for (const controller of pending) controller.abort();
@@ -26,7 +29,7 @@ export default function (pi: ExtensionAPI): void {
       const controller = new AbortController();
       pending.add(controller);
       try {
-        const result = await runQuestionnaire(ctx, params, signal ? AbortSignal.any([signal, controller.signal]) : controller.signal);
+        const result = await runQuestionnaire(ctx, params, signal ? AbortSignal.any([signal, controller.signal]) : controller.signal, () => lastRequest);
         return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };
       } finally { pending.delete(controller); }
     },

@@ -6,6 +6,7 @@ import { validate, type Params } from "./schema.ts";
 import { QuestionnaireState } from "./state.ts";
 import { actionKeys, actionMatches } from "./keys.ts";
 import { Preview, columns } from "./preview.ts";
+import { explainer, type Explain, type Request } from "./explain.ts";
 
 const RESERVED_ROWS = 4;
 const PREVIEW_ROWS = 12;
@@ -32,14 +33,18 @@ export class Questionnaire implements Component, Focusable {
   private followFocus = false;
   private readonly now: () => number;
   private quietUntil: number;
+  private readonly explain: Explain;
+  private explaining?: { tab: number; controller: AbortController; text: string };
+  private explainError?: { tab: number; message: string };
 
-  constructor(params: Params, tui: TUI, theme: Theme, keys: KeybindingsManager, done: (value: Result) => void, now = Date.now) {
+  constructor(params: Params, tui: TUI, theme: Theme, keys: KeybindingsManager, done: (value: Result) => void, now = Date.now, explain: Explain = unavailable) {
     this.state = new QuestionnaireState(params.questions);
     this.tui = tui;
     this.theme = theme;
     this.keys = keys;
-    this.done = done;
+    this.done = value => { this.explaining?.controller.abort(); done(value); };
     this.now = now;
+    this.explain = explain;
     this.quietUntil = now() + TYPE_AHEAD_MS;
     this.editor = this.createEditor();
   }
@@ -124,6 +129,31 @@ export class Questionnaire implements Component, Focusable {
     this.confirmAnswer();
   }
 
+  private startExplain(): void {
+    if (this.explaining) return;
+    const tab = this.state.tab;
+    const run = { tab, controller: new AbortController(), text: "" };
+    this.explaining = run;
+    this.explainError = undefined;
+    this.resetScroll();
+    this.explain(tab, run.controller.signal, text => {
+      run.text = text;
+      this.tui.requestRender();
+    }).then(text => {
+      this.state.answers[tab].explanation = text;
+    }, (error: unknown) => {
+      if (!run.controller.signal.aborted) this.explainError = { tab, message: error instanceof Error ? error.message : String(error) };
+    }).finally(() => {
+      if (this.explaining === run) this.explaining = undefined;
+      this.tui.requestRender();
+    });
+  }
+
+  private stopExplain(): void {
+    this.explaining?.controller.abort();
+    this.explaining = undefined;
+  }
+
   private previewText(): string {
     const question = this.state.questions[this.state.tab];
     return question?.options[this.state.answers[this.state.tab]?.cursor]?.preview ?? "";
@@ -166,6 +196,8 @@ export class Questionnaire implements Component, Focusable {
         if (this.discard) this.done(result(this.state, true));
         else this.confirming = false;
       }
+    } else if (cancel && this.explaining) {
+      this.stopExplain();
     } else if (cancel) {
       this.requestCancel();
     } else if (!this.single && (next || previous)) {
@@ -191,7 +223,8 @@ export class Questionnaire implements Component, Focusable {
     } else {
       const question = this.state.questions[this.state.tab];
       const answer = this.state.answers[this.state.tab];
-      const chatRow = question.options.length + (question.multiSelect ? 2 : 1);
+      const explainRow = question.options.length + (question.multiSelect ? 2 : 1);
+      const chatRow = explainRow + 1;
       if (up || down) {
         answer.cursor = Math.max(0, Math.min(chatRow, answer.cursor + (up ? -1 : 1)));
         this.followFocus = true;
@@ -200,7 +233,10 @@ export class Questionnaire implements Component, Focusable {
         this.followFocus = true;
         if (digit < question.options.length) this.state.select(this.state.tab, digit);
         if (digit < question.options.length && !question.multiSelect) this.confirmAnswer();
-      } else if (digit === question.options.length + 1 || (confirm && answer.cursor === chatRow)) {
+      } else if (digit === question.options.length + 1 || (confirm && answer.cursor === explainRow)) {
+        answer.cursor = explainRow;
+        this.startExplain();
+      } else if (digit === question.options.length + 2 || (confirm && answer.cursor === chatRow)) {
         this.done(result(this.state, false, true));
       } else if (question.multiSelect && answer.cursor < question.options.length && (confirm || matchesKey(data, Key.space))) {
         this.state.select(this.state.tab, answer.cursor);
@@ -281,6 +317,10 @@ export class Questionnaire implements Component, Focusable {
       const answer = state.answers[state.tab];
       add(theme.bold(display(question.question)));
       body.push("");
+      const explaining = this.explaining?.tab === state.tab ? this.explaining : undefined;
+      const explanation = explaining ? explaining.text || "Explaining…" : answer.explanation;
+      if (explanation) { add(theme.fg("muted", display(explanation))); body.push(""); }
+      if (this.explainError?.tab === state.tab) { add(theme.fg("error", `Explanation failed: ${display(this.explainError.message)}`)); body.push(""); }
       const rows = [
         ...question.options.map((option, i) => ({ label: display(option.label), description: option.description, checked: answer.selected.has(i) })),
         { label: answer.draft ? display(answer.draft) : "Type something.", description: undefined, checked: answer.customActive },
@@ -307,7 +347,9 @@ export class Questionnaire implements Component, Focusable {
       }
       if (answer.notes) { body.push(""); add(theme.fg("muted", `Note: ${display(answer.notes)}`)); }
       body.push(theme.fg("border", "─".repeat(bodyWidth)));
-      choice(question.options.length + 1, "Chat about this", answer.cursor === rows.length + (question.multiSelect ? 1 : 0));
+      const explainRow = rows.length + (question.multiSelect ? 1 : 0);
+      choice(question.options.length + 1, explaining ? "Explaining…" : "Explain this question", answer.cursor === explainRow);
+      choice(question.options.length + 2, "Chat about this", answer.cursor === explainRow + 1);
       if (!question.multiSelect) hint(confirmKey, "select");
       else if (typing) hint(confirmKey, "done");
       else if (onSubmit) hint(confirmKey, this.single ? "submit" : "next");
@@ -315,6 +357,7 @@ export class Questionnaire implements Component, Focusable {
       hint(navigate, "navigate");
       switchHint(!typing);
       if (!typing) noteHint();
+      if (explaining) cancelHint = `${cancelKey} stop explaining`;
       if (hasPreview) hint(`${keyLabel(actionKeys(this.keys, "pi-ask-user.previewUp"))}/${keyLabel(actionKeys(this.keys, "pi-ask-user.previewDown"))}`, "preview");
     }
 
@@ -362,7 +405,9 @@ export class Questionnaire implements Component, Focusable {
   }
 }
 
-export async function runQuestionnaire(ctx: ExtensionContext, params: Params, signal?: AbortSignal): Promise<Result> {
+const unavailable: Explain = async () => { throw new Error("Explanations are unavailable."); };
+
+export async function runQuestionnaire(ctx: ExtensionContext, params: Params, signal?: AbortSignal, lastRequest: () => Request | undefined = () => undefined): Promise<Result> {
   if (ctx.mode !== "tui") throw new Error("Questionnaires require terminal mode.");
   validate(params);
   signal?.throwIfAborted();
@@ -378,7 +423,8 @@ export async function runQuestionnaire(ctx: ExtensionContext, params: Params, si
       };
       abort = () => finish(new Error("Questionnaire aborted."));
       signal?.addEventListener("abort", abort, { once: true });
-      return new Questionnaire(params, tui, theme, keys, finish);
+      const explain = explainer(ctx, params, lastRequest);
+      return new Questionnaire(params, tui, theme, keys, finish, Date.now, (index, own, onText) => explain(index, signal ? AbortSignal.any([own, signal]) : own, onText));
     });
     if (outcome instanceof Error) throw outcome;
     if (!outcome) throw new Error("Questionnaire UI unavailable.");

@@ -8,18 +8,20 @@ import { result, type Result } from "../src/result.ts";
 import { QuestionnaireState } from "../src/state.ts";
 import { core, rich, limits } from "./fixtures/demo.ts";
 import { initTheme } from "@earendil-works/pi-coding-agent";
+import type { Message } from "@earendil-works/pi-ai";
 import { Preview } from "../src/preview.ts";
 import { actionKeys, actionMatches } from "../src/keys.ts";
 import { display, editorDisplay } from "../src/display.ts";
+import { explainMessages, explainPrompt, type Explain } from "../src/explain.ts";
 
 initTheme("dark", false);
 
 const down = "\x1b[B", up = "\x1b[A", enter = "\r", esc = "\x1b";
-export function harness(params = core, rows = 30, bindings = new KeybindingsManager(TUI_KEYBINDINGS)) {
+export function harness(params = core, rows = 30, bindings = new KeybindingsManager(TUI_KEYBINDINGS), explain?: Explain) {
   let output: Result | undefined;
   const terminal = { rows };
   const clock = { time: 0 };
-  const questionnaire = new Questionnaire(params, { terminal, requestRender() {} } as unknown as TUI, theme, bindings, value => { output = value; }, () => clock.time);
+  const questionnaire = new Questionnaire(params, { terminal, requestRender() {} } as unknown as TUI, theme, bindings, value => { output = value; }, () => clock.time, explain);
   clock.time = 1000;
   questionnaire.focused = true;
   const input = (...keys: string[]) => keys.forEach(key => questionnaire.handleInput(key));
@@ -142,7 +144,7 @@ test("number shortcuts support terminal protocols without consuming modified key
 test("inline layout uses natural height instead of filling the terminal", () => {
   const h = harness({ questions: core.questions.slice(0, 1) }, 60);
   const lines = h.questionnaire.render(80);
-  assert.equal(lines.length, 10);
+  assert.equal(lines.length, 11);
   assert.match(lines.at(-1)!, /^Enter select · ↑\/↓ navigate · n note · Esc cancel$/);
 });
 
@@ -186,28 +188,80 @@ test("untouched cancel is immediate; work requires explicit discard and keep pre
   assert.deepEqual(h.output(), { cancelled: true, answers: [] });
 });
 
-test("Chat about this sits below a separator and returns answered or noted questions without requiring completion", () => {
+test("Explain and Chat sit below a separator; Chat returns answered or noted questions without requiring completion", () => {
   const single = harness({ questions: core.questions.slice(0, 1) });
-  assert.match(single.text(), /3\. Type something\.\n─+\n  4\. Chat about this/);
+  assert.match(single.text(), /3\. Type something\.\n─+\n  4\. Explain this question\n  5\. Chat about this/);
   single.input(down, down, down, down);
-  assert.match(single.text(), /❯ 4\. Chat about this/);
+  assert.match(single.text(), /❯ 5\. Chat about this/);
   single.input(enter);
   assert.deepEqual(single.output(), { cancelled: false, chat: true, answers: [] });
   const multi = harness();
   multi.input("2", down, down, down, down, down);
-  assert.match(multi.text(), /Next\n─+\n❯ 5\. Chat about this/);
+  assert.match(multi.text(), /Next\n─+\n❯ 5\. Explain this question\n  6\. Chat about this/);
   multi.questionnaire.state.saveNote(1, "Unsure about audit");
-  multi.input("5");
+  multi.input("6");
   assert.deepEqual(multi.output(), { cancelled: false, chat: true, answers: [
     { questionIndex: 1, selected: ["PostgreSQL"] },
     { questionIndex: 2, selected: [], notes: "Unsure about audit" },
   ] });
   const eight = harness({ questions: [{ question: "Q", options: Array.from({ length: 8 }, (_, i) => ({ label: `O${i + 1}` })) }] });
-  assert.match(eight.text(), /9\. Type something\.\n─+\n {5}Chat about this/);
-  eight.input(...Array(9).fill(down));
+  assert.match(eight.text(), /9\. Type something\.\n─+\n {5}Explain this question\n {5}Chat about this/);
+  eight.input(...Array(10).fill(down));
   assert.match(eight.text(), /❯ {4}Chat about this/);
   eight.input(enter);
   assert.deepEqual(eight.output(), { cancelled: false, chat: true, answers: [] });
+});
+
+test("Explain streams inline, Esc stops it without cancelling, failures show, and the explanation is returned", async () => {
+  const calls: { index: number; signal: AbortSignal; onText: (text: string) => void; resolve: (text: string) => void; reject: (error: Error) => void }[] = [];
+  const explain: Explain = (index, signal, onText) => new Promise((resolve, reject) => { calls.push({ index, signal, onText, resolve, reject }); });
+  const settle = () => new Promise(resolve => setImmediate(resolve));
+  const h = harness({ questions: core.questions.slice(0, 1) }, 30, undefined, explain);
+  h.input("4");
+  assert.equal(calls[0].index, 0);
+  assert.match(h.text(), /Which storage should we use\?\n\nExplaining…\n/);
+  assert.match(h.text(), /❯ 4\. Explaining…/);
+  assert.match(h.text(), /Esc stop explaining$/);
+  h.input("4");
+  assert.equal(calls.length, 1);
+  h.input(esc);
+  assert.equal(calls[0].signal.aborted, true);
+  assert.equal(h.output(), undefined);
+  calls[0].reject(new Error("aborted"));
+  await settle();
+  assert.doesNotMatch(h.text(), /Explaining|failed/);
+  h.input(enter);
+  calls[1].reject(new Error("boom"));
+  await settle();
+  assert.match(h.text(), /Explanation failed: boom/);
+  h.input(enter);
+  assert.doesNotMatch(h.text(), /failed/);
+  calls[2].onText("SQLite is a file");
+  assert.match(h.text(), /\n\nSQLite is a file\n\n {2}1\. SQLite/);
+  calls[2].resolve("SQLite is a file.");
+  await settle();
+  assert.match(h.text(), /SQLite is a file\./);
+  assert.match(h.text(), /❯ 4\. Explain this question/);
+  h.input(enter);
+  calls[3].onText("partial");
+  h.input("5");
+  assert.equal(calls[3].signal.aborted, true);
+  assert.deepEqual(h.output(), { cancelled: false, chat: true, answers: [{ questionIndex: 1, selected: [], explanation: "SQLite is a file." }] });
+});
+
+test("explain request answers pending tool calls and omits previews", () => {
+  const prompt = explainPrompt(rich, 1);
+  assert.match(prompt, /question 2/);
+  assert.match(prompt, /"label":"Search"/);
+  assert.doesNotMatch(prompt, /preview|yaml/);
+  const call = (id: string) => ({ type: "toolCall" as const, id, name: "ask_user_question", arguments: {} });
+  const assistant = { role: "assistant", content: [call("a"), call("b")] } as unknown as Message;
+  const done = { role: "toolResult", toolCallId: "a", toolName: "x", content: [], isError: false, timestamp: 0 } as unknown as Message;
+  const system = { role: "system", content: "S", timestamp: 0 } as Message;
+  const messages = explainMessages([system], [assistant, done], prompt, 5);
+  assert.deepEqual(messages.slice(0, 3), [system, assistant, done]);
+  assert.deepEqual(messages.slice(3).map(message => message.role === "toolResult" ? message.toolCallId : message.role), ["b", "user"]);
+  assert.deepEqual(messages.at(-1), { role: "user", content: prompt, timestamp: 5 });
 });
 
 test("single-select inactive custom text is retained but never returned", () => {
