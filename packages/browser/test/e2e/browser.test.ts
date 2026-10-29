@@ -7,6 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { browserExtension } from "../../src/index.ts";
+import { PROTOCOL } from "../../src/host.js";
 import { launchChrome } from "./chrome.ts";
 import { copyExtension } from "./extension.ts";
 
@@ -422,11 +423,12 @@ test("screenshot brings a pi tab behind another tab to the front and returns a C
   const tabId = await inWorker(`chrome.tabs.query({ url: "${form}" }).then(tabs => tabs.at(-1).id)`);
   await inWorker(`chrome.tabs.get(${tabId}).then(tab => chrome.tabs.create({ windowId: tab.windowId, url: "${site}other.html", active: true }))`);
   const { content } = await call({ action: "screenshot", tabId });
-  const [, file] = content[0].text.match(new RegExp(`^Screenshot in tab ${tabId}\\. Saved to (.+\\.jpg)$`));
+  const [, shotWidth, shotHeight, file] = content[0].text.match(new RegExp(`^Screenshot of tab ${tabId}, (\\d+)x(\\d+) pixels\\. Saved to (.+\\.jpg)$`));
   assert.equal(content[1].mimeType, "image/jpeg");
   assert.equal((await readFile(file)).toString("base64"), content[1].data);
   assert.equal(await inWorker(`chrome.tabs.get(${tabId}).then(tab => tab.active)`), true);
   const [width, height, r, g, b] = await decode(content[1]);
+  assert.deepEqual([width, height], [Number(shotWidth), Number(shotHeight)], "the result states the image's size");
   const [cssWidth, ratio] = await inPage(form, "[innerWidth, devicePixelRatio]");
   assert.equal(ratio, 2, "Chrome runs at 2x like a high-density screen");
   assert.ok(width > 500 && width <= cssWidth && height > 100, `${width}x${height} is captured at CSS size, not ${ratio}x`);
@@ -679,7 +681,7 @@ test("an extension at another protocol version fails every call and /browser wit
   process.env.PI_CODING_AGENT_DIR = join(dir, "agent");
   const old = session("e2e-stale", "stale", { browserDirs: [join(dir, "profile")] });
   process.env.PI_CODING_AGENT_DIR = join(work, "agent");
-  const reload = /^Pi Browser protocol versions do not match \(pi 1, extension 0, native host 1\)\. Reload the Pi Browser extension in chrome:\/\/extensions/m;
+  const reload = new RegExp(`^Pi Browser protocol versions do not match \\(pi ${PROTOCOL}, extension 0, native host ${PROTOCOL}\\)\\. Reload the Pi Browser extension in chrome://extensions`, "m");
   try {
     await assert.rejects(old.browser({ action: "tabs" }), { message: reload });
     assert.match(await old.status(), reload);
@@ -687,4 +689,98 @@ test("an extension at another protocol version fails every call and /browser wit
     old.emit("session_shutdown");
     await stale.close();
   }
+});
+
+const points = at("points", "points.html");
+let image = { width: 0, height: 0 };
+
+async function layout(): Promise<Record<string, [number, number]>> {
+  const line = (await browser({ action: "read" })).match(/^\s*viewport .*$/m)![0];
+  return Object.fromEntries([...line.matchAll(/(\w+) (\d+)[x,](\d+)/g)].map(([, name, x, y]) => [name, [Number(x), Number(y)]]));
+}
+
+async function pixel(name: string): Promise<[number, number]> {
+  const { viewport, [name]: [x, y] } = await layout();
+  return [Math.round(x * image.width / viewport[0]), Math.round(y * image.height / viewport[1])];
+}
+
+test("points: a point before any screenshot fails asking for one, and click takes a ref or a point, not both", async () => {
+  const [, tabId] = (await browser({ action: "navigate", url: points, newTab: true }, "Allow for this session")).match(/^Tab (\d+): Pi points/)!;
+  assert.deepEqual(asked.splice(0), ["points.test"]);
+  await inWorker(`chrome.tabs.update(${tabId}, { active: true }).then(tab => chrome.windows.update(tab.windowId, { width: 1800, height: 800 }))`);
+  await until(async () => (await layout()).viewport[0] > 1568);
+  await assert.rejects(browser({ action: "click", point: [10, 10] }), new RegExp(`^Error: Tab ${tabId} has no screenshot to take a point from\\. Use screenshot first`));
+  await assert.rejects(browser({ action: "click", ref: 1, point: [10, 10] }), /click needs either a ref from read or a point from a screenshot, not both/);
+  await assert.rejects(browser({ action: "click" }), /click needs either a ref from read or a point from a screenshot/);
+  assert.doesNotMatch(await browser({ action: "read" }), /mousedown/);
+});
+
+test("points: on a viewport wider than 1568 px, screenshot stays within the cap and a click at the target's pixel lands within 2 CSS px", async () => {
+  const { viewport, target } = await layout();
+  assert.ok(viewport[0] > 1568, `viewport ${viewport} is wider than the cap`);
+  const { content } = await call({ action: "screenshot" });
+  const [, width, height] = content[0].text.match(/, (\d+)x(\d+) pixels\./).map(Number);
+  image = { width, height };
+  assert.ok(width <= 1568 && width * height <= 1_150_000, `${width}x${height} is within the cap`);
+  assert.deepEqual((await decode(content[1])).slice(0, 2), [width, height], "the stated size is the image's size");
+  const [x, y] = await pixel("target");
+  assert.match(await browser({ action: "click", point: [x, y] }), new RegExp(`^Clicked at \\(${x}, ${y}\\) on Canvas in tab \\d+\\.$`));
+  const page = await browser({ action: "read" });
+  assert.match(page, /mousedown left 1 at/);
+  const [, clickX, clickY] = page.match(/click left 1 at (\d+),(\d+)/)!.map(Number);
+  assert.ok(Math.abs(clickX - target[0]) <= 2 && Math.abs(clickY - target[1]) <= 2, `click at ${clickX},${clickY} is within 2 CSS px of ${target}`);
+  await assert.rejects(browser({ action: "click", point: [width, 0] }), new RegExp(`Point \\(${width}, 0\\) is outside tab \\d+'s last screenshot, which is ${width}x${height} pixels\\.`));
+});
+
+test("points: right, double, and triple clicks reach the canvas with their button and count", async () => {
+  await browser({ action: "navigate", url: points });
+  const point = await pixel("target");
+  assert.match(await browser({ action: "click", point, button: "right" }), /^Clicked at \(\d+, \d+\) on Canvas with the right button in tab \d+\.$/);
+  assert.match(await browser({ action: "click", point, clickCount: 2 }), /^Double-clicked at/);
+  assert.match(await browser({ action: "click", point, clickCount: 3 }), /^Triple-clicked at/);
+  const page = await browser({ action: "read" });
+  for (const event of ["mousedown right 1", "contextmenu right 0", "dblclick left 2", "click left 3"]) assert.match(page, new RegExp(`${event} at \\d+,\\d+`));
+  assert.doesNotMatch(page, /click right/, "a right click fires no click event");
+});
+
+test("points: type with no ref and nothing focused fails, pointing to clicking a field first", async () => {
+  await browser({ action: "navigate", url: points });
+  await assert.rejects(browser({ action: "type", text: "lost" }), /^Error: Nothing has focus in tab \d+, so there is nowhere to type\. Click a field first/);
+  assert.match(await browser({ action: "read" }), /textbox "Note"\n/);
+});
+
+test("points: clicking a text field by point, then type with no ref, puts the text in it", async () => {
+  assert.match(await browser({ action: "click", point: await pixel("field") }), /on textbox "Note"/);
+  assert.match(await browser({ action: "type", text: "by point" }), /^Typed 8 characters into textbox "Note" in tab \d+\.$/);
+  assert.match(await browser({ action: "read" }), /textbox "Note" = "by point"/);
+});
+
+test("points: a point inside a cross-site frame is refused and the frame records nothing", async () => {
+  const { frame } = await layout();
+  await assert.rejects(browser({ action: "click", point: await pixel("frame") }), /^Error: Point \(\d+, \d+\) is inside <iframe id="frame">, a frame from another site, .* so nothing was clicked\.$/);
+  assert.match(await browser({ action: "read" }), /frame got nothing/);
+  await onPage(points, async sessionId => {
+    for (const type of ["mousePressed", "mouseReleased"]) await cdp.send("Input.dispatchMouseEvent", { type, x: frame[0], y: frame[1], button: "left", clickCount: 1 }, sessionId);
+  });
+  await until(async () => /frame got click/.test(await browser({ action: "read" })));
+});
+
+test("points: on a scrolled page, a click names the field under the point and a point in the cross-site frame is still refused", async () => {
+  await browser({ action: "navigate", url: points });
+  await inPage(points, "scrollTo(0, 200)");
+  await until(async () => (await layout()).scroll[1] === 200);
+  assert.match(await browser({ action: "click", point: await pixel("field") }), /on textbox "Note"/);
+  const { frame } = await layout();
+  await assert.rejects(browser({ action: "click", point: await pixel("frame") }), /is inside <iframe id="frame">, a frame from another site/);
+  assert.match(await browser({ action: "read" }), /frame got nothing/);
+  await onPage(points, async sessionId => {
+    for (const type of ["mousePressed", "mouseReleased"]) await cdp.send("Input.dispatchMouseEvent", { type, x: frame[0], y: frame[1], button: "left", clickCount: 1 }, sessionId);
+  });
+  await until(async () => /frame got click/.test(await browser({ action: "read" })));
+});
+
+test("points: a ref below the fold is hit-tested where it scrolled to, so its click is not refused as covered", async () => {
+  await browser({ action: "navigate", url: at("points", "form.html?below") });
+  assert.match(await browser({ action: "click", ref: ref(await browser({ action: "read" }), 'button "Below the fold"') }), /^Clicked \[\d+\]/);
+  assert.match(await browser({ action: "read" }), /button "Clicked below"/);
 });

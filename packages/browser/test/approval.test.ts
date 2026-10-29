@@ -6,7 +6,7 @@ import test from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Approvals, confirmEval, type Choice } from "../src/approval.ts";
 import { loadHosts, setConfirmEval } from "../src/config.ts";
-import { browserExtension, given, listTabs, truncate } from "../src/index.ts";
+import { browserExtension, checkClickOnly, given, listTabs, truncate } from "../src/index.ts";
 
 const dir = await mkdtemp(join(tmpdir(), "pi-browser-approval-"));
 test.after(() => rm(dir, { recursive: true, force: true }));
@@ -205,6 +205,15 @@ test("without a UI the tool is hidden and never reaches the bridge", async () =>
 });
 
 test("zero and empty params count as not given, other values pass through", () => {
-  assert.deepEqual(given({ tabId: 0, ref: 0, url: "", text: "", code: "", keys: "", newTab: false }), { newTab: false });
-  assert.deepEqual(given({ tabId: -1, ref: -2, text: " ", keys: "Enter" }), { tabId: -1, ref: -2, text: " ", keys: "Enter" });
+  assert.deepEqual(given({ tabId: 0, ref: 0, url: "", text: "", code: "", keys: "", newTab: false, point: [], button: "", clickCount: 0 }), { newTab: false });
+  assert.deepEqual(given({ tabId: -1, ref: -2, text: " ", keys: "Enter", point: [0, 0] }), { tabId: -1, ref: -2, text: " ", keys: "Enter", point: [0, 0] });
+});
+
+test("point, button, and clickCount are refused on any action but click", () => {
+  for (const params of [{ point: [1, 2] }, { button: "right" }, { clickCount: 2 }]) {
+    assert.throws(() => checkClickOnly("type", { text: "x", ...params }), /only work with click, not type\. To type at a point, click it first, then use type with no ref\./);
+    assert.throws(() => checkClickOnly("keys", { keys: "Enter", ...params }), /only work with click, not keys/);
+    checkClickOnly("click", params);
+  }
+  checkClickOnly("type", { text: "x" });
 });

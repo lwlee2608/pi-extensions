@@ -73,7 +73,7 @@ test("a host that fails the version handshake fails every call and reports the m
   const gone = new Promise<void>(resolve => { closed = resolve; });
   const server = new Bridge({ transport: handlers => listenSocket(path, { ...handlers, close: peer => { handlers.close(peer); closed(); } }), callTimeout: 1_000 });
   bridges.push(server);
-  const reload = /Pi Browser protocol versions do not match \(pi 1, extension 0, native host 1\)\. Reload the Pi Browser extension in chrome:\/\/extensions/;
+  const reload = new RegExp(`Pi Browser protocol versions do not match \\(pi ${PROTOCOL}, extension 0, native host ${PROTOCOL}\\)\\. Reload the Pi Browser extension in chrome://extensions`);
   const waiting = assert.rejects(server.call("echo", {}), reload);
   await server.listen();
   const old = await host(path, undefined, { version: 0, host: PROTOCOL });

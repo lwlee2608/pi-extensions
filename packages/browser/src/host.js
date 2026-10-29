@@ -4,7 +4,7 @@ import { connect } from "node:net";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export const PROTOCOL = 1;
+export const PROTOCOL = 2;
 
 export function encode(message) {
   const body = Buffer.from(JSON.stringify(message));

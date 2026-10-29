@@ -17,7 +17,10 @@ const parameters = Type.Object({
   tabId: Type.Optional(Type.Number({ description: "Pi tab to act on; defaults to the current pi tab" })),
   newTab: Type.Optional(Type.Boolean({ description: "navigate: open the URL in a new pi tab" })),
   ref: Type.Optional(Type.Number({ description: "click, type: element ref, the n in [n] from read. keys: focus this ref first. scroll: ref to bring into view" })),
-  text: Type.Optional(Type.String({ description: "type: text to insert at the cursor of the ref" })),
+  point: Type.Optional(Type.Array(Type.Number(), { minItems: 2, maxItems: 2, description: "click: [x, y] in pixels of the tab's last screenshot, instead of a ref" })),
+  button: Type.Optional(Type.Union([Type.Literal("left"), Type.Literal("right")], { description: "click: mouse button; left by default" })),
+  clickCount: Type.Optional(Type.Integer({ minimum: 1, maximum: 3, description: "click: 2 for a double click, 3 for a triple click; 1 by default" })),
+  text: Type.Optional(Type.String({ description: "type: text to insert at the cursor of the ref, or of the focused element when no ref is given" })),
   code: Type.Optional(Type.String({ description: "eval: JavaScript to run in the page's main frame, like the DevTools console: statements, top-level await, and const or let that may repeat across calls are allowed; the last expression's value is returned and a promise is awaited. At most 20 lines and 1500 characters, no two blank lines in a row, and no invisible or control characters other than newline and tab" })),
   keys: Type.Optional(Type.String({ description: "keys: space-separated keys or combos, like \"Enter\" or \"Shift+Tab\"; editing shortcuts use Meta on macOS and Control elsewhere, like \"Meta+a\" or \"Control+a\" to select all" })),
 });
@@ -26,6 +29,11 @@ function checkUrl(url: string | undefined): void {
   if (!url) throw new Error("navigate needs a url.");
   const { protocol } = parse(url);
   if (protocol !== "http:" && protocol !== "https:") throw new Error(`navigate only opens http and https URLs, not ${protocol}`);
+}
+
+export function checkClickOnly(action: string, params: object): void {
+  const given = ["point", "button", "clickCount"].filter(name => name in params);
+  if (action !== "click" && given.length) throw new Error(`${given.join(", ")} only work with click, not ${action}. To type at a point, click it first, then use type with no ref.`);
 }
 
 const CHOICES: Record<string, Choice> = { "Allow once": "once", "Allow for this session": "session", "Always allow": "always", Deny: "deny" };
@@ -56,7 +64,7 @@ export async function listTabs({ tabs, others }: TabList, allowed: (url: string)
 }
 
 export function given<T extends object>(params: T): T {
-  return Object.fromEntries(Object.entries(params).filter(([, value]) => value !== 0 && value !== "")) as T;
+  return Object.fromEntries(Object.entries(params).filter(([, value]) => value !== 0 && value !== "" && !(Array.isArray(value) && !value.length))) as T;
 }
 
 let screenshots: Promise<string> | undefined;
@@ -144,7 +152,11 @@ export function browserExtension({ browserDirs, platform = process.platform, ...
         + "a tab on a host the user has not approved shows only its host; a non-http(s) tab shows only its scheme and is refused until navigated); "
         + "navigate loads an http/https URL in the current pi tab, or a new one with newTab; read returns the page as an accessibility tree "
         + "where [n] marks an element ref. click, type, and keys act on a ref with real input events; scroll brings a ref into view; "
-        + "screenshot returns a JPEG of the tab, bringing it to the front of its window, and saves it to a file whose path it gives. console and network list the tab's console messages "
+        + "screenshot returns a JPEG of the tab, bringing it to the front of its window, states its size in pixels, and saves it to a file whose path it gives. "
+        + "click can take a point [x, y] in pixels of the tab's last screenshot instead of a ref, for canvas apps and widgets without a ref; its result names the element hit. "
+        + "Points do not follow the page: after it scrolls, navigates, or changes, take a new screenshot. A point inside a cross-site frame is refused. "
+        + "click takes button right for a right click, and clickCount 2 or 3 for a double or triple click. type with no ref inserts text into whatever has focus and fails if nothing has, "
+        + "such as a field you just clicked by point; canvas apps that read key presses need keys instead. console and network list the tab's console messages "
         + "and requests (method, status, type, URL) since its page loaded, newest last; when the debugger attached after the page loaded, network says so and only a reload shows every request. eval runs code in the page and returns its JSON value; "
         + "eval runs on approved hosts without asking unless the user turned on eval confirmation, which shows them the code. Refs go stale when the page navigates; "
         + "read again. Actions do not wait for a page they trigger to load; read to see the result. The user approves each new host; "
@@ -154,6 +166,7 @@ export function browserExtension({ browserDirs, platform = process.platform, ...
       executionMode: "sequential",
       async execute(_id, { action, ...raw }, signal, _update, ctx) {
         const params = given(raw);
+        checkClickOnly(action, params);
         const bridge = use(ctx);
         used = true;
         const granted = new Set<string>();

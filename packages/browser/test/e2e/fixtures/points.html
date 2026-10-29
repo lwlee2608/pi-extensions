@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><title>Pi points</title>
+  <style>
+    body { margin: 0; height: 2000px; background: #fff; }
+    #board { position: absolute; left: 0; top: 0; width: 100%; height: 300px; }
+    #field { position: absolute; left: 20px; top: 340px; }
+    #frame { position: absolute; left: 400px; top: 320px; width: 300px; height: 120px; border: 0; }
+    #info { position: absolute; left: 20px; top: 460px; }
+    #log { list-style: none; }
+  </style>
+</head>
+<body>
+  <canvas id="board"></canvas>
+  <input id="field" aria-label="Note">
+  <iframe id="frame" title="Cross-site frame"></iframe>
+  <div id="info">
+    <p id="layout"></p>
+    <p id="framed">frame got nothing</p>
+    <ul id="log"></ul>
+  </div>
+  <script>
+    const target = { x: 1400, y: 150 };
+    const center = element => (box => `${Math.round(box.x + box.width / 2)},${Math.round(box.y + box.height / 2)}`)(element.getBoundingClientRect());
+    const draw = () => {
+      board.width = board.clientWidth;
+      board.height = board.clientHeight;
+      const context = board.getContext("2d");
+      context.fillStyle = "#c02020";
+      context.beginPath();
+      context.arc(target.x, target.y, 10, 0, 2 * Math.PI);
+      context.fill();
+      measure();
+    };
+    const measure = () => {
+      layout.textContent = `viewport ${document.documentElement.clientWidth}x${document.documentElement.clientHeight}; target ${target.x},${target.y}; field ${center(field)}; frame ${center(frame)}; scroll ${scrollX},${scrollY}`;
+    };
+    draw();
+    addEventListener("resize", draw);
+    addEventListener("scroll", measure);
+    for (const type of ["mousedown", "mouseup", "click", "dblclick", "contextmenu"]) {
+      board.addEventListener(type, event => {
+        if (type === "contextmenu") event.preventDefault();
+        log.appendChild(document.createElement("li")).textContent = `${type} ${["left", "middle", "right"][event.button]} ${event.detail} at ${event.clientX},${event.clientY}`;
+      });
+    }
+    frame.src = `http://frame.test:${location.port}/points-frame.html`;
+    addEventListener("message", event => { if (event.origin === new URL(frame.src).origin) framed.textContent = `frame got ${event.data}`; });
+  </script>
+</body>
+</html>

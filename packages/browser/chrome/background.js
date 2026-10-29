@@ -1,10 +1,12 @@
 const HOST = "com.lwlee2608.pi_browser";
-const PROTOCOL = 1;
+const PROTOCOL = 2;
 const RECONNECT_MS = 1_000;
 const RECONNECT_MAX_MS = 15_000;
 const NAVIGATE_WAIT_MS = 20_000;
 const COLORS = ["blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange", "grey"];
 const SCREENSHOT_QUALITY = 80;
+const SCREENSHOT_EDGE = 1568;
+const SCREENSHOT_AREA = 1_150_000;
 const LOG_LIMIT = 200;
 const TEXT_LIMIT = 1_000;
 const EVAL_TIMEOUT_MS = 10_000;
@@ -67,28 +69,36 @@ const handlers = {
     return { url: done.url || done.pendingUrl || "", text: lines.join("\n") };
   },
 
-  async click({ tabId, ref }, caller) {
+  async click({ tabId, ref, point, button = "left", clickCount = 1 }, caller) {
+    if ((ref === undefined) === (point === undefined)) throw new Error("click needs either a ref from read or a point from a screenshot, not both.");
+    if (!Object.hasOwn(BUTTONS, button)) throw new Error(`click's button is left or right, not ${button}.`);
+    if (![1, 2, 3].includes(clickCount)) throw new Error(`click's clickCount is 1, 2, or 3, not ${clickCount}.`);
     const tab = await piTab(caller, tabId);
+    let at = point === undefined ? undefined : spot(tab.id, point);
+    let what = `[${ref}]`;
     await inFront(tab, async () => {
-      await overlay(tab.id, "aim", await point(tab.id, ref));
-      const at = await center(tab.id, ref);
-      if (!at) throw new Error(`Ref [${ref}] has no visible box to click.`);
-      await uncovered(tab.id, ref, at);
-      await guarded(tab.id, async () => {
-        await cdp(tab.id, "Input.dispatchMouseEvent", { type: "mousePressed", ...at, button: "left", clickCount: 1 });
-        await cdp(tab.id, "Input.dispatchMouseEvent", { type: "mouseReleased", ...at, button: "left", clickCount: 1 });
-      });
+      if (at) {
+        await overlay(tab.id, "aim", at);
+        what = `at (${point.join(", ")}) on ${await under(tab.id, at, point)}`;
+      } else {
+        await overlay(tab.id, "aim", await reveal(tab.id, ref));
+        at = await center(tab.id, ref);
+        if (!at) throw new Error(`Ref [${ref}] has no visible box to click.`);
+        await uncovered(tab.id, ref, at);
+      }
+      await guarded(tab.id, () => press(tab.id, at, button, clickCount));
     }).finally(() => { overlay(tab.id, "show"); });
-    return acted(tab.id, `Clicked [${ref}]`);
+    return acted(tab.id, `${CLICKED[clickCount - 1]} ${what}${button === "right" ? " with the right button" : ""}`);
   },
 
   async type({ tabId, ref, text }, caller) {
     if (typeof text !== "string") throw new Error("type needs text.");
     const tab = await piTab(caller, tabId);
-    await overlay(tab.id, "show", await point(tab.id, ref).catch(() => undefined));
-    await node(tab.id, "DOM.focus", ref);
+    await overlay(tab.id, "show", ref === undefined ? undefined : await reveal(tab.id, ref).catch(() => undefined));
+    if (ref !== undefined) await node(tab.id, "DOM.focus", ref);
+    const into = ref === undefined ? await focused(tab.id) : `[${ref}]`;
     await guarded(tab.id, () => cdp(tab.id, "Input.insertText", { text }));
-    return acted(tab.id, `Typed ${text.length} characters into [${ref}]`);
+    return acted(tab.id, `Typed ${text.length} characters into ${into}`);
   },
 
   async keys({ tabId, ref, keys }, caller) {
@@ -98,7 +108,7 @@ const handlers = {
     const presses = combos.map(combo => parseCombo(combo, mac));
     const tab = await piTab(caller, tabId);
     await inFront(tab, async () => {
-      await overlay(tab.id, "show", ref === undefined ? undefined : await point(tab.id, ref).catch(() => undefined));
+      await overlay(tab.id, "show", ref === undefined ? undefined : await reveal(tab.id, ref).catch(() => undefined));
       if (ref !== undefined) await node(tab.id, "DOM.focus", ref);
       await guarded(tab.id, async () => { for (const press of presses) await pressKeys(tab.id, press); });
     });
@@ -107,19 +117,24 @@ const handlers = {
 
   async scroll({ tabId, ref }, caller) {
     const tab = await piTab(caller, tabId);
-    await overlay(tab.id, "show", await point(tab.id, ref));
+    await overlay(tab.id, "show", await reveal(tab.id, ref));
     return acted(tab.id, `Scrolled [${ref}] into view`);
   },
 
   async screenshot({ tabId }, caller) {
     const tab = await piTab(caller, tabId);
-    const { data } = await inFront(tab, async () => {
+    const { data, shot } = await inFront(tab, async () => {
       const { cssVisualViewport: css, visualViewport: device } = await cdp(tab.id, "Page.getLayoutMetrics");
-      const clip = { x: css.pageX, y: css.pageY, width: css.clientWidth, height: css.clientHeight, scale: css.clientWidth / device.clientWidth };
+      const fit = Math.min(1, SCREENSHOT_EDGE / Math.max(css.clientWidth, css.clientHeight), Math.sqrt(SCREENSHOT_AREA / (css.clientWidth * css.clientHeight)));
+      const width = Math.round(css.clientWidth * fit);
+      const height = Math.round(css.clientHeight * fit);
+      const clip = { x: css.pageX, y: css.pageY, width: css.clientWidth, height: css.clientHeight, scale: width / device.clientWidth };
       await overlay(tab.id, "conceal");
-      return cdp(tab.id, "Page.captureScreenshot", { format: "jpeg", quality: SCREENSHOT_QUALITY, clip }).finally(() => overlay(tab.id, "show"));
+      const { data } = await cdp(tab.id, "Page.captureScreenshot", { format: "jpeg", quality: SCREENSHOT_QUALITY, clip }).finally(() => overlay(tab.id, "show"));
+      return { data, shot: { width, height, cssWidth: css.clientWidth, cssHeight: css.clientHeight } };
     });
-    return { ...(await acted(tab.id, "Screenshot")), data };
+    shots.set(tab.id, shot);
+    return { ...(await reply(tab.id, `Screenshot of tab ${tab.id}, ${shot.width}x${shot.height} pixels.`)), data };
   },
 
   async console({ tabId }, caller) {
@@ -176,10 +191,13 @@ const KEYS = {
   ArrowRight: [39, "ArrowRight"], Home: [36, "Home"], End: [35, "End"], PageUp: [33, "PageUp"], PageDown: [34, "PageDown"],
 };
 const MODIFIERS = { Alt: [1, 18], Control: [2, 17], Meta: [4, 91], Shift: [8, 16] };
+const BUTTONS = { left: 1, right: 2 };
+const CLICKED = ["Clicked", "Double-clicked", "Triple-clicked"];
 const MAC_COMMANDS = { Meta: { a: "selectAll", c: "copy", v: "paste", x: "cut", z: "undo" }, "Meta+Shift": { z: "redo" } };
 
 const attached = new Map();
 const refs = new Map();
+const shots = new Map();
 const logs = new Map();
 const dialogs = new Map();
 const current = new Map();
@@ -527,7 +545,7 @@ async function node(tabId, method, ref) {
   }
 }
 
-async function point(tabId, ref) {
+async function reveal(tabId, ref) {
   await node(tabId, "DOM.scrollIntoViewIfNeeded", ref);
   return center(tabId, ref);
 }
@@ -539,6 +557,24 @@ async function center(tabId, ref) {
   return { x: Math.round((quad[0] + quad[2] + quad[4] + quad[6]) / 4), y: Math.round((quad[1] + quad[3] + quad[5] + quad[7]) / 4) };
 }
 
+function spot(tabId, point) {
+  if (!Array.isArray(point) || point.length !== 2 || !point.every(Number.isFinite)) throw new Error("A point is [x, y] in pixels of the tab's last screenshot.");
+  const shot = shots.get(tabId);
+  if (!shot) throw new Error(`Tab ${tabId} has no screenshot to take a point from. Use screenshot first, then give points in its pixels.`);
+  const [x, y] = point;
+  if (x < 0 || y < 0 || x >= shot.width || y >= shot.height) throw new Error(`Point (${x}, ${y}) is outside tab ${tabId}'s last screenshot, which is ${shot.width}x${shot.height} pixels.`);
+  return { x: Math.min(Math.round(x * shot.cssWidth / shot.width), shot.cssWidth - 1), y: Math.min(Math.round(y * shot.cssHeight / shot.height), shot.cssHeight - 1) };
+}
+
+async function press(tabId, at, button, count) {
+  const mouse = params => cdp(tabId, "Input.dispatchMouseEvent", { ...at, button, ...params });
+  await mouse({ type: "mouseMoved", button: "none" });
+  for (let clickCount = 1; clickCount <= count; clickCount++) {
+    await mouse({ type: "mousePressed", clickCount, buttons: BUTTONS[button] });
+    await mouse({ type: "mouseReleased", clickCount, buttons: 0 });
+  }
+}
+
 function inFront(tab, run) {
   return serial(`window ${tab.windowId}`, async () => {
     await chrome.tabs.update(tab.id, { active: true });
@@ -548,8 +584,13 @@ function inFront(tab, run) {
   });
 }
 
+async function located(tabId, at) {
+  const { cssVisualViewport: { pageX, pageY } } = await cdp(tabId, "Page.getLayoutMetrics");
+  return cdp(tabId, "DOM.getNodeForLocation", { x: Math.round(at.x + pageX), y: Math.round(at.y + pageY) });
+}
+
 async function uncovered(tabId, ref, at) {
-  const hit = await cdp(tabId, "DOM.getNodeForLocation", at).catch(() => undefined);
+  const hit = await located(tabId, at).catch(() => undefined);
   if (!hit) throw new Error(`Ref [${ref}] has no point on the page to click.`);
   const frameId = [...refs.get(tabId) ?? []].find(([, found]) => found.has(ref))?.[0];
   if (hit.frameId === frameId) {
@@ -568,8 +609,48 @@ async function uncovered(tabId, ref, at) {
   throw new Error(`Ref [${ref}] is covered at its center by ${await tag(tabId, hit.backendNodeId)}, so a click there would miss it. Close or move what covers it, then read for fresh refs.`);
 }
 
+async function under(tabId, at, point) {
+  const hit = await located(tabId, at).catch(() => undefined);
+  if (!hit) throw new Error(`Point (${point.join(", ")}) has nothing on the page under it in tab ${tabId}.`);
+  const { node } = await cdp(tabId, "DOM.describeNode", { backendNodeId: hit.backendNodeId });
+  if (node.frameId && node.frameId !== hit.frameId && !node.contentDocument) {
+    throw new Error(`Point (${point.join(", ")}) is inside ${label(node)}, a frame from another site, and Pi Browser does not act inside cross-site frames yet, so nothing was clicked.`);
+  }
+  return named(tabId, hit.backendNodeId, node);
+}
+
+async function focused(tabId) {
+  const objectGroup = "pi-focus";
+  try {
+    const { frameTree } = await cdp(tabId, "Page.getFrameTree");
+    const { executionContextId: contextId } = await cdp(tabId, "Page.createIsolatedWorld", { frameId: frameTree.frame.id, worldName: OVERLAY_WORLD });
+    const { result } = await cdp(tabId, "Runtime.evaluate", {
+      contextId, objectGroup, expression: "(element => element && (element.isContentEditable || (element !== document.body && element !== document.documentElement)) ? element : null)(document.activeElement)",
+    });
+    if (!result.objectId) throw new Error(`Nothing has focus in tab ${tabId}, so there is nowhere to type. Click a field first, by ref or point, or use keys for canvas apps that read key presses.`);
+    const { node } = await cdp(tabId, "DOM.describeNode", { objectId: result.objectId });
+    return await named(tabId, node.backendNodeId, node);
+  } finally {
+    chrome.debugger.sendCommand({ tabId }, "Runtime.releaseObjectGroup", { objectGroup }).catch(() => {});
+  }
+}
+
+async function named(tabId, backendNodeId, node) {
+  const { nodes } = await cdp(tabId, "Accessibility.getPartialAXTree", { backendNodeId, fetchRelatives: true }).catch(() => ({ nodes: [] }));
+  const byId = new Map(nodes.map(ax => [ax.nodeId, ax]));
+  for (let ax = nodes.find(ax => ax.backendDOMNodeId === backendNodeId); ax; ax = byId.get(ax.parentId)) {
+    const role = ax.role?.value;
+    const name = String(ax.name?.value ?? "").trim();
+    if (!ax.ignored && role && role !== "StaticText" && !SKIP.has(role)) return `${role}${name ? ` ${JSON.stringify(name)}` : ""}`;
+  }
+  return label(node);
+}
+
 async function tag(tabId, backendNodeId) {
-  const { node: { localName, attributes = [] } } = await cdp(tabId, "DOM.describeNode", { backendNodeId });
+  return label((await cdp(tabId, "DOM.describeNode", { backendNodeId })).node);
+}
+
+function label({ localName, attributes = [] }) {
   const id = attributes.findIndex((name, index) => index % 2 === 0 && name === "id");
   return `<${localName}${id < 0 ? "" : ` id="${attributes[id + 1]}"`}>`;
 }
@@ -760,6 +841,7 @@ function snapshot(nodes, lines, found) {
 function forget(tabId) {
   attached.delete(tabId);
   refs.delete(tabId);
+  shots.delete(tabId);
   logs.delete(tabId);
   dialogs.delete(tabId);
 }
@@ -780,6 +862,7 @@ async function detachAll() {
   await Promise.all([...attached.keys()].map(tabId => overlay(tabId, "hide")));
   attached.clear();
   refs.clear();
+  shots.clear();
   logs.clear();
   dialogs.clear();
   for (const target of await chrome.debugger.getTargets()) {

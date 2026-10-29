@@ -43,20 +43,22 @@ Carried over from `plans/browser.md`; these rules bind every phase, review round
 - **Setup** — Chrome for Testing stays cached outside the repo; e2e keeps its own port so it never clashes with an open pi session.
 
 ## Progress
-Active: 1 · 0/22 tasks
+Active: 1 · 9/22 tasks
 
 ### Phase 1 — Click and type at a point from a screenshot
 The agent can click anywhere it sees in a screenshot (left, right, double, triple) and type into whatever that focused, on canvas and unlabeled widgets.
 **Blocked by:** none
-- [ ] Capture screenshots within the size cap, report the image's width and height, and keep the tab's scale (`chrome/background.js`)
-- [ ] Accept a point on `click`, with button and click count for refs and points alike (`chrome/background.js`, `src/index.ts`)
-- [ ] Fail a point action on a tab with no screenshot, or a point outside the image (`chrome/background.js`)
-- [ ] Refuse a point that lands in a cross-site frame (`chrome/background.js`)
-- [ ] Name the element under the point in the result, and move the overlay dot to it (`chrome/background.js`)
-- [ ] Let `type` run without a ref, into the current focus (`chrome/background.js`, `src/index.ts`)
-- [ ] Bump `PROTOCOL` so a stale extension reports a mismatch instead of failing on point params and new actions (`src/host.js`, `chrome/background.js`)
-- [ ] Describe points, their coordinate space, and going stale in the tool description and README (`src/index.ts`, `README.md`)
-- [ ] Add a canvas fixture that records each input it receives, and e2e cases for this phase (`test/e2e/fixtures`, `test/e2e/browser.test.ts`)
+- [x] Capture screenshots within the size cap, report the image's width and height, and keep the tab's scale (`chrome/background.js`)
+- [x] Accept a point on `click`, with button and click count for refs and points alike (`chrome/background.js`, `src/index.ts`)
+- [x] Fail a point action on a tab with no screenshot, or a point outside the image (`chrome/background.js`)
+- [x] Refuse a point that lands in a cross-site frame (`chrome/background.js`)
+- [x] Name the element under the point in the result, and move the overlay dot to it (`chrome/background.js`)
+- [x] Let `type` run without a ref, into the current focus (`chrome/background.js`, `src/index.ts`)
+- [x] Bump `PROTOCOL` so a stale extension reports a mismatch instead of failing on point params and new actions (`src/host.js`, `chrome/background.js`)
+- [x] Describe points, their coordinate space, and going stale in the tool description and README (`src/index.ts`, `README.md`)
+- [x] Add a canvas fixture that records each input it receives, and e2e cases for this phase (`test/e2e/fixtures`, `test/e2e/browser.test.ts`)
+**Note:** Point clicks under pinch zoom are unverified end to end (hit check now uses the visual viewport; press mapping not tested).
+**Note:** Phase 1 spots a cross-site frame as a frame owner whose document is in another process (`DOM.describeNode` gives no `contentDocument`); Chrome may isolate sandboxed same-site iframes too, so those are refused as well. Phase 2 needs the frame's real host.
 **Verify:** `node --test --test-name-pattern "^points:" test/e2e/browser.test.ts` from `packages/browser`, plus `npm test -w packages/browser`. With a viewport wider than 1568 px: `screenshot` reports an image at most 1568 px wide; a click at the fixture target's position in that image makes `read` show the canvas got a click within 2 CSS px of the target, and right, double, and triple clicks show their button and count; clicking a text field by point then `type` with no ref puts the text in it; a point action before any screenshot fails asking for one; a point inside the fixture's cross-site frame fails and the frame records nothing.
 
 ### Phase 2 — Act inside cross-site iframes, with approval
@@ -66,6 +68,8 @@ A point inside an embed from another host asks the user to approve that host, th
 - [ ] Replace phase 1's refusal with that approval, same choices and denial behavior as navigate (`chrome/background.js`, `src/index.ts`)
 - [ ] Explain frame approval for points in the README's Site approval section (`README.md`)
 - [ ] Add e2e cases for allow, deny, and an already-approved frame host (`test/e2e/browser.test.ts`)
+**Note:** `type` with no ref and `keys` reach a focused field inside a cross-site frame without frame-host approval; decide with the user whether focus in a cross-site frame needs approval.
+**Note:** The frame check runs once before the move and presses, so a hostile page can slide a cross-site frame under the pointer between check and press (worse with clickCount 2–3); approval has the same ordering, so consider re-checking after `mouseMoved` and before each press.
 **Verify:** `node --test --test-name-pattern "^frames:" test/e2e/browser.test.ts` from `packages/browser`, plus `npm test -w packages/browser`: a click inside the fixture's cross-site frame prompts for the frame's host, not the tab's; deny fails the call and the frame records nothing; allow once lets the frame record the click; after "this session", a second click does not prompt.
 
 ### Phase 3 — Hover, drag, and wheel-scroll at a point
@@ -88,6 +92,7 @@ The agent can look closer at a small part of the screen before clicking, without
 **Verify:** `node --test --test-name-pattern "^zoom:" test/e2e/browser.test.ts` from `packages/browser`, plus `npm test -w packages/browser`: `zoom` on the fixture's small-print region returns an image larger than that region's size in the screenshot; a click after `zoom`, at a point taken from the full screenshot, still lands within 2 CSS px of the target; `zoom` before any screenshot fails asking for one.
 
 ## Demo
+**Note:** Check in the demo whether a right click on a page with no menu of its own leaves Chrome's native context menu open; if so add a README Limits line.
 In your own Chrome with Pi Browser reloaded, in a pi session, ask the agent to:
 1. Draw a shape on a canvas drawing app (e.g. excalidraw.com) and type a label into it.
 2. Drag a map (e.g. openstreetmap.org) and wheel-zoom it at a point.
