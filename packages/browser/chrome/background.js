@@ -17,6 +17,8 @@ const OVERLAY_WORLD = "pi-overlay";
 const STOP_BINDING = "piStop";
 const STRIP_TRIES = 4;
 const STRIP_WAIT_MS = 75;
+const AUTO_ATTACH = { autoAttach: true, waitForDebuggerOnStart: false, flatten: true, filter: [{ type: "iframe" }] };
+const FOCUSED = "(element => element && (element.isContentEditable || (element !== document.body && element !== document.documentElement)) ? element : null)(document.activeElement)";
 
 const SKIP = new Set(["generic", "none", "paragraph", "InlineTextBox", "LineBreak", "RootWebArea"]);
 const INTERACTIVE = new Set(["button", "checkbox", "combobox", "link", "listbox", "menuitem", "menuitemcheckbox", "menuitemradio",
@@ -69,49 +71,72 @@ const handlers = {
     return { url: done.url || done.pendingUrl || "", text: lines.join("\n") };
   },
 
-  async click({ tabId, ref, point, button = "left", clickCount = 1 }, caller) {
+  async click({ tabId, ref, point, button = "left", clickCount = 1, hosts = [] }, caller) {
     if ((ref === undefined) === (point === undefined)) throw new Error("click needs either a ref from read or a point from a screenshot, not both.");
     if (!Object.hasOwn(BUTTONS, button)) throw new Error(`click's button is left or right, not ${button}.`);
     if (![1, 2, 3].includes(clickCount)) throw new Error(`click's clickCount is 1, 2, or 3, not ${clickCount}.`);
     const tab = await piTab(caller, tabId);
     let at = point === undefined ? undefined : spot(tab.id, point);
     let what = `[${ref}]`;
+    let ask, check;
     await inFront(tab, async () => {
       if (at) {
+        const where = `Point (${point.join(", ")})`;
+        const frame = await frameAt(tab.id, at, where);
+        if ((ask = unapproved(frame, hosts, where))) return;
         await overlay(tab.id, "aim", at);
-        what = `at (${point.join(", ")}) on ${await under(tab.id, at, point)}`;
+        what = `at (${point.join(", ")}) on ${await named(tab.id, frame.hit.backendNodeId, frame.node, frame.sessionId)}${foreign(frame)}`;
+        check = async done => {
+          const now = await frameAt(tab.id, at, where);
+          if (unapproved(now, hosts, where)) throw new Error(`${where} came to lie inside a frame from ${hostOf(now.url)} during the click, so it stopped after ${done} of ${clickCount} presses. Take a new screenshot and try again.`);
+        };
       } else {
         await overlay(tab.id, "aim", await reveal(tab.id, ref));
         at = await center(tab.id, ref);
         if (!at) throw new Error(`Ref [${ref}] has no visible box to click.`);
         await uncovered(tab.id, ref, at);
       }
-      await guarded(tab.id, () => press(tab.id, at, button, clickCount));
+      await guarded(tab.id, () => press(tab.id, at, button, clickCount, check));
     }).finally(() => { overlay(tab.id, "show"); });
+    if (ask) return { ...(await reply(tab.id, "")), ask };
     return acted(tab.id, `${CLICKED[clickCount - 1]} ${what}${button === "right" ? " with the right button" : ""}`);
   },
 
-  async type({ tabId, ref, text }, caller) {
+  async type({ tabId, ref, text, hosts = [] }, caller) {
     if (typeof text !== "string") throw new Error("type needs text.");
     const tab = await piTab(caller, tabId);
     await overlay(tab.id, "show", ref === undefined ? undefined : await reveal(tab.id, ref).catch(() => undefined));
+    let into = `[${ref}]`;
     if (ref !== undefined) await node(tab.id, "DOM.focus", ref);
-    const into = ref === undefined ? await focused(tab.id) : `[${ref}]`;
+    else {
+      const focus = await focusIn(tab.id);
+      if (!focus.node) throw new Error(`Nothing has focus in tab ${tab.id}, so there is nowhere to type. Click a field first, by ref or point, or use keys for canvas apps that read key presses.`);
+      const ask = unapproved(focus, hosts, "Focus");
+      if (ask) return { ...(await reply(tab.id, "")), ask };
+      into = `${await named(tab.id, focus.node.backendNodeId, focus.node, focus.sessionId)}${foreign(focus)}`;
+    }
     await guarded(tab.id, () => cdp(tab.id, "Input.insertText", { text }));
     return acted(tab.id, `Typed ${text.length} characters into ${into}`);
   },
 
-  async keys({ tabId, ref, keys }, caller) {
+  async keys({ tabId, ref, keys, hosts = [] }, caller) {
     const combos = typeof keys === "string" ? keys.trim().split(/\s+/).filter(Boolean) : [];
     if (!combos.length) throw new Error("keys needs key names, like \"Enter\" or \"Shift+Tab\".");
     const mac = (await chrome.runtime.getPlatformInfo()).os === "mac";
     const presses = combos.map(combo => parseCombo(combo, mac));
     const tab = await piTab(caller, tabId);
+    let ask;
     await inFront(tab, async () => {
       await overlay(tab.id, "show", ref === undefined ? undefined : await reveal(tab.id, ref).catch(() => undefined));
       if (ref !== undefined) await node(tab.id, "DOM.focus", ref);
-      await guarded(tab.id, async () => { for (const press of presses) await pressKeys(tab.id, press); });
+      for (const [index, press] of presses.entries()) {
+        const url = unapproved(await focusIn(tab.id), hosts, "Focus");
+        if (url && !index) return void (ask = url);
+        if (url) throw new Error(`Pressed ${combos.slice(0, index).join(" ")}, then focus moved into a frame from ${hostOf(url)}, so ${combos.slice(index).join(" ")} was not pressed. Use keys again for the rest; the user is asked about ${hostOf(url)} first.`);
+        await guarded(tab.id, () => pressKeys(tab.id, press));
+      }
     });
+    if (ask) return { ...(await reply(tab.id, "")), ask };
     return acted(tab.id, `Pressed ${combos.join(" ")}`);
   },
 
@@ -198,6 +223,8 @@ const MAC_COMMANDS = { Meta: { a: "selectAll", c: "copy", v: "paste", x: "cut", 
 const attached = new Map();
 const refs = new Map();
 const shots = new Map();
+const frameSessions = new Map();
+const autoAttached = new Map();
 const logs = new Map();
 const dialogs = new Map();
 const current = new Map();
@@ -401,10 +428,10 @@ function strip(tabId) {
   } }).catch(() => {});
 }
 
-async function cdp(tabId, method, params) {
+async function cdp(tabId, method, params, sessionId) {
   if (dialogs.has(tabId)) throw dialogError(dialogs.get(tabId));
   await attach(tabId);
-  return unblocked(tabId, () => chrome.debugger.sendCommand({ tabId }, method, params));
+  return unblocked(tabId, () => chrome.debugger.sendCommand(sessionId ? { tabId, sessionId } : { tabId }, method, params));
 }
 
 async function logOf(tabId) {
@@ -566,10 +593,11 @@ function spot(tabId, point) {
   return { x: Math.min(Math.round(x * shot.cssWidth / shot.width), shot.cssWidth - 1), y: Math.min(Math.round(y * shot.cssHeight / shot.height), shot.cssHeight - 1) };
 }
 
-async function press(tabId, at, button, count) {
+async function press(tabId, at, button, count, check) {
   const mouse = params => cdp(tabId, "Input.dispatchMouseEvent", { ...at, button, ...params });
   await mouse({ type: "mouseMoved", button: "none" });
   for (let clickCount = 1; clickCount <= count; clickCount++) {
+    await check?.(clickCount - 1);
     await mouse({ type: "mousePressed", clickCount, buttons: BUTTONS[button] });
     await mouse({ type: "mouseReleased", clickCount, buttons: 0 });
   }
@@ -609,34 +637,86 @@ async function uncovered(tabId, ref, at) {
   throw new Error(`Ref [${ref}] is covered at its center by ${await tag(tabId, hit.backendNodeId)}, so a click there would miss it. Close or move what covers it, then read for fresh refs.`);
 }
 
-async function under(tabId, at, point) {
-  const hit = await located(tabId, at).catch(() => undefined);
-  if (!hit) throw new Error(`Point (${point.join(", ")}) has nothing on the page under it in tab ${tabId}.`);
-  const { node } = await cdp(tabId, "DOM.describeNode", { backendNodeId: hit.backendNodeId });
-  if (node.frameId && node.frameId !== hit.frameId && !node.contentDocument) {
-    throw new Error(`Point (${point.join(", ")}) is inside ${label(node)}, a frame from another site, and Pi Browser does not act inside cross-site frames yet, so nothing was clicked.`);
+async function frameAt(tabId, at, where) {
+  let sessionId, place, main, { x, y } = at;
+  for (;;) {
+    const { cssVisualViewport: { pageX, pageY } } = await cdp(tabId, "Page.getLayoutMetrics", undefined, sessionId);
+    const hit = await cdp(tabId, "DOM.getNodeForLocation", { x: Math.round(x + pageX), y: Math.round(y + pageY) }, sessionId).catch(() => undefined);
+    if (!hit) throw new Error(`${where} has nothing on the page under it in tab ${tabId}.`);
+    const { node } = await cdp(tabId, "DOM.describeNode", { backendNodeId: hit.backendNodeId }, sessionId);
+    place = placeIn((await cdp(tabId, "Page.getFrameTree", undefined, sessionId)).frameTree, hit.frameId, place);
+    main ??= place;
+    if (!node.frameId || node.frameId === hit.frameId || node.contentDocument) return { ...place, main, sessionId, hit, node };
+    const { model: { content } } = await cdp(tabId, "DOM.getBoxModel", { backendNodeId: hit.backendNodeId }, sessionId);
+    x -= content[0];
+    y -= content[1];
+    sessionId = await child(tabId, sessionId, node, where);
   }
-  return named(tabId, hit.backendNodeId, node);
 }
 
-async function focused(tabId) {
+async function focusIn(tabId) {
   const objectGroup = "pi-focus";
+  const sessions = new Set([undefined]);
+  let sessionId, frameId, place, main;
   try {
-    const { frameTree } = await cdp(tabId, "Page.getFrameTree");
-    const { executionContextId: contextId } = await cdp(tabId, "Page.createIsolatedWorld", { frameId: frameTree.frame.id, worldName: OVERLAY_WORLD });
-    const { result } = await cdp(tabId, "Runtime.evaluate", {
-      contextId, objectGroup, expression: "(element => element && (element.isContentEditable || (element !== document.body && element !== document.documentElement)) ? element : null)(document.activeElement)",
-    });
-    if (!result.objectId) throw new Error(`Nothing has focus in tab ${tabId}, so there is nowhere to type. Click a field first, by ref or point, or use keys for canvas apps that read key presses.`);
-    const { node } = await cdp(tabId, "DOM.describeNode", { objectId: result.objectId });
-    return await named(tabId, node.backendNodeId, node);
+    for (;;) {
+      const { frameTree } = await cdp(tabId, "Page.getFrameTree", undefined, sessionId);
+      frameId ??= frameTree.frame.id;
+      place = placeIn(frameTree, frameId, place);
+      main ??= place;
+      const { executionContextId: contextId } = await cdp(tabId, "Page.createIsolatedWorld", { frameId, worldName: OVERLAY_WORLD }, sessionId);
+      const { result } = await cdp(tabId, "Runtime.evaluate", { contextId, objectGroup, expression: FOCUSED }, sessionId);
+      if (!result.objectId) return { ...place, main, sessionId };
+      const { node } = await cdp(tabId, "DOM.describeNode", { objectId: result.objectId }, sessionId);
+      if (!node.frameId) return { ...place, main, sessionId, node };
+      frameId = node.frameId;
+      if (!node.contentDocument) sessions.add(sessionId = await child(tabId, sessionId, node, "Focus"));
+    }
   } finally {
-    chrome.debugger.sendCommand({ tabId }, "Runtime.releaseObjectGroup", { objectGroup }).catch(() => {});
+    for (const sessionId of sessions) chrome.debugger.sendCommand(sessionId ? { tabId, sessionId } : { tabId }, "Runtime.releaseObjectGroup", { objectGroup }).catch(() => {});
   }
 }
 
-async function named(tabId, backendNodeId, node) {
-  const { nodes } = await cdp(tabId, "Accessibility.getPartialAXTree", { backendNodeId, fetchRelatives: true }).catch(() => ({ nodes: [] }));
+function placeIn(frameTree, frameId, outer) {
+  for (const frame of (lineage(frameTree, frameId) ?? []).toReversed()) {
+    const url = frame.url.replace(/^blob:/i, "");
+    if (/^https?:/i.test(url)) return { url, site: frame.domainAndRegistry || hostOf(url) };
+    if (!/^(about|data):/i.test(url)) return { url };
+  }
+  return outer;
+}
+
+function lineage({ frame, childFrames = [] }, frameId) {
+  if (frame.id === frameId) return [frame];
+  for (const tree of childFrames) {
+    const path = lineage(tree, frameId);
+    if (path) return [frame, ...path];
+  }
+}
+
+async function child(tabId, sessionId, owner, where) {
+  const sessions = frameSessions.get(tabId) ?? frameSessions.set(tabId, new Map()).get(tabId);
+  const watched = autoAttached.get(tabId) ?? autoAttached.set(tabId, new Set()).get(tabId);
+  if (!watched.has(sessionId)) {
+    await cdp(tabId, "Target.setAutoAttach", AUTO_ATTACH, sessionId);
+    watched.add(sessionId);
+  }
+  if (!sessions.has(owner.frameId)) throw new Error(`${where} is inside ${label(owner)}, a frame Pi Browser cannot reach; it may still be loading, so try again in a moment.`);
+  return sessions.get(owner.frameId);
+}
+
+function unapproved({ url = "", site, main }, hosts, where) {
+  const host = hostOf(url);
+  if (!host) throw new Error(`${where} is in a frame showing a ${/^[\w-]+:/.exec(url)?.[0] ?? "non-web"} page, and Pi Browser acts only in http and https pages, so nothing was done.`);
+  return site === main.site || hosts.includes(host) ? undefined : url;
+}
+
+function foreign({ url, site, main }) {
+  return site === main.site ? "" : ` in a frame from ${hostOf(url)}`;
+}
+
+async function named(tabId, backendNodeId, node, sessionId) {
+  const { nodes } = await cdp(tabId, "Accessibility.getPartialAXTree", { backendNodeId, fetchRelatives: true }, sessionId).catch(() => ({ nodes: [] }));
   const byId = new Map(nodes.map(ax => [ax.nodeId, ax]));
   for (let ax = nodes.find(ax => ax.backendDOMNodeId === backendNodeId); ax; ax = byId.get(ax.parentId)) {
     const role = ax.role?.value;
@@ -842,6 +922,8 @@ function forget(tabId) {
   attached.delete(tabId);
   refs.delete(tabId);
   shots.delete(tabId);
+  frameSessions.delete(tabId);
+  autoAttached.delete(tabId);
   logs.delete(tabId);
   dialogs.delete(tabId);
 }
@@ -863,6 +945,8 @@ async function detachAll() {
   attached.clear();
   refs.clear();
   shots.clear();
+  frameSessions.clear();
+  autoAttached.clear();
   logs.clear();
   dialogs.clear();
   for (const target of await chrome.debugger.getTargets()) {
@@ -870,7 +954,13 @@ async function detachAll() {
   }
 }
 
-chrome.debugger.onEvent.addListener(({ tabId }, method, params) => {
+chrome.debugger.onEvent.addListener(({ tabId, sessionId }, method, params) => {
+  if (method === "Target.attachedToTarget") frameSessions.get(tabId)?.set(params.targetInfo.targetId, params.sessionId);
+  else if (method === "Target.detachedFromTarget") {
+    autoAttached.get(tabId)?.delete(params.sessionId);
+    if (frameSessions.get(tabId)?.get(params.targetId) === params.sessionId) frameSessions.get(tabId).delete(params.targetId);
+  }
+  if (sessionId) return;
   record(tabId, method, params);
   if (method === "Page.frameNavigated" && !params.frame.parentId) refs.delete(tabId);
   else if (method === "Page.frameNavigated") refs.get(tabId)?.delete(params.frame.id);

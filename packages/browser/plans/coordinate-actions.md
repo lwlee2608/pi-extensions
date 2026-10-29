@@ -44,7 +44,7 @@ Carried over from `plans/browser.md`; these rules bind every phase, review round
 - **Setup** — Chrome for Testing stays cached outside the repo; e2e keeps its own port so it never clashes with an open pi session.
 
 ## Progress
-Active: 2 · 9/23 tasks
+Active: 2 · 12/23 tasks
 
 ### Phase 1 — Click and type at a point from a screenshot
 The agent can click anywhere it sees in a screenshot (left, right, double, triple) and type into whatever that focused, on canvas and unlabeled widgets.
@@ -65,12 +65,15 @@ The agent can click anywhere it sees in a screenshot (left, right, double, tripl
 ### Phase 2 — Act inside cross-site iframes, with approval
 A point inside an embed from another host asks the user to approve that host, then acts there.
 **Blocked by:** 1
-- [ ] Find the host of the innermost frame under a point, through nested cross-site frames, and pass it to pi's approval before acting (`chrome/background.js`, `src/index.ts`)
-- [ ] Replace phase 1's refusal with that approval, same choices and denial behavior as navigate (`chrome/background.js`, `src/index.ts`)
-- [ ] Ask the same frame-host approval when `type` with no ref or `keys` goes into a focused cross-site frame (`chrome/background.js`, `src/index.ts`)
+- [x] Find the host of the innermost frame under a point, through nested cross-site frames, and pass it to pi's approval before acting (`chrome/background.js`, `src/index.ts`)
+- [x] Replace phase 1's refusal with that approval, same choices and denial behavior as navigate (`chrome/background.js`, `src/index.ts`)
+- [x] Ask the same frame-host approval when `type` with no ref or `keys` goes into a focused cross-site frame (`chrome/background.js`, `src/index.ts`)
 - [ ] Explain frame approval for points in the README's Site approval section (`README.md`)
 - [ ] Add e2e cases for allow, deny, and an already-approved frame host (`test/e2e/browser.test.ts`)
-**Note:** The frame check runs once before the move and presses, so a hostile page can slide a cross-site frame under the pointer between check and press (worse with clickCount 2–3); approval has the same ordering, so consider re-checking after `mouseMoved` and before each press.
+**Note:** A hostile page could slide a cross-site frame under the pointer between check and press. Done: click re-checks after `mouseMoved` and before each press and stops on an unapproved frame; `keys` re-checks focus before each combo and stops mid-sequence rather than prompting again.
+**Note:** OOPIFs are reached with `Target.setAutoAttach` (flatten) per traversed session, since `chrome.debugger` refuses `Target.attachToTarget`; child sessions need Chrome 125, so `minimum_chrome_version` is now 125. "Cross-site" compares Page frame `domainAndRegistry`, so same-site frames (and sandboxed same-site OOPIFs) don't ask.
+**Note:** Frame offsets use the iframe's content-box top-left only; a CSS-scaled or rotated cross-site iframe can make the inner hit-test (and so the asked host) miss. Not handled.
+**Note:** `PROTOCOL` not bumped: the new `hosts` param and `ask` reply only exist on the unreleased integrate branch, already at 2 versus main's 1.
 **Verify:** `node --test --test-name-pattern "^frames:" test/e2e/browser.test.ts` from `packages/browser`, plus `npm test -w packages/browser`: a click inside the fixture's cross-site frame prompts for the frame's host, not the tab's; deny fails the call and the frame records nothing; allow once lets the frame record the click; after "this session", a second click does not prompt; `type` with no ref into a focused field in the cross-site frame prompts for the frame's host, and deny leaves the field empty.
 
 ### Phase 3 — Hover, drag, and wheel-scroll at a point
