@@ -174,6 +174,7 @@ const handlers = {
         await recheck(tab.id, end, finish, hosts, before);
         await mouse({ type: "mousePressed", ...from, buttons: 1 });
         const after = { action: "drag", stopped: "released the button back at the start point", pressed: true };
+        let failure;
         try {
           await Promise.all([overlay(tab.id, "move", end), (async () => {
             for (const { at, where } of path.slice(1)) {
@@ -183,10 +184,14 @@ const handlers = {
           })()]);
           await recheck(tab.id, end, finish, hosts, after);
         } catch (error) {
-          await mouse({ type: "mouseMoved", ...from, buttons: 1 }).then(() => mouse({ type: "mouseReleased", ...from, buttons: 0 })).catch(() => {});
-          throw error;
+          failure = error;
+          await mouse({ type: "mouseMoved", ...from, buttons: 1 }).catch(() => {});
         }
-        await mouse({ type: "mouseReleased", ...end, buttons: 0 });
+        const released = mouse({ type: "mouseReleased", ...(failure ? from : end), buttons: 0 });
+        if (!failure) return released;
+        await released.catch(() => {});
+        await overlay(tab.id, "move", from);
+        throw failure;
       });
       return `Dragged from (${point.join(", ")}) on ${first} to (${to.join(", ")}) on ${last}`;
     });
