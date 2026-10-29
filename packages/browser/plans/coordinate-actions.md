@@ -20,7 +20,8 @@
 - **Approval for a drag** — Both endpoints go through the frame-host check `agent`
 - **What a point action reports** — The result names the element under the point (role and name when it has one), so the user and model can see what was hit `agent`
 - **Overlay** — The blue dot moves to the point and ripples on click, as with refs; a drag moves it from start to end `agent`
-- **Typing without a ref** — Inserts text at the current focus with no extra check; the tool description points canvas apps that read keystrokes to `keys` `agent`
+- **Typing without a ref** — Inserts text at the current focus; the tool description points canvas apps that read keystrokes to `keys` `agent`
+- **Typing into a cross-site frame** — `type` with no ref and `keys` find the frame that holds focus; if it is cross-site to the tab's page, its host needs approval like a point in that frame (amended after phase 1 review)
 - **Wheel amount** — Given as pixel deltas in screenshot space and mapped like points `agent`
 - **Phase count** — 4, merged in order
 - **Branching** — Phases PR into `integrate/coordinate-actions`; one final PR to `main` after the demo, which the user merges. Phase 1 still refuses points in cross-site frames so the guardrail holds on the integration branch between phases `agent`
@@ -43,7 +44,7 @@ Carried over from `plans/browser.md`; these rules bind every phase, review round
 - **Setup** — Chrome for Testing stays cached outside the repo; e2e keeps its own port so it never clashes with an open pi session.
 
 ## Progress
-Active: 1 · 9/22 tasks
+Active: 2 · 9/23 tasks
 
 ### Phase 1 — Click and type at a point from a screenshot
 The agent can click anywhere it sees in a screenshot (left, right, double, triple) and type into whatever that focused, on canvas and unlabeled widgets.
@@ -66,11 +67,11 @@ A point inside an embed from another host asks the user to approve that host, th
 **Blocked by:** 1
 - [ ] Find the host of the innermost frame under a point, through nested cross-site frames, and pass it to pi's approval before acting (`chrome/background.js`, `src/index.ts`)
 - [ ] Replace phase 1's refusal with that approval, same choices and denial behavior as navigate (`chrome/background.js`, `src/index.ts`)
+- [ ] Ask the same frame-host approval when `type` with no ref or `keys` goes into a focused cross-site frame (`chrome/background.js`, `src/index.ts`)
 - [ ] Explain frame approval for points in the README's Site approval section (`README.md`)
 - [ ] Add e2e cases for allow, deny, and an already-approved frame host (`test/e2e/browser.test.ts`)
-**Note:** `type` with no ref and `keys` reach a focused field inside a cross-site frame without frame-host approval; decide with the user whether focus in a cross-site frame needs approval.
 **Note:** The frame check runs once before the move and presses, so a hostile page can slide a cross-site frame under the pointer between check and press (worse with clickCount 2–3); approval has the same ordering, so consider re-checking after `mouseMoved` and before each press.
-**Verify:** `node --test --test-name-pattern "^frames:" test/e2e/browser.test.ts` from `packages/browser`, plus `npm test -w packages/browser`: a click inside the fixture's cross-site frame prompts for the frame's host, not the tab's; deny fails the call and the frame records nothing; allow once lets the frame record the click; after "this session", a second click does not prompt.
+**Verify:** `node --test --test-name-pattern "^frames:" test/e2e/browser.test.ts` from `packages/browser`, plus `npm test -w packages/browser`: a click inside the fixture's cross-site frame prompts for the frame's host, not the tab's; deny fails the call and the frame records nothing; allow once lets the frame record the click; after "this session", a second click does not prompt; `type` with no ref into a focused field in the cross-site frame prompts for the frame's host, and deny leaves the field empty.
 
 ### Phase 3 — Hover, drag, and wheel-scroll at a point
 The agent can hover to open menus and tooltips, drag sliders and canvas strokes, and wheel-scroll an inner panel, even when the pi tab was behind another tab.
