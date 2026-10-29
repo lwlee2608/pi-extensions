@@ -39,7 +39,7 @@
     const at = (element, x = 0.5, y = 0.5) => (box => `${Math.round(box.x + box.width * x)},${Math.round(box.y + box.height * y)}`)(element.getBoundingClientRect());
     const measure = () => {
       layout.textContent = `viewport ${document.documentElement.clientWidth}x${document.documentElement.clientHeight}; menu ${at(menu)}; padstart ${at(pad, 0.1, 0.2)}; padend ${at(pad, 0.8, 0.9)}; `
-        + `volume ${at(volume)}; volumeend ${at(volume, 0.98)}; panel ${at(panel)}; card ${at(card)}; bin ${at(bin)}; frame ${at(frame)}; framefield ${at(frame, 80 / 300, 52 / 120)}; `
+        + `volume ${at(volume)}; volumeend ${at(volume, 0.98)}; panel ${at(panel)}; card ${at(card)}; bin ${at(bin)}; frame ${at(frame)}; framefield ${at(frame, 80 / 300, 52 / 120)}; pathstart ${at(pad, 0.55, 0.9)}; pathend ${at(frame, 1.15, 1.15)}; `
         + `stop ${Math.round(innerWidth / 2)},${innerHeight - 34}; scroll ${scrollX},${scrollY}`;
     };
     measure();

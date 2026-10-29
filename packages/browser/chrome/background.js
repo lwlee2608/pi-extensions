@@ -161,7 +161,12 @@ const handlers = {
     const start = `Start point (${point.join(", ")})`;
     const finish = `End point (${to.join(", ")})`;
     const mouse = params => cdp(tab.id, "Input.dispatchMouseEvent", { button: "left", clickCount: 1, ...params });
-    return pointing(tab, [{ at: from, where: start }, { at: end, where: finish }], hosts, async ([first, last]) => {
+    const path = Array.from({ length: DRAG_STEPS + 1 }, (_, step) => {
+      const along = (a, b) => a + (b - a) * step / DRAG_STEPS;
+      const where = step === 0 ? start : step === DRAG_STEPS ? finish : `Path point (${Math.round(along(point[0], to[0]))}, ${Math.round(along(point[1], to[1]))})`;
+      return { at: { x: along(from.x, end.x), y: along(from.y, end.y) }, where };
+    });
+    return pointing(tab, path, hosts, async ([first, last]) => {
       const before = { action: "drag", stopped: "did not press" };
       await guarded(tab.id, async () => {
         await mouse({ type: "mouseMoved", ...from, button: "none" });
@@ -171,10 +176,8 @@ const handlers = {
         const after = { action: "drag", stopped: "released the button back at the start point", pressed: true };
         try {
           await Promise.all([overlay(tab.id, "move", end), (async () => {
-            for (let step = 1; step <= DRAG_STEPS; step++) {
-              const along = (a, b) => a + (b - a) * step / DRAG_STEPS;
-              const at = { x: along(from.x, end.x), y: along(from.y, end.y) };
-              await recheck(tab.id, at, step === DRAG_STEPS ? finish : `Path point (${Math.round(along(point[0], to[0]))}, ${Math.round(along(point[1], to[1]))})`, hosts, after);
+            for (const { at, where } of path.slice(1)) {
+              await recheck(tab.id, at, where, hosts, after);
               await mouse({ type: "mouseMoved", ...at, buttons: 1 });
             }
           })()]);
@@ -673,7 +676,7 @@ async function pointing(tab, spots, hosts, act) {
       frames.push(frame);
     }
     const names = [];
-    for (const frame of frames) names.push(await nameOf(tab.id, frame));
+    for (const frame of new Set([frames[0], frames.at(-1)])) names.push(await nameOf(tab.id, frame));
     what = await act(names);
   }).finally(() => { overlay(tab.id, "show"); });
   if (ask) return { ...(await reply(tab.id, "")), ask };

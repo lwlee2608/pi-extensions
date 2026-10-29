@@ -1045,6 +1045,24 @@ test("pointer: a page that slides the cross-site frame onto a drag's path mid-dr
   assert.match(page, /frame got nothing$/m);
 });
 
+test("pointer: a drag whose path crosses the cross-site frame, ends outside it, asks for its host once; deny presses nothing, allow completes it", async () => {
+  await browser({ action: "navigate", url: pointer });
+  await shoot();
+  const { pathstart, pathend } = await layout();
+  const [from, to] = [await pixel("pathstart"), await pixel("pathend")];
+  await assert.rejects(browser({ action: "drag", point: from, to }, "Deny"), /^Error: The user did not allow the browser on dropzone\.test\.$/);
+  assert.deepEqual(asked.splice(0), ["dropzone.test"]);
+  let page = await browser({ action: "read" });
+  assert.match(page, /pad got nothing/);
+  assert.match(page, /frame got nothing/);
+  assert.match(await browser({ action: "drag", point: from, to }, "Allow once"), /^Dragged from \(\d+, \d+\) on Canvas "Pad" to \(\d+, \d+\) on .* in tab \d+\.$/);
+  assert.deepEqual(asked.splice(0), ["dropzone.test"]);
+  page = await browser({ action: "read" });
+  const [, downX, downY, upX, upY] = page.match(/pad got down at (\d+),(\d+); \d+ moves; up at (\d+),(\d+)/)!.map(Number);
+  near([downX, downY], pathstart, "the press");
+  near([upX, upY], pathend, "the release");
+});
+
 test("pointer: a hover or click at a point under the overlay's Stop button reaches and names the page's element there", async () => {
   await browser({ action: "navigate", url: pointer });
   await shoot();
