@@ -1,10 +1,9 @@
 import { convertToLlm, type ContextWithSystemEvent, type ExtensionContext } from "@earendil-works/pi-coding-agent";
-import type { Message, ToolCall } from "@earendil-works/pi-ai";
+import type { Message, ToolCall, Usage } from "@earendil-works/pi-ai";
 import type { Params } from "./schema.ts";
-import type { ExplainUsage } from "./result.ts";
 
 export type Request = ContextWithSystemEvent["messages"];
-export type Explain = (questionIndex: number, signal: AbortSignal, onText: (text: string) => void) => Promise<{ text: string; usage: ExplainUsage }>;
+export type Explain = (questionIndex: number, signal: AbortSignal, onText: (text: string) => void) => Promise<string>;
 
 export function explainPrompt(params: Params, index: number): string {
   const { question, options, multiSelect } = params.questions[index];
@@ -30,7 +29,7 @@ export function explainMessages(request: Message[], tail: Message[], prompt: str
   ];
 }
 
-export function explainer(ctx: ExtensionContext, params: Params, lastRequest: () => Request | undefined): Explain {
+export function explainer(ctx: ExtensionContext, params: Params, lastRequest: () => Request | undefined, onUsage: (usage: Usage) => void): Explain {
   return async (index, signal, onText) => {
     const model = ctx.model;
     if (!model) throw new Error("No model selected.");
@@ -44,9 +43,20 @@ export function explainer(ctx: ExtensionContext, params: Params, lastRequest: ()
     let text = "";
     for await (const event of stream) if (event.type === "text_delta") onText(text += event.delta);
     const message = await stream.result();
+    onUsage(message.usage);
     if (message.stopReason === "error" || message.stopReason === "aborted") throw new Error(message.errorMessage || `Explanation ${message.stopReason}.`);
     if (!text.trim()) throw new Error("The model returned no explanation.");
-    const { input, cacheRead, cacheWrite, output, cost } = message.usage;
-    return { text: text.trim(), usage: { input, cacheRead, cacheWrite, output, cost: cost.total } };
+    return text.trim();
+  };
+}
+
+export function addUsage(total: Usage | undefined, usage: Usage): Usage {
+  if (!total) return usage;
+  const cost = { ...total.cost };
+  for (const key of Object.keys(cost) as (keyof Usage["cost"])[]) cost[key] += usage.cost[key];
+  return {
+    input: total.input + usage.input, output: total.output + usage.output,
+    cacheRead: total.cacheRead + usage.cacheRead, cacheWrite: total.cacheWrite + usage.cacheWrite,
+    totalTokens: total.totalTokens + usage.totalTokens, cost,
   };
 }

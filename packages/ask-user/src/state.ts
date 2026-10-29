@@ -1,5 +1,4 @@
 import type { Question } from "./schema.ts";
-import type { ExplainUsage } from "./result.ts";
 
 export interface AnswerState {
   selected: Set<number>;
@@ -10,7 +9,6 @@ export interface AnswerState {
   notes: string;
   noteDraft: string;
   explanation: string;
-  explanationUsage?: ExplainUsage;
 }
 
 export class QuestionnaireState {

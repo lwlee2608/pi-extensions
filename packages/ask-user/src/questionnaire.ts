@@ -1,11 +1,12 @@
 import type { ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, Editor, Input, Key, matchesKey, parseKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type Focusable, type KeybindingsManager, type TUI } from "@earendil-works/pi-tui";
 import { display, editorDisplay } from "./display.ts";
-import { result, usageLabel, type Result } from "./result.ts";
+import { result, type Result } from "./result.ts";
 import { validate, type Params } from "./schema.ts";
 import { QuestionnaireState } from "./state.ts";
 import { actionKeys, actionMatches } from "./keys.ts";
 import { Preview, columns } from "./preview.ts";
+import type { Usage } from "@earendil-works/pi-ai";
 import { explainer, type Explain, type Request } from "./explain.ts";
 
 const RESERVED_ROWS = 4;
@@ -139,9 +140,8 @@ export class Questionnaire implements Component, Focusable {
     this.explain(tab, run.controller.signal, text => {
       run.text = text;
       this.tui.requestRender();
-    }).then(({ text, usage }) => {
+    }).then(text => {
       this.state.answers[tab].explanation = text;
-      this.state.answers[tab].explanationUsage = usage;
     }, (error: unknown) => {
       if (!run.controller.signal.aborted) this.explainError = { tab, message: error instanceof Error ? error.message : String(error) };
     }).finally(() => {
@@ -320,11 +320,7 @@ export class Questionnaire implements Component, Focusable {
       body.push("");
       const explaining = this.explaining?.tab === state.tab ? this.explaining : undefined;
       const explanation = explaining ? explaining.text || "Explaining…" : answer.explanation;
-      if (explanation) {
-        add(theme.fg("muted", display(explanation)));
-        if (!explaining && answer.explanationUsage) add(theme.fg("dim", usageLabel(answer.explanationUsage)));
-        body.push("");
-      }
+      if (explanation) { add(theme.fg("muted", display(explanation))); body.push(""); }
       if (this.explainError?.tab === state.tab) { add(theme.fg("error", `Explanation failed: ${display(this.explainError.message)}`)); body.push(""); }
       const rows = [
         ...question.options.map((option, i) => ({ label: display(option.label), description: option.description, checked: answer.selected.has(i) })),
@@ -412,7 +408,9 @@ export class Questionnaire implements Component, Focusable {
 
 const unavailable: Explain = async () => { throw new Error("Explanations are unavailable."); };
 
-export async function runQuestionnaire(ctx: ExtensionContext, params: Params, signal?: AbortSignal, lastRequest: () => Request | undefined = () => undefined): Promise<Result> {
+export interface ExplainOptions { lastRequest?: () => Request | undefined; onUsage?: (usage: Usage) => void }
+
+export async function runQuestionnaire(ctx: ExtensionContext, params: Params, signal?: AbortSignal, options: ExplainOptions = {}): Promise<Result> {
   if (ctx.mode !== "tui") throw new Error("Questionnaires require terminal mode.");
   validate(params);
   signal?.throwIfAborted();
@@ -428,7 +426,7 @@ export async function runQuestionnaire(ctx: ExtensionContext, params: Params, si
       };
       abort = () => finish(new Error("Questionnaire aborted."));
       signal?.addEventListener("abort", abort, { once: true });
-      const explain = explainer(ctx, params, lastRequest);
+      const explain = explainer(ctx, params, options.lastRequest ?? (() => undefined), options.onUsage ?? (() => {}));
       return new Questionnaire(params, tui, theme, keys, finish, Date.now, (index, own, onText) => explain(index, signal ? AbortSignal.any([own, signal]) : own, onText));
     });
     if (outcome instanceof Error) throw outcome;
