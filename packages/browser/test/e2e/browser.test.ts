@@ -882,7 +882,8 @@ test("frames: a click on a ref that is a cross-site frame, and type into a ref t
   assert.match(await browser({ action: "click", ref: ref(page, 'button "Embed button"') }, "Allow once"), /^Clicked \[\d+\] in tab \d+\.$/);
   assert.match(await browser({ action: "read" }), /frame got click in button\.test; clicks 1/);
   await assert.rejects(browser({ action: "type", ref: ref(page, 'textbox "Note"'), text: "denied" }, "Deny"), /^Error: The user did not allow the browser on forward\.test\.$/);
-  assert.deepEqual(asked.splice(0), ["button.test", "button.test", "forward.test"]);
+  assert.match(await browser({ action: "type", ref: ref(page, 'textbox "Note"'), text: "hi" }, "Allow once"), /^Typed 2 characters into \[\d+\] in a frame from forward\.test in tab \d+\.$/);
+  assert.deepEqual(asked.splice(0), ["button.test", "button.test", "forward.test", "forward.test"]);
   assert.match(await browser({ action: "read" }), /frame got click in button\.test; clicks 1/);
 });
 

@@ -112,7 +112,7 @@ const handlers = {
     if (ref === undefined && !focus.node) throw new Error(`Nothing has focus in tab ${tab.id}, so there is nowhere to type. Click a field first, by ref or point, or use keys for canvas apps that read key presses.`);
     const ask = unapproved(focus, hosts, "Focus");
     if (ask) return { ...(await reply(tab.id, "")), ask };
-    const into = ref === undefined ? `${await named(tab.id, focus.node.backendNodeId, focus.node, focus.sessionId)}${foreign(focus)}` : `[${ref}]`;
+    const into = `${ref === undefined ? await named(tab.id, focus.node.backendNodeId, focus.node, focus.sessionId) : `[${ref}]`}${foreign(focus)}`;
     await guarded(tab.id, () => cdp(tab.id, "Input.insertText", { text }));
     return acted(tab.id, `Typed ${text.length} characters into ${into}`);
   },
