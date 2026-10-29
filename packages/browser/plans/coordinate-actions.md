@@ -57,6 +57,7 @@ The agent can click anywhere it sees in a screenshot (left, right, double, tripl
 - [x] Bump `PROTOCOL` so a stale extension reports a mismatch instead of failing on point params and new actions (`src/host.js`, `chrome/background.js`)
 - [x] Describe points, their coordinate space, and going stale in the tool description and README (`src/index.ts`, `README.md`)
 - [x] Add a canvas fixture that records each input it receives, and e2e cases for this phase (`test/e2e/fixtures`, `test/e2e/browser.test.ts`)
+**Note:** Point clicks under pinch zoom are unverified end to end (hit check now uses the visual viewport; press mapping not tested).
 **Note:** Phase 1 spots a cross-site frame as a frame owner whose document is in another process (`DOM.describeNode` gives no `contentDocument`); Chrome may isolate sandboxed same-site iframes too, so those are refused as well. Phase 2 needs the frame's real host.
 **Verify:** `node --test --test-name-pattern "^points:" test/e2e/browser.test.ts` from `packages/browser`, plus `npm test -w packages/browser`. With a viewport wider than 1568 px: `screenshot` reports an image at most 1568 px wide; a click at the fixture target's position in that image makes `read` show the canvas got a click within 2 CSS px of the target, and right, double, and triple clicks show their button and count; clicking a text field by point then `type` with no ref puts the text in it; a point action before any screenshot fails asking for one; a point inside the fixture's cross-site frame fails and the frame records nothing.
 

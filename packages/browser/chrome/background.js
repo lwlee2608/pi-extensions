@@ -585,7 +585,7 @@ function inFront(tab, run) {
 }
 
 async function located(tabId, at) {
-  const { cssLayoutViewport: { pageX, pageY } } = await cdp(tabId, "Page.getLayoutMetrics");
+  const { cssVisualViewport: { pageX, pageY } } = await cdp(tabId, "Page.getLayoutMetrics");
   return cdp(tabId, "DOM.getNodeForLocation", { x: Math.round(at.x + pageX), y: Math.round(at.y + pageY) });
 }
 
