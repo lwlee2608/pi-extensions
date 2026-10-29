@@ -67,6 +67,7 @@ A point inside an embed from another host asks the user to approve that host, th
 - [ ] Replace phase 1's refusal with that approval, same choices and denial behavior as navigate (`chrome/background.js`, `src/index.ts`)
 - [ ] Explain frame approval for points in the README's Site approval section (`README.md`)
 - [ ] Add e2e cases for allow, deny, and an already-approved frame host (`test/e2e/browser.test.ts`)
+**Note:** `type` with no ref and `keys` reach a focused field inside a cross-site frame without frame-host approval; decide with the user whether focus in a cross-site frame needs approval.
 **Verify:** `node --test --test-name-pattern "^frames:" test/e2e/browser.test.ts` from `packages/browser`, plus `npm test -w packages/browser`: a click inside the fixture's cross-site frame prompts for the frame's host, not the tab's; deny fails the call and the frame records nothing; allow once lets the frame record the click; after "this session", a second click does not prompt.
 
 ### Phase 3 — Hover, drag, and wheel-scroll at a point
@@ -89,6 +90,7 @@ The agent can look closer at a small part of the screen before clicking, without
 **Verify:** `node --test --test-name-pattern "^zoom:" test/e2e/browser.test.ts` from `packages/browser`, plus `npm test -w packages/browser`: `zoom` on the fixture's small-print region returns an image larger than that region's size in the screenshot; a click after `zoom`, at a point taken from the full screenshot, still lands within 2 CSS px of the target; `zoom` before any screenshot fails asking for one.
 
 ## Demo
+**Note:** Check in the demo whether a right click on a page with no menu of its own leaves Chrome's native context menu open; if so add a README Limits line.
 In your own Chrome with Pi Browser reloaded, in a pi session, ask the agent to:
 1. Draw a shape on a canvas drawing app (e.g. excalidraw.com) and type a label into it.
 2. Drag a map (e.g. openstreetmap.org) and wheel-zoom it at a point.
