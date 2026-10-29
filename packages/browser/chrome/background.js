@@ -5,6 +5,8 @@ const RECONNECT_MAX_MS = 15_000;
 const NAVIGATE_WAIT_MS = 20_000;
 const COLORS = ["blue", "red", "yellow", "green", "pink", "purple", "cyan", "orange", "grey"];
 const SCREENSHOT_QUALITY = 80;
+const SCREENSHOT_EDGE = 1568;
+const SCREENSHOT_AREA = 1_150_000;
 const LOG_LIMIT = 200;
 const TEXT_LIMIT = 1_000;
 const EVAL_TIMEOUT_MS = 10_000;
@@ -113,13 +115,18 @@ const handlers = {
 
   async screenshot({ tabId }, caller) {
     const tab = await piTab(caller, tabId);
-    const { data } = await inFront(tab, async () => {
+    const { data, shot } = await inFront(tab, async () => {
       const { cssVisualViewport: css, visualViewport: device } = await cdp(tab.id, "Page.getLayoutMetrics");
-      const clip = { x: css.pageX, y: css.pageY, width: css.clientWidth, height: css.clientHeight, scale: css.clientWidth / device.clientWidth };
+      const fit = Math.min(1, SCREENSHOT_EDGE / Math.max(css.clientWidth, css.clientHeight), Math.sqrt(SCREENSHOT_AREA / (css.clientWidth * css.clientHeight)));
+      const width = Math.round(css.clientWidth * fit);
+      const height = Math.round(css.clientHeight * fit);
+      const clip = { x: css.pageX, y: css.pageY, width: css.clientWidth, height: css.clientHeight, scale: width / device.clientWidth };
       await overlay(tab.id, "conceal");
-      return cdp(tab.id, "Page.captureScreenshot", { format: "jpeg", quality: SCREENSHOT_QUALITY, clip }).finally(() => overlay(tab.id, "show"));
+      const { data } = await cdp(tab.id, "Page.captureScreenshot", { format: "jpeg", quality: SCREENSHOT_QUALITY, clip }).finally(() => overlay(tab.id, "show"));
+      return { data, shot: { width, height, x: css.clientWidth / width, y: css.clientHeight / height } };
     });
-    return { ...(await acted(tab.id, "Screenshot")), data };
+    shots.set(tab.id, shot);
+    return { ...(await reply(tab.id, `Screenshot of tab ${tab.id}, ${shot.width}x${shot.height} pixels.`)), data };
   },
 
   async console({ tabId }, caller) {
@@ -180,6 +187,7 @@ const MAC_COMMANDS = { Meta: { a: "selectAll", c: "copy", v: "paste", x: "cut", 
 
 const attached = new Map();
 const refs = new Map();
+const shots = new Map();
 const logs = new Map();
 const dialogs = new Map();
 const current = new Map();
@@ -760,6 +768,7 @@ function snapshot(nodes, lines, found) {
 function forget(tabId) {
   attached.delete(tabId);
   refs.delete(tabId);
+  shots.delete(tabId);
   logs.delete(tabId);
   dialogs.delete(tabId);
 }
@@ -780,6 +789,7 @@ async function detachAll() {
   await Promise.all([...attached.keys()].map(tabId => overlay(tabId, "hide")));
   attached.clear();
   refs.clear();
+  shots.clear();
   logs.clear();
   dialogs.clear();
   for (const target of await chrome.debugger.getTargets()) {

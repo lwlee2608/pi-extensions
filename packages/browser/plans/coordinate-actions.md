@@ -43,12 +43,12 @@ Carried over from `plans/browser.md`; these rules bind every phase, review round
 - **Setup** — Chrome for Testing stays cached outside the repo; e2e keeps its own port so it never clashes with an open pi session.
 
 ## Progress
-Active: 1 · 0/22 tasks
+Active: 1 · 1/22 tasks
 
 ### Phase 1 — Click and type at a point from a screenshot
 The agent can click anywhere it sees in a screenshot (left, right, double, triple) and type into whatever that focused, on canvas and unlabeled widgets.
 **Blocked by:** none
-- [ ] Capture screenshots within the size cap, report the image's width and height, and keep the tab's scale (`chrome/background.js`)
+- [x] Capture screenshots within the size cap, report the image's width and height, and keep the tab's scale (`chrome/background.js`)
 - [ ] Accept a point on `click`, with button and click count for refs and points alike (`chrome/background.js`, `src/index.ts`)
 - [ ] Fail a point action on a tab with no screenshot, or a point outside the image (`chrome/background.js`)
 - [ ] Refuse a point that lands in a cross-site frame (`chrome/background.js`)

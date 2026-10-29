@@ -422,11 +422,12 @@ test("screenshot brings a pi tab behind another tab to the front and returns a C
   const tabId = await inWorker(`chrome.tabs.query({ url: "${form}" }).then(tabs => tabs.at(-1).id)`);
   await inWorker(`chrome.tabs.get(${tabId}).then(tab => chrome.tabs.create({ windowId: tab.windowId, url: "${site}other.html", active: true }))`);
   const { content } = await call({ action: "screenshot", tabId });
-  const [, file] = content[0].text.match(new RegExp(`^Screenshot in tab ${tabId}\\. Saved to (.+\\.jpg)$`));
+  const [, shotWidth, shotHeight, file] = content[0].text.match(new RegExp(`^Screenshot of tab ${tabId}, (\\d+)x(\\d+) pixels\\. Saved to (.+\\.jpg)$`));
   assert.equal(content[1].mimeType, "image/jpeg");
   assert.equal((await readFile(file)).toString("base64"), content[1].data);
   assert.equal(await inWorker(`chrome.tabs.get(${tabId}).then(tab => tab.active)`), true);
   const [width, height, r, g, b] = await decode(content[1]);
+  assert.deepEqual([width, height], [Number(shotWidth), Number(shotHeight)], "the result states the image's size");
   const [cssWidth, ratio] = await inPage(form, "[innerWidth, devicePixelRatio]");
   assert.equal(ratio, 2, "Chrome runs at 2x like a high-density screen");
   assert.ok(width > 500 && width <= cssWidth && height > 100, `${width}x${height} is captured at CSS size, not ${ratio}x`);
