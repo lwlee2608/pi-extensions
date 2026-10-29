@@ -771,7 +771,7 @@ test("points: a ref below the fold is hit-tested where it scrolled to, so its cl
 });
 
 test("points: a model that fills every field with placeholders can navigate, and scroll and click by ref with a placeholder point", async () => {
-  const filled = { tabId: 0, newTab: true, ref: 0, point: [0, 0], to: [0, 0], delta: [0, 0], region: [0, 0, 1, 1], button: "left", clickCount: 1, text: "", code: "", keys: "" };
+  const filled = { tabId: 0, newTab: false, ref: 0, point: [0, 0], to: [0, 0], delta: [0, 0], region: [0, 0, 1, 1], button: "left", clickCount: 1, text: "", code: "", keys: "" };
   const [, tabId] = (await browser({ ...filled, action: "navigate", url: at("points", "form.html?below") })).match(/^Tab (\d+): Pi form/)!;
   const below = ref(await browser({ action: "read" }), 'button "Below the fold"');
   assert.match(await browser({ ...filled, tabId: Number(tabId), action: "scroll", ref: below }), new RegExp(`^Scrolled \\[${below}\\] into view in tab ${tabId}\\.$`));
