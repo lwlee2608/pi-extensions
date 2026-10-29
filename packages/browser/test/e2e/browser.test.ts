@@ -1089,6 +1089,10 @@ test("pointer: a hover or click at a point under the overlay's Stop button reach
 
 const zoomed = at("zoom", "points.html");
 
+function targeted({ pixel: [r, g, b] }: { pixel: number[] }): void {
+  assert.ok(Math.abs(r - 0xc0) < 16 && Math.abs(g - 0x20) < 16 && Math.abs(b - 0x20) < 16, `pixel ${r},${g},${b} at the zoom's center is the target`);
+}
+
 async function zoom(region: number[]): Promise<{ text: string; width: number; height: number; pixel: number[] }> {
   const { content } = await call({ action: "zoom", region });
   const [, width, height, file] = content[0].text.match(/, (\d+)x(\d+) pixels\. .* Saved to (.+\.jpg)$/);
@@ -1106,6 +1110,7 @@ test("zoom: zoom before any screenshot fails asking for one, and a region upside
   await assert.rejects(browser({ action: "zoom", region: [0, 0, 100, 100] }), new RegExp(`^Error: Tab ${tabId} has no screenshot to zoom into\\. Use screenshot first, then give the region in its pixels\\.$`));
   await shoot();
   await assert.rejects(browser({ action: "zoom", region: [100, 100, 50, 150] }), /^Error: zoom needs region: \[x0, y0, x1, y1\], the top-left and bottom-right corners/);
+  await assert.rejects(browser({ action: "zoom", region: [10, 10, 10.5, 20] }), /^Error: zoom needs region: \[x0, y0, x1, y1\], the top-left and bottom-right corners of a rectangle at least 1 pixel wide and tall/);
   await assert.rejects(browser({ action: "zoom", region: [0, 0, image.width + 1, 10] }), new RegExp(`^Error: Region \\(0, 0\\)-\\(${image.width + 1}, 10\\) is outside tab ${tabId}'s last screenshot, which is ${image.width}x${image.height} pixels\\.$`));
 });
 
@@ -1119,14 +1124,31 @@ test("zoom: zoom on the small print returns that region at least twice as large 
   assert.ok(width <= 1568 && height <= 1568 && width * height <= 1_150_000, `${width}x${height} is within the cap`);
 });
 
+test("zoom: a tall thin or wide flat region states the decoded image's size and keeps its long edge within the cap", async () => {
+  for (const region of [[500, 50, 501, image.height - 50], [50, 300, image.width - 50, 301]]) {
+    const { width, height } = await zoom(region);
+    assert.ok(Math.max(width, height) <= 1568, `zoom of ${region} is ${width}x${height}, within the cap`);
+  }
+});
+
 test("zoom: a click after a zoom, at a point from the full screenshot, still lands within 2 CSS px of the target", async () => {
   await browser({ action: "navigate", url: zoomed });
   await shoot();
   const { target } = await layout();
   const [x, y] = await pixel("target");
-  const { pixel: [r, g, b] } = await zoom([x - 20, y - 20, x + 20, y + 20]);
-  assert.ok(Math.abs(r - 0xc0) < 16 && Math.abs(g - 0x20) < 16 && Math.abs(b - 0x20) < 16, `pixel ${r},${g},${b} at the zoom's center is the target`);
+  targeted(await zoom([x - 20, y - 20, x + 20, y + 20]));
   assert.match(await browser({ action: "click", point: [x, y] }), new RegExp(`^Clicked at \\(${x}, ${y}\\) on Canvas in tab \\d+\\.$`));
   const [, clickX, clickY] = (await browser({ action: "read" })).match(/click left 1 at (\d+),(\d+)/)!.map(Number);
   near([clickX, clickY], target, "the click");
+});
+
+test("zoom: on a page scrolled both ways, a small zoom around the target is centered on it", async () => {
+  const url = `${zoomed}?wide`;
+  await browser({ action: "navigate", url });
+  await inPage(url, "scrollTo(200, 100)");
+  await until(async () => (await layout()).scroll.join() === "200,100");
+  await shoot();
+  const { viewport: [width], target: [targetX, targetY] } = await layout();
+  const [x, y] = [targetX - 200, targetY - 100].map(css => Math.round(css * image.width / width));
+  targeted(await zoom([x - 4, y - 4, x + 4, y + 4]));
 });

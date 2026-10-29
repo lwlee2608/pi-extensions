@@ -224,8 +224,8 @@ const handlers = {
   },
 
   async zoom({ tabId, region }, caller) {
-    if (!Array.isArray(region) || region.length !== 4 || !region.every(Number.isFinite) || region[0] >= region[2] || region[1] >= region[3]) {
-      throw new Error("zoom needs region: [x0, y0, x1, y1], the top-left and bottom-right corners of a rectangle in pixels of the tab's last screenshot.");
+    if (!Array.isArray(region) || region.length !== 4 || !region.every(Number.isFinite) || region[2] - region[0] < 1 || region[3] - region[1] < 1) {
+      throw new Error("zoom needs region: [x0, y0, x1, y1], the top-left and bottom-right corners of a rectangle at least 1 pixel wide and tall, in pixels of the tab's last screenshot.");
     }
     const tab = await piTab(caller, tabId);
     const shot = shots.get(tab.id);
@@ -717,9 +717,11 @@ function capture(tab, area, most) {
     const { cssVisualViewport: css, visualViewport: device } = await cdp(tab.id, "Page.getLayoutMetrics");
     const box = area(css);
     const fit = Math.min(most, SCREENSHOT_EDGE / Math.max(box.width, box.height), Math.sqrt(SCREENSHOT_AREA / (box.width * box.height)));
-    const width = Math.max(1, Math.round(box.width * fit));
-    const height = Math.max(1, Math.round(box.height * fit));
-    const clip = { x: css.pageX + box.x, y: css.pageY + box.y, width: box.width, height: box.height, scale: width * css.clientWidth / (box.width * device.clientWidth) };
+    const long = Math.max(box.width, box.height);
+    const zoom = Math.max(1, Math.round(long * fit)) / long;
+    const width = Math.max(1, Math.round(box.width * zoom));
+    const height = Math.max(1, Math.round(box.height * zoom));
+    const clip = { x: css.pageX + box.x, y: css.pageY + box.y, width: box.width, height: box.height, scale: zoom * css.clientWidth / device.clientWidth };
     await overlay(tab.id, "conceal");
     const { data } = await cdp(tab.id, "Page.captureScreenshot", { format: "jpeg", quality: SCREENSHOT_QUALITY, clip }).finally(() => overlay(tab.id, "show"));
     return { data, width, height, css };
