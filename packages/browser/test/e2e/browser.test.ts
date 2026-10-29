@@ -918,3 +918,129 @@ test("frames: keys that Tab into an unapproved cross-site frame stop there, nami
   assert.deepEqual(asked, []);
   assert.match(await browser({ action: "read" }), /frame got nothing/);
 });
+
+const pointer = at("pointer", "pointer.html");
+let pointerTab = 0;
+
+const frontmost = () => inWorker(`chrome.tabs.get(${pointerTab}).then(tab => tab.active)`);
+
+async function behind(url = pointer): Promise<void> {
+  await inWorker(`chrome.tabs.get(${pointerTab}).then(tab => chrome.tabs.create({ windowId: tab.windowId, url: "${site}other.html", active: true }))`);
+  // Headless Chrome drops input in a background tab only once its visual properties change, as a zoom does.
+  await inWorker(`chrome.tabs.setZoomSettings(${pointerTab}, { scope: "per-tab" }).then(() => chrome.tabs.setZoom(${pointerTab}, 1.1)).then(() => chrome.tabs.setZoom(${pointerTab}, 1))`);
+  await until(async () => await inPage(url, "document.visibilityState") === "hidden");
+  assert.equal(await frontmost(), false);
+}
+
+function near([x, y]: number[], [wantX, wantY]: number[], what: string): void {
+  assert.ok(Math.abs(x - wantX) <= 2 && Math.abs(y - wantY) <= 2, `${what} at ${x},${y} is within 2 CSS px of ${wantX},${wantY}`);
+}
+
+test("pointer: hover, drag, and scroll at a point refuse missing or empty points and deltas", async () => {
+  const [, tabId] = (await browser({ action: "navigate", url: pointer, newTab: true }, "Allow for this session")).match(/^Tab (\d+): Pi pointer/)!;
+  pointerTab = Number(tabId);
+  assert.deepEqual(asked.splice(0), ["pointer.test"]);
+  await inWorker(`chrome.tabs.update(${tabId}, { active: true }).then(tab => chrome.windows.update(tab.windowId, { width: 1800, height: 800 }))`);
+  await until(async () => (await layout()).viewport[0] > 1568);
+  await shoot();
+  await assert.rejects(browser({ action: "hover" }), /^Error: hover needs a point from a screenshot\.$/);
+  await assert.rejects(browser({ action: "drag", point: [10, 10] }), /^Error: drag needs a point from a screenshot where it starts and to, the point where it ends\.$/);
+  await assert.rejects(browser({ action: "scroll", point: [10, 10] }), /^Error: scroll at a point needs delta: \[x, y\]/);
+  await assert.rejects(browser({ action: "scroll", point: [10, 10], delta: [0, 0] }), /^Error: scroll at a point needs delta/);
+  await assert.rejects(browser({ action: "scroll", ref: 1, delta: [0, 10] }), /^Error: scroll's delta goes with a point; a ref is only brought into view\.$/);
+  await assert.rejects(browser({ action: "drag", point: [10, 10], to: [image.width, 10] }), /^Error: Point \(\d+, 10\) is outside tab \d+'s last screenshot/);
+  assert.match(await browser({ action: "read" }), /pad got nothing/);
+});
+
+test("pointer: hover on a pi tab behind another brings it to the front and opens the hover-only menu", async () => {
+  assert.doesNotMatch(await browser({ action: "read" }), /Open item/);
+  const point = await pixel("menu");
+  await behind();
+  assert.match(await browser({ action: "hover", point }), new RegExp(`^Hovered at \\(${point.join(", ")}\\) on navigation "Main" in tab ${pointerTab}\\.$`));
+  assert.match(await browser({ action: "read" }), /link "Open item"/);
+  assert.equal(await frontmost(), true);
+});
+
+test("pointer: drag on a pi tab behind another presses at the start, moves, and releases at the end, on a canvas and a slider", async () => {
+  await browser({ action: "navigate", url: pointer });
+  await shoot();
+  const { padstart, padend } = await layout();
+  const from = await pixel("padstart");
+  const to = await pixel("padend");
+  await behind();
+  assert.match(await browser({ action: "drag", point: from, to }), new RegExp(`^Dragged from \\(${from.join(", ")}\\) on Canvas "Pad" to \\(${to.join(", ")}\\) on Canvas "Pad" in tab ${pointerTab}\\.$`));
+  const [, downX, downY, moves, upX, upY] = (await browser({ action: "read" })).match(/pad got down at (\d+),(\d+); (\d+) moves; up at (\d+),(\d+)/)!.map(Number);
+  near([downX, downY], padstart, "the press");
+  assert.ok(moves >= 2, `${moves} moves between press and release`);
+  near([upX, upY], padend, "the release");
+  assert.equal(await frontmost(), true);
+
+  assert.match(await browser({ action: "read" }), /slider "Volume" = "50"/);
+  const thumb = await pixel("volume");
+  const end = await pixel("volumeend");
+  await behind();
+  assert.match(await browser({ action: "drag", point: thumb, to: end }), /^Dragged from \(\d+, \d+\) on slider "Volume" to \(\d+, \d+\) on slider "Volume"/);
+  const [, value] = (await browser({ action: "read" })).match(/slider "Volume" = "(\d+)"/)!;
+  assert.ok(Number(value) >= 90, `the slider moved from 50 to ${value}`);
+  assert.equal(await frontmost(), true);
+});
+
+test("pointer: scroll at a point on a pi tab behind another wheels the inner panel by the delta in screenshot pixels, not the page", async () => {
+  await browser({ action: "navigate", url: pointer });
+  await shoot();
+  const { viewport: [width] } = await layout();
+  const point = await pixel("panel");
+  await behind();
+  assert.match(await browser({ action: "scroll", point, delta: [0, 200] }), new RegExp(`^Scrolled by \\(0, 200\\) at \\(${point.join(", ")}\\) on region "Panel" in tab ${pointerTab}\\.$`));
+  const want = Math.round(200 * width / image.width);
+  assert.ok(want > 210, `the screenshot's scale makes ${want} CSS px differ from 200`);
+  let scrolled = 0;
+  await until(async () => (scrolled = Number((await browser({ action: "read" })).match(/panel at (\d+)/)![1])) >= want - 2);
+  assert.ok(scrolled <= want + 2, `the panel scrolled ${scrolled} CSS px, not ${want}`);
+  assert.deepEqual((await layout()).scroll, [0, 0], "the page did not scroll");
+  assert.equal(await frontmost(), true);
+});
+
+test("pointer: drag on a pi tab behind another carries a native HTML5 drag and drop through to the drop", async () => {
+  await browser({ action: "navigate", url: pointer });
+  await shoot();
+  const [card, bin] = [await pixel("card"), await pixel("bin")];
+  await behind();
+  assert.match(await browser({ action: "drag", point: card, to: bin }), /^Dragged from \(\d+, \d+\) on group to \(\d+, \d+\) on <div id="bin">/);
+  assert.match(await browser({ action: "read" }), /drag and drop got dragstart, dragenter, dragover, drop, dragend$/m);
+  assert.equal(await frontmost(), true);
+});
+
+test("pointer: a drag, hover, or wheel over the cross-site frame asks for its host, deny acting on nothing, and a drag with both ends there asks once", async () => {
+  await browser({ action: "navigate", url: pointer });
+  await shoot();
+  const [from, field, frame] = [await pixel("padstart"), await pixel("framefield"), await pixel("frame")];
+  const denied = /^Error: The user did not allow the browser on dropzone\.test\.$/;
+  await assert.rejects(browser({ action: "drag", point: from, to: frame }, "Deny"), denied);
+  await assert.rejects(browser({ action: "drag", point: frame, to: from }, "Deny"), denied);
+  await assert.rejects(browser({ action: "hover", point: frame }, "Deny"), denied);
+  await assert.rejects(browser({ action: "scroll", point: frame, delta: [0, 50] }, "Deny"), denied);
+  assert.deepEqual(asked.splice(0), ["dropzone.test", "dropzone.test", "dropzone.test", "dropzone.test"]);
+  let page = await browser({ action: "read" });
+  assert.match(page, /pad got nothing/);
+  assert.match(page, /frame got nothing/);
+  assert.match(await browser({ action: "drag", point: field, to: frame }, "Allow once"), /^Dragged from \(\d+, \d+\) on textbox "Frame note" in a frame from dropzone\.test to \(\d+, \d+\) on .* in a frame from dropzone\.test in tab \d+\.$/);
+  assert.deepEqual(asked.splice(0), ["dropzone.test"]);
+  page = await browser({ action: "read" });
+  assert.match(page, /frame got \w+ in dropzone\.test/);
+  assert.match(page, /pad got nothing/);
+});
+
+test("pointer: a page that slides the cross-site frame under a drag's end mid-drag gets the release back at the start", async () => {
+  const url = `${pointer}?slide&host=slid`;
+  await browser({ action: "navigate", url });
+  await shoot();
+  const { padstart } = await layout();
+  await assert.rejects(browser({ action: "drag", point: await pixel("padstart"), to: await pixel("padend") }), /^Error: During the drag the page put content from slid\.test under end point \(\d+, \d+\), so it released the button back at the start point\. Take a new screenshot and try again\.$/);
+  assert.deepEqual(asked, []);
+  const page = await browser({ action: "read" });
+  const [, downX, downY, upX, upY] = page.match(/pad got down at (\d+),(\d+); \d+ moves; up at (\d+),(\d+)/)!.map(Number);
+  near([downX, downY], padstart, "the press");
+  near([upX, upY], padstart, "the release");
+  assert.match(page, /frame got nothing/);
+});

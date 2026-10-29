@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><title>Pi pointer</title>
+  <style>
+    body { margin: 0; height: 2000px; background: #fff; font: 16px sans-serif; }
+    #menu { position: absolute; left: 20px; top: 20px; width: 160px; height: 60px; background: #ddd; }
+    #menu ul { display: none; margin: 0; }
+    #menu:hover ul { display: block; }
+    #pad { position: absolute; left: 220px; top: 20px; width: 400px; height: 200px; background: #eee; }
+    #volume { position: absolute; left: 660px; top: 40px; width: 200px; margin: 0; }
+    #panel { position: absolute; left: 900px; top: 20px; width: 200px; height: 200px; overflow: auto; background: #def; }
+    #panel div { height: 1000px; }
+    #card { position: absolute; left: 20px; top: 260px; width: 100px; height: 60px; background: #9cf; }
+    #bin { position: absolute; left: 220px; top: 260px; width: 200px; height: 100px; background: #fc9; }
+    #frame { position: absolute; left: 660px; top: 260px; width: 300px; height: 120px; border: 0; }
+    #info { position: absolute; left: 20px; top: 420px; }
+  </style>
+</head>
+<body>
+  <nav id="menu" aria-label="Main"><span>Menu</span><ul><li><a href="#open">Open item</a></li></ul></nav>
+  <canvas id="pad" aria-label="Pad"></canvas>
+  <input id="volume" type="range" aria-label="Volume" min="0" max="100" value="50">
+  <section id="panel" aria-label="Panel"><div>Panel content</div></section>
+  <div id="card" draggable="true">Card</div>
+  <div id="bin">Bin</div>
+  <iframe id="frame" title="Cross-site frame"></iframe>
+  <div id="info">
+    <p id="layout"></p>
+    <p id="drawn">pad got nothing</p>
+    <p id="scrolled">panel at 0</p>
+    <p id="dropped">drag and drop got nothing</p>
+    <p id="framed">frame got nothing</p>
+  </div>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const at = (element, x = 0.5, y = 0.5) => (box => `${Math.round(box.x + box.width * x)},${Math.round(box.y + box.height * y)}`)(element.getBoundingClientRect());
+    const measure = () => {
+      layout.textContent = `viewport ${document.documentElement.clientWidth}x${document.documentElement.clientHeight}; menu ${at(menu)}; padstart ${at(pad, 0.1, 0.2)}; padend ${at(pad, 0.8, 0.9)}; `
+        + `volume ${at(volume)}; volumeend ${at(volume, 0.98)}; panel ${at(panel)}; card ${at(card)}; bin ${at(bin)}; frame ${at(frame)}; framefield ${at(frame, 80 / 300, 52 / 120)}; scroll ${scrollX},${scrollY}`;
+    };
+    measure();
+    addEventListener("resize", measure);
+    addEventListener("scroll", measure);
+    let stroke = [];
+    const report = () => { drawn.textContent = `pad got ${stroke.join("; ")}`; };
+    pad.addEventListener("mousedown", event => { stroke = [`down at ${event.clientX},${event.clientY}`, "0 moves"]; report(); });
+    pad.addEventListener("mousemove", event => {
+      if (!(event.buttons & 1) || !stroke.length) return;
+      stroke[1] = `${parseInt(stroke[1]) + 1} moves`;
+      report();
+      if (params.has("slide") && stroke[1] === "1 moves") {
+        const [x, y] = at(pad, 0.8, 0.9).split(",").map(Number);
+        Object.assign(frame.style, { left: `${x + scrollX - 150}px`, top: `${y + scrollY - 60}px` });
+      }
+    });
+    addEventListener("mouseup", event => { if (stroke.length) { stroke.push(`up at ${event.clientX},${event.clientY}`); report(); } });
+    panel.addEventListener("scroll", () => { scrolled.textContent = `panel at ${Math.round(panel.scrollTop)}`; });
+    const dragged = [];
+    for (const [element, type] of [[card, "dragstart"], [card, "dragend"], [bin, "dragenter"], [bin, "dragover"], [bin, "drop"]]) {
+      element.addEventListener(type, event => {
+        if (type === "dragover" || type === "drop") event.preventDefault();
+        if (!dragged.includes(type)) dragged.push(type);
+        dropped.textContent = `drag and drop got ${dragged.join(", ")}`;
+      });
+    }
+    frame.src = `http://${params.get("host") ?? "dropzone"}.test:${location.port}/points-frame.html?nested`;
+    addEventListener("message", event => { if (event.origin !== location.origin) framed.textContent = `frame got ${event.data}`; });
+  </script>
+</body>
+</html>

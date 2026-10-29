@@ -44,7 +44,7 @@ Carried over from `plans/browser.md`; these rules bind every phase, review round
 - **Setup** — Chrome for Testing stays cached outside the repo; e2e keeps its own port so it never clashes with an open pi session.
 
 ## Progress
-Active: 3 · 18/23 tasks
+Active: 3 · 19/23 tasks
 
 ### Phase 1 — Click and type at a point from a screenshot
 The agent can click anywhere it sees in a screenshot (left, right, double, triple) and type into whatever that focused, on canvas and unlabeled widgets.
@@ -87,8 +87,10 @@ The agent can hover to open menus and tooltips, drag sliders and canvas strokes,
 - [x] Add `drag` from one point to another, checking both endpoints' frame hosts and moving the overlay along it (`chrome/background.js`, `src/index.ts`)
 - [x] Let `scroll` take a point and wheel deltas (`chrome/background.js`, `src/index.ts`)
 - [x] Update the tool description and README, replacing the "no hover and no wheel scrolling" limit, and note native drag-and-drop if it does not fire (`src/index.ts`, `README.md`)
-- [ ] Add fixtures and e2e cases for hover, drag (mouse and native HTML5), and wheel on a tab behind another (`test/e2e/fixtures`, `test/e2e/browser.test.ts`)
+- [x] Add fixtures and e2e cases for hover, drag (mouse and native HTML5), and wheel on a tab behind another (`test/e2e/fixtures`, `test/e2e/browser.test.ts`)
 **Note:** A drag checks both ends before pressing and the end again before releasing; if the end turned unapproved it moves back and releases at the start. Its intermediate moves are not checked one by one (same race as click's mouse moves).
+**Note:** In e2e (headless Chrome 156), `drag`'s plain mouse events carry a native HTML5 drag and drop through dragstart, dragenter, dragover, drop, and dragend, so README lists no limit; headful is a demo check.
+**Note:** Mouse moves, presses, and wheels sent to a pi tab hidden behind another get no answer from Chrome until the call times out, as the e2e mutation check without `inFront` showed.
 **Note:** `PROTOCOL` not bumped: `hover`, `drag`, and wheel params only exist on the unreleased integrate branch, already at 2 versus main's 1.
 **Verify:** `node --test --test-name-pattern "^pointer:" test/e2e/browser.test.ts` from `packages/browser`, plus `npm test -w packages/browser`. With the pi tab behind another tab before each case: `hover` makes `read` show the fixture's hover-only menu and the pi tab is now active; `drag` on the fixture's canvas records a press at the start, moves, and a release within 2 CSS px of the end, and on the slider changes its value; wheel at a point scrolls the fixture's inner panel, not the page; the native drag-and-drop case's outcome is recorded and matches README.
 
