@@ -82,9 +82,9 @@ test("actual registration is lean, sequential, model-only, excludes non-TUI with
 
 test("result rendering pairs each answer with its question, like Claude Code", () => {
   const h = host();
-  const details = { cancelled: false, answers: [{ questionIndex: 1, selected: ["SQLite"] }, { questionIndex: 2, selected: ["Search"], custom: "Offline", notes: "Soon" }], globalNote: "Ship" };
+  const details = { cancelled: false, answers: [{ questionIndex: 1, selected: ["SQLite"], explanation: "E", explanationUsage: { input: 312, cacheRead: 4224, cacheWrite: 0, output: 180, cost: 0 } }, { questionIndex: 2, selected: ["Search"], custom: "Offline", notes: "Soon" }], globalNote: "Ship" };
   const render = (args: unknown) => h.tool.renderResult!({ content: [], details }, { expanded: false, isPartial: false }, theme, { args } as never).render(200).map(line => line.trimEnd()).join("\n");
-  assert.equal(render(core), "· Which storage should we use? → SQLite\n· Which features should we include? → Search; Offline\n  Note: Soon\nGlobal note: Ship");
+  assert.equal(render(core), "· Which storage should we use? → SQLite\n  Explained · in 312 · cached 4.2k · out 180\n· Which features should we include? → Search; Offline\n  Note: Soon\nGlobal note: Ship");
   assert.match(render(undefined), /^· 1\. SQLite/);
 });
 

@@ -4,7 +4,7 @@ import { CURSOR_MARKER, KeybindingsManager, TUI_KEYBINDINGS, visibleWidth, getCa
 import { theme } from "./helpers.ts";
 import { Questionnaire } from "../src/questionnaire.ts";
 import { parameters, description, validate } from "../src/schema.ts";
-import { result, type Result } from "../src/result.ts";
+import { modelText, result, type ExplainUsage, type Result } from "../src/result.ts";
 import { QuestionnaireState } from "../src/state.ts";
 import { core, rich, limits } from "./fixtures/demo.ts";
 import { initTheme } from "@earendil-works/pi-coding-agent";
@@ -213,7 +213,7 @@ test("Explain and Chat sit below a separator; Chat returns answered or noted que
 });
 
 test("Explain streams inline, Esc stops it without cancelling, failures show, and the explanation is returned", async () => {
-  const calls: { index: number; signal: AbortSignal; onText: (text: string) => void; resolve: (text: string) => void; reject: (error: Error) => void }[] = [];
+  const calls: { index: number; signal: AbortSignal; onText: (text: string) => void; resolve: (value: { text: string; usage: ExplainUsage }) => void; reject: (error: Error) => void }[] = [];
   const explain: Explain = (index, signal, onText) => new Promise((resolve, reject) => { calls.push({ index, signal, onText, resolve, reject }); });
   const settle = () => new Promise(resolve => setImmediate(resolve));
   const h = harness({ questions: core.questions.slice(0, 1) }, 30, undefined, explain);
@@ -238,15 +238,17 @@ test("Explain streams inline, Esc stops it without cancelling, failures show, an
   assert.doesNotMatch(h.text(), /failed/);
   calls[2].onText("SQLite is a file");
   assert.match(h.text(), /\n\nSQLite is a file\n\n {2}1\. SQLite/);
-  calls[2].resolve("SQLite is a file.");
+  const usage = { input: 312, cacheRead: 4224, cacheWrite: 0, output: 180, cost: 0.0012 };
+  calls[2].resolve({ text: "SQLite is a file.", usage });
   await settle();
-  assert.match(h.text(), /SQLite is a file\./);
+  assert.match(h.text(), /SQLite is a file\.\nin 312 · cached 4\.2k · out 180 · \$0\.0012\n/);
   assert.match(h.text(), /❯ 4\. Explain this question/);
   h.input(enter);
   calls[3].onText("partial");
   h.input("5");
   assert.equal(calls[3].signal.aborted, true);
-  assert.deepEqual(h.output(), { cancelled: false, chat: true, answers: [{ questionIndex: 1, selected: [], explanation: "SQLite is a file." }] });
+  assert.deepEqual(h.output(), { cancelled: false, chat: true, answers: [{ questionIndex: 1, selected: [], explanation: "SQLite is a file.", explanationUsage: usage }] });
+  assert.equal(modelText(h.output()!), '{"cancelled":false,"chat":true,"answers":[{"questionIndex":1,"selected":[],"explanation":"SQLite is a file."}]}');
 });
 
 test("explain request answers pending tool calls and omits previews", () => {

@@ -3,7 +3,7 @@ import { Text } from "@earendil-works/pi-tui";
 import { display } from "./display.ts";
 import { runQuestionnaire } from "./questionnaire.ts";
 import { description, parameters } from "./schema.ts";
-import type { Result } from "./result.ts";
+import { modelText, usageLabel, type Result } from "./result.ts";
 import type { Request } from "./explain.ts";
 
 export default function (pi: ExtensionAPI): void {
@@ -30,7 +30,7 @@ export default function (pi: ExtensionAPI): void {
       pending.add(controller);
       try {
         const result = await runQuestionnaire(ctx, params, signal ? AbortSignal.any([signal, controller.signal]) : controller.signal, () => lastRequest);
-        return { content: [{ type: "text", text: JSON.stringify(result) }], details: result };
+        return { content: [{ type: "text", text: modelText(result) }], details: result };
       } finally { pending.delete(controller); }
     },
     renderCall(args, theme) {
@@ -45,7 +45,9 @@ export default function (pi: ExtensionAPI): void {
         const question = context?.args?.questions?.[answer.questionIndex - 1]?.question;
         const label = question ? `${display(question)} ${theme.fg("muted", "→")}` : `${answer.questionIndex}.`;
         const value = theme.fg("accent", display([...answer.selected, answer.custom].filter(Boolean).join("; ")));
-        return `${theme.fg("muted", "·")} ${label} ${value}${answer.notes ? `\n  ${theme.fg("muted", `Note: ${display(answer.notes)}`)}` : ""}`;
+        const note = answer.notes ? `\n  ${theme.fg("muted", `Note: ${display(answer.notes)}`)}` : "";
+        const explained = answer.explanationUsage ? `\n  ${theme.fg("dim", `Explained · ${usageLabel(answer.explanationUsage)}`)}` : "";
+        return `${theme.fg("muted", "·")} ${label} ${value}${note}${explained}`;
       });
       if (details.globalNote) lines.push(`Global note: ${display(details.globalNote)}`);
       if (details.chat) lines.unshift(theme.fg("warning", "User wants to chat about this"));

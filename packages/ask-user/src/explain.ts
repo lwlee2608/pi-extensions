@@ -1,9 +1,10 @@
 import { convertToLlm, type ContextWithSystemEvent, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import type { Message, ToolCall } from "@earendil-works/pi-ai";
 import type { Params } from "./schema.ts";
+import type { ExplainUsage } from "./result.ts";
 
 export type Request = ContextWithSystemEvent["messages"];
-export type Explain = (questionIndex: number, signal: AbortSignal, onText: (text: string) => void) => Promise<string>;
+export type Explain = (questionIndex: number, signal: AbortSignal, onText: (text: string) => void) => Promise<{ text: string; usage: ExplainUsage }>;
 
 export function explainPrompt(params: Params, index: number): string {
   const { question, options, multiSelect } = params.questions[index];
@@ -45,6 +46,7 @@ export function explainer(ctx: ExtensionContext, params: Params, lastRequest: ()
     const message = await stream.result();
     if (message.stopReason === "error" || message.stopReason === "aborted") throw new Error(message.errorMessage || `Explanation ${message.stopReason}.`);
     if (!text.trim()) throw new Error("The model returned no explanation.");
-    return text.trim();
+    const { input, cacheRead, cacheWrite, output, cost } = message.usage;
+    return { text: text.trim(), usage: { input, cacheRead, cacheWrite, output, cost: cost.total } };
   };
 }
