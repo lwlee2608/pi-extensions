@@ -44,7 +44,7 @@ Carried over from `plans/browser.md`; these rules bind every phase, review round
 - **Setup** — Chrome for Testing stays cached outside the repo; e2e keeps its own port so it never clashes with an open pi session.
 
 ## Progress
-Active: 3 · 17/23 tasks
+Active: 3 · 18/23 tasks
 
 ### Phase 1 — Click and type at a point from a screenshot
 The agent can click anywhere it sees in a screenshot (left, right, double, triple) and type into whatever that focused, on canvas and unlabeled widgets.
@@ -86,7 +86,7 @@ The agent can hover to open menus and tooltips, drag sliders and canvas strokes,
 - [x] Add `hover` at a point, bringing the tab to the front first (`chrome/background.js`, `src/index.ts`)
 - [x] Add `drag` from one point to another, checking both endpoints' frame hosts and moving the overlay along it (`chrome/background.js`, `src/index.ts`)
 - [x] Let `scroll` take a point and wheel deltas (`chrome/background.js`, `src/index.ts`)
-- [ ] Update the tool description and README, replacing the "no hover and no wheel scrolling" limit, and note native drag-and-drop if it does not fire (`src/index.ts`, `README.md`)
+- [x] Update the tool description and README, replacing the "no hover and no wheel scrolling" limit, and note native drag-and-drop if it does not fire (`src/index.ts`, `README.md`)
 - [ ] Add fixtures and e2e cases for hover, drag (mouse and native HTML5), and wheel on a tab behind another (`test/e2e/fixtures`, `test/e2e/browser.test.ts`)
 **Note:** A drag checks both ends before pressing and the end again before releasing; if the end turned unapproved it moves back and releases at the start. Its intermediate moves are not checked one by one (same race as click's mouse moves).
 **Note:** `PROTOCOL` not bumped: `hover`, `drag`, and wheel params only exist on the unreleased integrate branch, already at 2 versus main's 1.
@@ -103,6 +103,7 @@ The agent can look closer at a small part of the screen before clicking, without
 
 ## Demo
 **Note:** Check in the demo whether a right click on a page with no menu of its own leaves Chrome's native context menu open; if so add a README Limits line.
+**Note:** Check in the demo that `drag` completes a native HTML5 drag and drop (e.g. reordering a list) in headful Chrome; e2e only shows it in headless Chrome. If it does not drop, add a README Limits line.
 In your own Chrome with Pi Browser reloaded, in a pi session, ask the agent to:
 1. Draw a shape on a canvas drawing app (e.g. excalidraw.com) and type a label into it.
 2. Drag a map (e.g. openstreetmap.org) and wheel-zoom it at a point.
