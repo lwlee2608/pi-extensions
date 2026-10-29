@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8"><title>Pi points</title>
   <style>
-    html, body { margin: 0; height: 100%; overflow: hidden; background: #fff; }
+    body { margin: 0; height: 2000px; background: #fff; }
     #board { position: absolute; left: 0; top: 0; width: 100%; height: 300px; }
     #field { position: absolute; left: 20px; top: 340px; }
     #frame { position: absolute; left: 400px; top: 320px; width: 300px; height: 120px; border: 0; }
@@ -31,10 +31,14 @@
       context.beginPath();
       context.arc(target.x, target.y, 10, 0, 2 * Math.PI);
       context.fill();
-      layout.textContent = `viewport ${document.documentElement.clientWidth}x${document.documentElement.clientHeight}; target ${target.x},${target.y}; field ${center(field)}; frame ${center(frame)}`;
+      measure();
+    };
+    const measure = () => {
+      layout.textContent = `viewport ${document.documentElement.clientWidth}x${document.documentElement.clientHeight}; target ${target.x},${target.y}; field ${center(field)}; frame ${center(frame)}; scroll ${scrollX},${scrollY}`;
     };
     draw();
     addEventListener("resize", draw);
+    addEventListener("scroll", measure);
     for (const type of ["mousedown", "mouseup", "click", "dblclick", "contextmenu"]) {
       board.addEventListener(type, event => {
         if (type === "contextmenu") event.preventDefault();

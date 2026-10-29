@@ -584,8 +584,13 @@ function inFront(tab, run) {
   });
 }
 
+async function located(tabId, at) {
+  const { cssLayoutViewport: { pageX, pageY } } = await cdp(tabId, "Page.getLayoutMetrics");
+  return cdp(tabId, "DOM.getNodeForLocation", { x: Math.round(at.x + pageX), y: Math.round(at.y + pageY) });
+}
+
 async function uncovered(tabId, ref, at) {
-  const hit = await cdp(tabId, "DOM.getNodeForLocation", at).catch(() => undefined);
+  const hit = await located(tabId, at).catch(() => undefined);
   if (!hit) throw new Error(`Ref [${ref}] has no point on the page to click.`);
   const frameId = [...refs.get(tabId) ?? []].find(([, found]) => found.has(ref))?.[0];
   if (hit.frameId === frameId) {
@@ -605,7 +610,7 @@ async function uncovered(tabId, ref, at) {
 }
 
 async function under(tabId, at, point) {
-  const hit = await cdp(tabId, "DOM.getNodeForLocation", at).catch(() => undefined);
+  const hit = await located(tabId, at).catch(() => undefined);
   if (!hit) throw new Error(`Point (${point.join(", ")}) has nothing on the page under it in tab ${tabId}.`);
   const { node } = await cdp(tabId, "DOM.describeNode", { backendNodeId: hit.backendNodeId });
   if (node.frameId && node.frameId !== hit.frameId && !node.contentDocument) {

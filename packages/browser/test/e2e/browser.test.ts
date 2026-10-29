@@ -764,3 +764,23 @@ test("points: a point inside a cross-site frame is refused and the frame records
   });
   await until(async () => /frame got click/.test(await browser({ action: "read" })));
 });
+
+test("points: on a scrolled page, a click names the field under the point and a point in the cross-site frame is still refused", async () => {
+  await browser({ action: "navigate", url: points });
+  await inPage(points, "scrollTo(0, 200)");
+  await until(async () => (await layout()).scroll[1] === 200);
+  assert.match(await browser({ action: "click", point: await pixel("field") }), /on textbox "Note"/);
+  const { frame } = await layout();
+  await assert.rejects(browser({ action: "click", point: await pixel("frame") }), /is inside <iframe id="frame">, a frame from another site/);
+  assert.match(await browser({ action: "read" }), /frame got nothing/);
+  await onPage(points, async sessionId => {
+    for (const type of ["mousePressed", "mouseReleased"]) await cdp.send("Input.dispatchMouseEvent", { type, x: frame[0], y: frame[1], button: "left", clickCount: 1 }, sessionId);
+  });
+  await until(async () => /frame got click/.test(await browser({ action: "read" })));
+});
+
+test("points: a ref below the fold is hit-tested where it scrolled to, so its click is not refused as covered", async () => {
+  await browser({ action: "navigate", url: at("points", "form.html?below") });
+  assert.match(await browser({ action: "click", ref: ref(await browser({ action: "read" }), 'button "Below the fold"') }), /^Clicked \[\d+\]/);
+  assert.match(await browser({ action: "read" }), /button "Clicked below"/);
+});
