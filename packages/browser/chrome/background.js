@@ -644,8 +644,9 @@ async function frameAt(tabId, at, where) {
     const hit = await cdp(tabId, "DOM.getNodeForLocation", { x: Math.round(x + pageX), y: Math.round(y + pageY) }, sessionId).catch(() => undefined);
     if (!hit) throw new Error(`${where} has nothing on the page under it in tab ${tabId}.`);
     const { node } = await cdp(tabId, "DOM.describeNode", { backendNodeId: hit.backendNodeId }, sessionId);
-    place = placeIn((await cdp(tabId, "Page.getFrameTree", undefined, sessionId)).frameTree, hit.frameId, place);
-    main ??= place;
+    const { frameTree } = await cdp(tabId, "Page.getFrameTree", undefined, sessionId);
+    place = placeIn(frameTree, hit.frameId, place);
+    main ??= placeIn(frameTree, frameTree.frame.id);
     if (!node.frameId || node.frameId === hit.frameId || node.contentDocument) return { ...place, main, sessionId, hit, node };
     const { model: { content } } = await cdp(tabId, "DOM.getBoxModel", { backendNodeId: hit.backendNodeId }, sessionId);
     x -= content[0];
