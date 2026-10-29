@@ -8,6 +8,7 @@ export interface AnswerState {
   cursor: number;
   notes: string;
   noteDraft: string;
+  explanation: string;
 }
 
 export class QuestionnaireState {
@@ -19,7 +20,7 @@ export class QuestionnaireState {
 
   constructor(questions: Question[]) {
     this.questions = questions;
-    this.answers = questions.map(() => ({ selected: new Set(), customActive: false, custom: "", draft: "", cursor: 0, notes: "", noteDraft: "" }));
+    this.answers = questions.map(() => ({ selected: new Set(), customActive: false, custom: "", draft: "", cursor: 0, notes: "", noteDraft: "", explanation: "" }));
   }
 
   select(index: number, option: number): void {
