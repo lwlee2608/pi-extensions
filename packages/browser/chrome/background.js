@@ -1,5 +1,5 @@
 const HOST = "com.lwlee2608.pi_browser";
-const PROTOCOL = 1;
+const PROTOCOL = 2;
 const RECONNECT_MS = 1_000;
 const RECONNECT_MAX_MS = 15_000;
 const NAVIGATE_WAIT_MS = 20_000;

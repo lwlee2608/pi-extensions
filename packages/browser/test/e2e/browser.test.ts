@@ -7,6 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { browserExtension } from "../../src/index.ts";
+import { PROTOCOL } from "../../src/host.js";
 import { launchChrome } from "./chrome.ts";
 import { copyExtension } from "./extension.ts";
 
@@ -680,7 +681,7 @@ test("an extension at another protocol version fails every call and /browser wit
   process.env.PI_CODING_AGENT_DIR = join(dir, "agent");
   const old = session("e2e-stale", "stale", { browserDirs: [join(dir, "profile")] });
   process.env.PI_CODING_AGENT_DIR = join(work, "agent");
-  const reload = /^Pi Browser protocol versions do not match \(pi 1, extension 0, native host 1\)\. Reload the Pi Browser extension in chrome:\/\/extensions/m;
+  const reload = new RegExp(`^Pi Browser protocol versions do not match \\(pi ${PROTOCOL}, extension 0, native host ${PROTOCOL}\\)\\. Reload the Pi Browser extension in chrome://extensions`, "m");
   try {
     await assert.rejects(old.browser({ action: "tabs" }), { message: reload });
     assert.match(await old.status(), reload);
