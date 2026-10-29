@@ -192,7 +192,7 @@ export function browserExtension({ browserDirs, platform = process.platform, ...
           const tab = await bridge.call("tab", { tabId: params.tabId }, signal) as { id: number; url: string };
           await approve(loaded(tab.url));
           params.tabId = tab.id;
-          if (FRAMED.has(action)) hosts = new Set([hostOf(tab.url)!]);
+          if (FRAMED.has(action)) hosts = new Set([hostOf(tab.url)!, ...granted, ...await approvals.hosts()]);
           if (action === "eval") {
             const host = hostOf(tab.url)!;
             await confirmEval(params.code, host, (title, options) => ctx.ui.select(title, options, { signal }), configPath);

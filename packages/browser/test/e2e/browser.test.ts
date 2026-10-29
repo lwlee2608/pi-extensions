@@ -899,3 +899,12 @@ test("frames: a click in the cross-site frame that opens a dialog fails at once 
   await inWorker(`chrome.debugger.sendCommand({ tabId: ${tabId} }, "Page.handleJavaScriptDialog", { accept: true })`);
   assert.match(await browser({ action: "read" }), /frame got click in dialog\.test; clicks 1/);
 });
+
+test("frames: keys that Tab into a session-approved cross-site frame keep pressing there without asking", async () => {
+  await browser({ action: "navigate", url: framed });
+  await shoot();
+  await browser({ action: "click", point: await pixel("field") });
+  assert.match(await browser({ action: "keys", keys: "Tab x" }), /^Pressed Tab x in tab \d+\.$/);
+  assert.deepEqual(asked, []);
+  assert.match(await browser({ action: "read" }), /frame got input in frame\.test; clicks 0; field "x"/);
+});
