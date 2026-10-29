@@ -43,7 +43,7 @@ Carried over from `plans/browser.md`; these rules bind every phase, review round
 - **Setup** — Chrome for Testing stays cached outside the repo; e2e keeps its own port so it never clashes with an open pi session.
 
 ## Progress
-Active: 1 · 5/22 tasks
+Active: 1 · 6/22 tasks
 
 ### Phase 1 — Click and type at a point from a screenshot
 The agent can click anywhere it sees in a screenshot (left, right, double, triple) and type into whatever that focused, on canvas and unlabeled widgets.
@@ -53,7 +53,7 @@ The agent can click anywhere it sees in a screenshot (left, right, double, tripl
 - [x] Fail a point action on a tab with no screenshot, or a point outside the image (`chrome/background.js`)
 - [x] Refuse a point that lands in a cross-site frame (`chrome/background.js`)
 - [x] Name the element under the point in the result, and move the overlay dot to it (`chrome/background.js`)
-- [ ] Let `type` run without a ref, into the current focus (`chrome/background.js`, `src/index.ts`)
+- [x] Let `type` run without a ref, into the current focus (`chrome/background.js`, `src/index.ts`)
 - [ ] Bump `PROTOCOL` so a stale extension reports a mismatch instead of failing on point params and new actions (`src/host.js`, `chrome/background.js`)
 - [ ] Describe points, their coordinate space, and going stale in the tool description and README (`src/index.ts`, `README.md`)
 - [ ] Add a canvas fixture that records each input it receives, and e2e cases for this phase (`test/e2e/fixtures`, `test/e2e/browser.test.ts`)

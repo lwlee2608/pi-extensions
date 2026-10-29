@@ -20,7 +20,7 @@ const parameters = Type.Object({
   point: Type.Optional(Type.Array(Type.Number(), { minItems: 2, maxItems: 2, description: "click: [x, y] in pixels of the tab's last screenshot, instead of a ref" })),
   button: Type.Optional(Type.Union([Type.Literal("left"), Type.Literal("right")], { description: "click: mouse button; left by default" })),
   clickCount: Type.Optional(Type.Integer({ minimum: 1, maximum: 3, description: "click: 2 for a double click, 3 for a triple click; 1 by default" })),
-  text: Type.Optional(Type.String({ description: "type: text to insert at the cursor of the ref" })),
+  text: Type.Optional(Type.String({ description: "type: text to insert at the cursor of the ref, or of the focused element when no ref is given" })),
   code: Type.Optional(Type.String({ description: "eval: JavaScript to run in the page's main frame, like the DevTools console: statements, top-level await, and const or let that may repeat across calls are allowed; the last expression's value is returned and a promise is awaited. At most 20 lines and 1500 characters, no two blank lines in a row, and no invisible or control characters other than newline and tab" })),
   keys: Type.Optional(Type.String({ description: "keys: space-separated keys or combos, like \"Enter\" or \"Shift+Tab\"; editing shortcuts use Meta on macOS and Control elsewhere, like \"Meta+a\" or \"Control+a\" to select all" })),
 });

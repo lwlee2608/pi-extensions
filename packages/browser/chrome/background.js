@@ -94,10 +94,10 @@ const handlers = {
   async type({ tabId, ref, text }, caller) {
     if (typeof text !== "string") throw new Error("type needs text.");
     const tab = await piTab(caller, tabId);
-    await overlay(tab.id, "show", await reveal(tab.id, ref).catch(() => undefined));
-    await node(tab.id, "DOM.focus", ref);
+    await overlay(tab.id, "show", ref === undefined ? undefined : await reveal(tab.id, ref).catch(() => undefined));
+    if (ref !== undefined) await node(tab.id, "DOM.focus", ref);
     await guarded(tab.id, () => cdp(tab.id, "Input.insertText", { text }));
-    return acted(tab.id, `Typed ${text.length} characters into [${ref}]`);
+    return acted(tab.id, `Typed ${text.length} characters into ${ref === undefined ? "the focused element" : `[${ref}]`}`);
   },
 
   async keys({ tabId, ref, keys }, caller) {
