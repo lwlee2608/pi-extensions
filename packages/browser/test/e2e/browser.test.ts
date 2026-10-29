@@ -861,3 +861,15 @@ test("frames: a page that navigates to another host while the user decides on it
   assert.match(await browser({ action: "read" }, "Allow once"), /frame got nothing/);
   asked.splice(0);
 });
+
+test("frames: type with no ref and keys into a focused cross-site frame inside an open or closed shadow root ask for its host", async () => {
+  for (const mode of ["open", "closed"]) {
+    await browser({ action: "navigate", url: `${framed}?shadow=${mode}&host=shadow` });
+    await shoot();
+    assert.match(await browser({ action: "click", point: await pixel("framefield") }, "Allow once"), /on textbox "Frame note" in a frame from shadow\.test/);
+    await assert.rejects(browser({ action: "type", text: "denied" }, "Deny"), /^Error: The user did not allow the browser on shadow\.test\.$/);
+    await assert.rejects(browser({ action: "keys", keys: "a" }, "Deny"), /^Error: The user did not allow the browser on shadow\.test\.$/);
+    assert.deepEqual(asked.splice(0), ["shadow.test", "shadow.test", "shadow.test"], `${mode} shadow root`);
+    assert.match(await browser({ action: "read" }), /frame got click in shadow\.test; clicks 1; field ""/);
+  }
+});

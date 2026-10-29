@@ -18,7 +18,7 @@ const STOP_BINDING = "piStop";
 const STRIP_TRIES = 4;
 const STRIP_WAIT_MS = 75;
 const AUTO_ATTACH = { autoAttach: true, waitForDebuggerOnStart: false, flatten: true, filter: [{ type: "iframe" }] };
-const FOCUSED = "(element => element && (element.isContentEditable || (element !== document.body && element !== document.documentElement)) ? element : null)(document.activeElement)";
+const FOCUSED = "function () { return this.isContentEditable || (this !== this.ownerDocument.body && this !== this.ownerDocument.documentElement); }";
 
 const SKIP = new Set(["generic", "none", "paragraph", "InlineTextBox", "LineBreak", "RootWebArea"]);
 const INTERACTIVE = new Set(["button", "checkbox", "combobox", "link", "listbox", "menuitem", "menuitemcheckbox", "menuitemradio",
@@ -666,10 +666,22 @@ async function focusIn(tabId) {
       const place = placeIn(frameTree, frameId);
       main ??= place;
       const { executionContextId: contextId } = await cdp(tabId, "Page.createIsolatedWorld", { frameId, worldName: OVERLAY_WORLD }, sessionId);
-      const { result } = await cdp(tabId, "Runtime.evaluate", { contextId, objectGroup, expression: FOCUSED }, sessionId);
-      if (!result.objectId) return { ...place, main, sessionId };
-      const { node } = await cdp(tabId, "DOM.describeNode", { objectId: result.objectId }, sessionId);
-      if (!node.frameId) return { ...place, main, sessionId, node };
+      let { result } = await cdp(tabId, "Runtime.evaluate", { contextId, objectGroup, expression: "document.activeElement" }, sessionId);
+      let node;
+      while (result.objectId) {
+        ({ node } = await cdp(tabId, "DOM.describeNode", { objectId: result.objectId }, sessionId));
+        const root = node.shadowRoots?.find(root => root.shadowRootType !== "user-agent");
+        if (!root) break;
+        const { object } = await cdp(tabId, "DOM.resolveNode", { backendNodeId: root.backendNodeId, executionContextId: contextId, objectGroup }, sessionId);
+        const inner = (await cdp(tabId, "Runtime.callFunctionOn", { objectId: object.objectId, functionDeclaration: "function () { return this.activeElement; }" }, sessionId)).result;
+        if (!inner.objectId) break;
+        result = inner;
+      }
+      if (!node) return { ...place, main, sessionId };
+      if (!node.frameId) {
+        const { result: { value } } = await cdp(tabId, "Runtime.callFunctionOn", { objectId: result.objectId, returnByValue: true, functionDeclaration: FOCUSED }, sessionId);
+        return { ...place, main, sessionId, node: value ? node : undefined };
+      }
       frameId = node.frameId;
       if (!node.contentDocument) sessions.add(sessionId = await child(tabId, sessionId, node, "Focus"));
     }
