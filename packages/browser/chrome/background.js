@@ -7,6 +7,7 @@ const COLORS = ["blue", "red", "yellow", "green", "pink", "purple", "cyan", "ora
 const SCREENSHOT_QUALITY = 80;
 const SCREENSHOT_EDGE = 1568;
 const SCREENSHOT_AREA = 1_150_000;
+const ZOOM_MAX = 4;
 const LOG_LIMIT = 200;
 const TEXT_LIMIT = 1_000;
 const EVAL_TIMEOUT_MS = 10_000;
@@ -217,18 +218,24 @@ const handlers = {
 
   async screenshot({ tabId }, caller) {
     const tab = await piTab(caller, tabId);
-    const { data, shot } = await inFront(tab, async () => {
-      const { cssVisualViewport: css, visualViewport: device } = await cdp(tab.id, "Page.getLayoutMetrics");
-      const fit = Math.min(1, SCREENSHOT_EDGE / Math.max(css.clientWidth, css.clientHeight), Math.sqrt(SCREENSHOT_AREA / (css.clientWidth * css.clientHeight)));
-      const width = Math.round(css.clientWidth * fit);
-      const height = Math.round(css.clientHeight * fit);
-      const clip = { x: css.pageX, y: css.pageY, width: css.clientWidth, height: css.clientHeight, scale: width / device.clientWidth };
-      await overlay(tab.id, "conceal");
-      const { data } = await cdp(tab.id, "Page.captureScreenshot", { format: "jpeg", quality: SCREENSHOT_QUALITY, clip }).finally(() => overlay(tab.id, "show"));
-      return { data, shot: { width, height, cssWidth: css.clientWidth, cssHeight: css.clientHeight } };
-    });
-    shots.set(tab.id, shot);
-    return { ...(await reply(tab.id, `Screenshot of tab ${tab.id}, ${shot.width}x${shot.height} pixels.`)), data };
+    const { data, width, height, css } = await capture(tab, css => ({ x: 0, y: 0, width: css.clientWidth, height: css.clientHeight }), 1);
+    shots.set(tab.id, { width, height, cssWidth: css.clientWidth, cssHeight: css.clientHeight });
+    return { ...(await reply(tab.id, `Screenshot of tab ${tab.id}, ${width}x${height} pixels.`)), data };
+  },
+
+  async zoom({ tabId, region }, caller) {
+    if (!Array.isArray(region) || region.length !== 4 || !region.every(Number.isFinite) || region[0] >= region[2] || region[1] >= region[3]) {
+      throw new Error("zoom needs region: [x0, y0, x1, y1], the top-left and bottom-right corners of a rectangle in pixels of the tab's last screenshot.");
+    }
+    const tab = await piTab(caller, tabId);
+    const shot = shots.get(tab.id);
+    if (!shot) throw new Error(`Tab ${tab.id} has no screenshot to zoom into. Use screenshot first, then give the region in its pixels.`);
+    const [x0, y0, x1, y1] = region;
+    const corners = `(${x0}, ${y0})-(${x1}, ${y1})`;
+    if (x0 < 0 || y0 < 0 || x1 > shot.width || y1 > shot.height) throw new Error(`Region ${corners} is outside tab ${tab.id}'s last screenshot, which is ${shot.width}x${shot.height} pixels.`);
+    const [scaleX, scaleY] = [shot.cssWidth / shot.width, shot.cssHeight / shot.height];
+    const { data, width, height } = await capture(tab, () => ({ x: x0 * scaleX, y: y0 * scaleY, width: (x1 - x0) * scaleX, height: (y1 - y0) * scaleY }), ZOOM_MAX);
+    return { ...(await reply(tab.id, `Zoom of ${corners} in tab ${tab.id}'s last screenshot, ${width}x${height} pixels. Points still refer to that screenshot, not this zoom.`)), data };
   },
 
   async console({ tabId }, caller) {
@@ -703,6 +710,20 @@ async function press(tabId, at, button, count, check) {
     await mouse({ type: "mousePressed", clickCount, buttons: BUTTONS[button] });
     await mouse({ type: "mouseReleased", clickCount, buttons: 0 });
   }
+}
+
+function capture(tab, area, most) {
+  return inFront(tab, async () => {
+    const { cssVisualViewport: css, visualViewport: device } = await cdp(tab.id, "Page.getLayoutMetrics");
+    const box = area(css);
+    const fit = Math.min(most, SCREENSHOT_EDGE / Math.max(box.width, box.height), Math.sqrt(SCREENSHOT_AREA / (box.width * box.height)));
+    const width = Math.max(1, Math.round(box.width * fit));
+    const height = Math.max(1, Math.round(box.height * fit));
+    const clip = { x: css.pageX + box.x, y: css.pageY + box.y, width: box.width, height: box.height, scale: width * css.clientWidth / (box.width * device.clientWidth) };
+    await overlay(tab.id, "conceal");
+    const { data } = await cdp(tab.id, "Page.captureScreenshot", { format: "jpeg", quality: SCREENSHOT_QUALITY, clip }).finally(() => overlay(tab.id, "show"));
+    return { data, width, height, css };
+  });
 }
 
 function inFront(tab, run) {

@@ -12,7 +12,7 @@ import { detectBrowserDirs, installHost } from "./install.ts";
 const CHROME_DIR = fileURLToPath(new URL("../chrome/", import.meta.url));
 
 const parameters = Type.Object({
-  action: Type.Union(["tabs", "navigate", "read", "click", "hover", "drag", "type", "keys", "scroll", "screenshot", "console", "network", "eval"].map(action => Type.Literal(action))),
+  action: Type.Union(["tabs", "navigate", "read", "click", "hover", "drag", "type", "keys", "scroll", "screenshot", "zoom", "console", "network", "eval"].map(action => Type.Literal(action))),
   url: Type.Optional(Type.String({ description: "navigate: http or https URL to load" })),
   tabId: Type.Optional(Type.Number({ description: "Pi tab to act on; defaults to the current pi tab" })),
   newTab: Type.Optional(Type.Boolean({ description: "navigate: open the URL in a new pi tab" })),
@@ -20,6 +20,7 @@ const parameters = Type.Object({
   point: Type.Optional(Type.Array(Type.Number(), { minItems: 2, maxItems: 2, description: "click, scroll: [x, y] in pixels of the tab's last screenshot, instead of a ref. hover: where to move the mouse. drag: where it starts" })),
   to: Type.Optional(Type.Array(Type.Number(), { minItems: 2, maxItems: 2, description: "drag: [x, y] in pixels of the tab's last screenshot where it ends" })),
   delta: Type.Optional(Type.Array(Type.Number(), { minItems: 2, maxItems: 2, description: "scroll with a point: [x, y] wheel amount in pixels of the tab's last screenshot; positive y scrolls down" })),
+  region: Type.Optional(Type.Array(Type.Number(), { minItems: 4, maxItems: 4, description: "zoom: [x0, y0, x1, y1], the top-left and bottom-right corners of a rectangle in pixels of the tab's last screenshot" })),
   button: Type.Optional(Type.Union([Type.Literal("left"), Type.Literal("right")], { description: "click: mouse button; left by default" })),
   clickCount: Type.Optional(Type.Integer({ minimum: 1, maximum: 3, description: "click: 2 for a double click, 3 for a triple click; 1 by default" })),
   text: Type.Optional(Type.String({ description: "type: text to insert at the cursor of the ref, or of the focused element when no ref is given" })),
@@ -33,7 +34,7 @@ function checkUrl(url: string | undefined): void {
   if (protocol !== "http:" && protocol !== "https:") throw new Error(`navigate only opens http and https URLs, not ${protocol}`);
 }
 
-const ONLY: Record<string, string[]> = { point: ["click", "hover", "drag", "scroll"], button: ["click"], clickCount: ["click"], to: ["drag"], delta: ["scroll"] };
+const ONLY: Record<string, string[]> = { point: ["click", "hover", "drag", "scroll"], button: ["click"], clickCount: ["click"], to: ["drag"], delta: ["scroll"], region: ["zoom"] };
 
 export function checkParams(action: string, params: object): void {
   const wrong = Object.keys(ONLY).filter(name => name in params && !ONLY[name].includes(action));
