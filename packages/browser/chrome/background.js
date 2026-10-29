@@ -74,7 +74,7 @@ const handlers = {
   },
 
   async click({ tabId, ref, point, button = "left", clickCount = 1, hosts = [] }, caller) {
-    if ((ref === undefined) === (point === undefined)) throw new Error("click needs either a ref from read or a point from a screenshot, not both.");
+    if ((ref === undefined) === (point === undefined)) throw new Error("click needs either a ref from read or a point from a screenshot.");
     if (!Object.hasOwn(BUTTONS, button)) throw new Error(`click's button is left or right, not ${button}.`);
     if (![1, 2, 3].includes(clickCount)) throw new Error(`click's clickCount is 1, 2, or 3, not ${clickCount}.`);
     const tab = await piTab(caller, tabId);
@@ -199,8 +199,7 @@ const handlers = {
   },
 
   async scroll({ tabId, ref, point, delta, hosts = [] }, caller) {
-    if ((ref === undefined) === (point === undefined)) throw new Error("scroll needs either a ref from read to bring into view, or a point from a screenshot and a delta to wheel there, not both.");
-    if (ref !== undefined && delta !== undefined) throw new Error("scroll's delta goes with a point; a ref is only brought into view.");
+    if ((ref === undefined) === (point === undefined)) throw new Error("scroll needs either a ref from read to bring into view, or a point from a screenshot and a delta to wheel there.");
     const tab = await piTab(caller, tabId);
     if (ref !== undefined) {
       await overlay(tab.id, "show", await reveal(tab.id, ref));
