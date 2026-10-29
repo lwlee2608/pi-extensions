@@ -68,6 +68,7 @@ A point inside an embed from another host asks the user to approve that host, th
 - [ ] Explain frame approval for points in the README's Site approval section (`README.md`)
 - [ ] Add e2e cases for allow, deny, and an already-approved frame host (`test/e2e/browser.test.ts`)
 **Note:** `type` with no ref and `keys` reach a focused field inside a cross-site frame without frame-host approval; decide with the user whether focus in a cross-site frame needs approval.
+**Note:** The frame check runs once before the move and presses, so a hostile page can slide a cross-site frame under the pointer between check and press (worse with clickCount 2–3); approval has the same ordering, so consider re-checking after `mouseMoved` and before each press.
 **Verify:** `node --test --test-name-pattern "^frames:" test/e2e/browser.test.ts` from `packages/browser`, plus `npm test -w packages/browser`: a click inside the fixture's cross-site frame prompts for the frame's host, not the tab's; deny fails the call and the frame records nothing; allow once lets the frame record the click; after "this session", a second click does not prompt.
 
 ### Phase 3 — Hover, drag, and wheel-scroll at a point
