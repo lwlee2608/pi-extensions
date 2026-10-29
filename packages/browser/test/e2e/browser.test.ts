@@ -1086,3 +1086,47 @@ test("pointer: a hover or click at a point under the overlay's Stop button reach
   assert.match(await browser({ action: "read" }), /button "Under stop clicked"/);
   assert.equal(stopped.length, stops, "the Stop button was not pressed");
 });
+
+const zoomed = at("zoom", "points.html");
+
+async function zoom(region: number[]): Promise<{ text: string; width: number; height: number; pixel: number[] }> {
+  const { content } = await call({ action: "zoom", region });
+  const [, width, height, file] = content[0].text.match(/, (\d+)x(\d+) pixels\. .* Saved to (.+\.jpg)$/);
+  assert.equal((await readFile(file)).toString("base64"), content[1].data);
+  const [decodedWidth, decodedHeight, ...pixel] = await decode(content[1]);
+  assert.deepEqual([decodedWidth, decodedHeight], [Number(width), Number(height)], "the result states the image's size");
+  return { text: content[0].text, width: Number(width), height: Number(height), pixel };
+}
+
+test("zoom: zoom before any screenshot fails asking for one, and a region upside down or outside the screenshot fails", async () => {
+  const [, tabId] = (await browser({ action: "navigate", url: zoomed, newTab: true }, "Allow for this session")).match(/^Tab (\d+): Pi points/)!;
+  assert.deepEqual(asked.splice(0), ["zoom.test"]);
+  await inWorker(`chrome.tabs.update(${tabId}, { active: true }).then(tab => chrome.windows.update(tab.windowId, { width: 1800, height: 800 }))`);
+  await until(async () => (await layout()).viewport[0] > 1568);
+  await assert.rejects(browser({ action: "zoom", region: [0, 0, 100, 100] }), new RegExp(`^Error: Tab ${tabId} has no screenshot to zoom into\\. Use screenshot first, then give the region in its pixels\\.$`));
+  await shoot();
+  await assert.rejects(browser({ action: "zoom", region: [100, 100, 50, 150] }), /^Error: zoom needs region: \[x0, y0, x1, y1\], the top-left and bottom-right corners/);
+  await assert.rejects(browser({ action: "zoom", region: [0, 0, image.width + 1, 10] }), new RegExp(`^Error: Region \\(0, 0\\)-\\(${image.width + 1}, 10\\) is outside tab ${tabId}'s last screenshot, which is ${image.width}x${image.height} pixels\\.$`));
+});
+
+test("zoom: zoom on the small print returns that region at least twice as large as it is in the screenshot, within the size cap", async () => {
+  await shoot();
+  const region = [...await pixel("finestart"), ...await pixel("fineend")];
+  const [x0, y0, x1, y1] = region;
+  const { text, width, height } = await zoom(region);
+  assert.match(text, new RegExp(`^Zoom of \\(${x0}, ${y0}\\)-\\(${x1}, ${y1}\\) in tab \\d+'s last screenshot, ${width}x${height} pixels\\. Points still refer to that screenshot, not this zoom\\.`));
+  assert.ok(width >= 2 * (x1 - x0) && height >= 2 * (y1 - y0), `zoom ${width}x${height} is at least twice the region's ${x1 - x0}x${y1 - y0} in the screenshot`);
+  assert.ok(width <= 1568 && height <= 1568 && width * height <= 1_150_000, `${width}x${height} is within the cap`);
+});
+
+test("zoom: a click after a zoom, at a point from the full screenshot, still lands within 2 CSS px of the target", async () => {
+  await browser({ action: "navigate", url: zoomed });
+  await shoot();
+  const { target } = await layout();
+  const [x, y] = await pixel("target");
+  const { pixel: [r, g, b] } = await zoom([x - 20, y - 20, x + 20, y + 20]);
+  assert.ok(Math.abs(r - 0xc0) < 16 && Math.abs(g - 0x20) < 16 && Math.abs(b - 0x20) < 16, `pixel ${r},${g},${b} at the zoom's center is the target`);
+  assert.match(await browser({ action: "click", point: [x, y] }), new RegExp(`^Clicked at \\(${x}, ${y}\\) on Canvas in tab \\d+\\.$`));
+  const [, clickX, clickY] = (await browser({ action: "read" })).match(/click left 1 at (\d+),(\d+)/)!.map(Number);
+  near([clickX, clickY], target, "the click");
+});
