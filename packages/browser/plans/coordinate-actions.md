@@ -44,7 +44,7 @@ Carried over from `plans/browser.md`; these rules bind every phase, review round
 - **Setup** — Chrome for Testing stays cached outside the repo; e2e keeps its own port so it never clashes with an open pi session.
 
 ## Progress
-Active: 2 · 12/23 tasks
+Active: 2 · 13/23 tasks
 
 ### Phase 1 — Click and type at a point from a screenshot
 The agent can click anywhere it sees in a screenshot (left, right, double, triple) and type into whatever that focused, on canvas and unlabeled widgets.
@@ -68,7 +68,7 @@ A point inside an embed from another host asks the user to approve that host, th
 - [x] Find the host of the innermost frame under a point, through nested cross-site frames, and pass it to pi's approval before acting (`chrome/background.js`, `src/index.ts`)
 - [x] Replace phase 1's refusal with that approval, same choices and denial behavior as navigate (`chrome/background.js`, `src/index.ts`)
 - [x] Ask the same frame-host approval when `type` with no ref or `keys` goes into a focused cross-site frame (`chrome/background.js`, `src/index.ts`)
-- [ ] Explain frame approval for points in the README's Site approval section (`README.md`)
+- [x] Explain frame approval for points in the README's Site approval section (`README.md`)
 - [ ] Add e2e cases for allow, deny, and an already-approved frame host (`test/e2e/browser.test.ts`)
 **Note:** A hostile page could slide a cross-site frame under the pointer between check and press. Done: click re-checks after `mouseMoved` and before each press and stops on an unapproved frame; `keys` re-checks focus before each combo and stops mid-sequence rather than prompting again.
 **Note:** OOPIFs are reached with `Target.setAutoAttach` (flatten) per traversed session, since `chrome.debugger` refuses `Target.attachToTarget`; child sessions need Chrome 125, so `minimum_chrome_version` is now 125. "Cross-site" compares Page frame `domainAndRegistry`, so same-site frames (and sandboxed same-site OOPIFs) don't ask.
