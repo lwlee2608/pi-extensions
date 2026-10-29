@@ -1016,10 +1016,10 @@ test("pointer: a drag, hover, or wheel over the cross-site frame asks for its ho
   await shoot();
   const [from, field, frame] = [await pixel("padstart"), await pixel("framefield"), await pixel("frame")];
   const denied = /^Error: The user did not allow the browser on dropzone\.test\.$/;
+  await assert.rejects(browser({ action: "scroll", point: frame, delta: [0, 50] }, "Deny"), denied);
+  await assert.rejects(browser({ action: "hover", point: frame }, "Deny"), denied);
   await assert.rejects(browser({ action: "drag", point: from, to: frame }, "Deny"), denied);
   await assert.rejects(browser({ action: "drag", point: frame, to: from }, "Deny"), denied);
-  await assert.rejects(browser({ action: "hover", point: frame }, "Deny"), denied);
-  await assert.rejects(browser({ action: "scroll", point: frame, delta: [0, 50] }, "Deny"), denied);
   assert.deepEqual(asked.splice(0), ["dropzone.test", "dropzone.test", "dropzone.test", "dropzone.test"]);
   let page = await browser({ action: "read" });
   assert.match(page, /pad got nothing/);

@@ -24,7 +24,7 @@
       });
     }
     for (const [type, what] of [["mouseover", "pointer"], ["mousemove", "pointer"], ["wheel", "wheel"]]) {
-      addEventListener(type, () => { if (!recorded) top.postMessage(`${what} in ${location.hostname}`, "*"); });
+      addEventListener(type, () => { if (!recorded) top.postMessage(`${what} in ${location.hostname}`, "*"); }, { passive: false });
     }
     if (location.search === "?alert") addEventListener("click", () => alert("Frame alert"));
   </script>
