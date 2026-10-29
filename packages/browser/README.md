@@ -151,7 +151,7 @@ Once the agent uses `console` on a tab, Chrome reports that tab's console to the
 - Each session goes to one browser: the first Chrome profile to reach it. Another profile with the extension is refused for that session until the first lets go.
 - The socket path, `~/.pi/agent/pi-browser/sessions/<session id>.sock`, must fit the OS limit (104 bytes on macOS, 108 on Linux). If `PI_CODING_AGENT_DIR` is very long, the browser fails with an error naming the path.
 - A session that exits while Chrome has the extension's worker asleep keeps its live group title until Chrome restarts.
-- `read` skips cross-site iframes, so the agent reaches them only by points from a screenshot.
+- `read` skips cross-site iframes, so they have no refs. The agent reaches them by points from a screenshot, by `type` or `keys` into one that has focus, or by a ref click that lands on one, always after you approve the frame's host.
 - Points assume the model sees the screenshot at the size it was taken. A provider that shrinks images further on its side, such as OpenAI's 768-pixel short side, can make points miss.
 - Native dialogs, file pickers, password-manager popups, passkeys, and CAPTCHAs are out of reach.
 - An action or `eval` that opens an `alert`, `confirm`, or `prompt` dialog fails at once and leaves the dialog for you to answer in Chrome; the tab is blocked until you do.
