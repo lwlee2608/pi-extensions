@@ -26,6 +26,7 @@
 - **Branching** — Phases PR into `integrate/coordinate-actions`; one final PR to `main` after the demo, which the user merges. Phase 1 still refuses points in cross-site frames so the guardrail holds on the integration branch between phases `agent`
 - **Fixture pages** — New e2e fixtures write every input they receive (type, position, button, count) into page text, so Verify reads results with `read`, never `eval` `agent`
 - **Phase e2e tags** — Each phase's new e2e case names start with its tag (`points:`, `frames:`, `pointer:`, `zoom:`) so its Verify runs only those cases `agent`
+- **Build mode** — Orchestrator: a fresh worker subagent per phase (Opus, high effort), a fresh reviewer per round (Opus, high effort)
 - **Verification budget** — See `## Verification budget`; it binds every phase, review round, and merge `agent`
 - **Pi resizes tool images** — pi normalizes tool-result images (default max 2000×2000, or the model's own limit) and adds a "multiply coordinates by N" note when it shrinks one; providers may shrink again without a note `research`
 - **Background tabs** — Chrome does not answer mouse moves or wheel events in a tab that is not in front, and drops clicks and key presses there (README Limits, #54); `screenshot`, `click`, and `keys` already bring their tab to the front `research`
