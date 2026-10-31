@@ -127,8 +127,8 @@ export function panelLines(workers: Snapshot[], width: number, now = Date.now(),
   }
   const lines = rendered.filter(g => kept.has(g)).flatMap(g => g.text);
   if (queued.length) lines.push(theme.fg("dim", `○ ${queued.length} queued: ${queued.map(g => g.title).join(", ")}`));
-  if (hidden) lines.push(theme.fg("muted", `+${hidden} more · /subagents`));
-  if (lines.length) lines[0] += theme.fg("dim", " · ↓ inspect");
+  if (hidden) lines.push(theme.fg("muted", `+${hidden} more · /subagents`) + theme.fg("dim", " · ↓ inspect"));
+  else if (lines.length) lines.push(theme.fg("dim", "↓ inspect"));
   return lines.map(line => truncateToWidth(line, width));
 }
 export function attachPanel(manager: Manager, ui: ExtensionUIContext, inspect: () => void): () => void {
