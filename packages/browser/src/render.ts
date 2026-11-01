@@ -53,7 +53,11 @@ function more(count: number, theme: Theme): string {
   return `${theme.fg("muted", `… ${count} more line${count === 1 ? "" : "s"},`)} ${keyHint("app.tools.expand", "to expand")}`;
 }
 
-export function renderCall(args: CallArgs, theme: Theme, expanded = false): Text {
+function clipped(rows: string[]): Component {
+  return { render: width => rows.map(row => truncateToWidth(row, width)), invalidate() {} };
+}
+
+export function renderCall(args: CallArgs, theme: Theme, expanded = false): Component {
   const parts = target(args, expanded ? clean : short);
   const rows = [`${theme.fg("toolTitle", theme.bold(`Browser ${args.action ?? ""}`))}${parts ? ` ${theme.fg("accent", parts)}` : ""}`];
   if (args.action === "eval" && args.code) {
@@ -62,7 +66,7 @@ export function renderCall(args: CallArgs, theme: Theme, expanded = false): Text
     rows.push(...shown.map(line => theme.fg("muted", `  ${line}`)));
     if (code.length > shown.length) rows.push(more(code.length - shown.length, theme));
   }
-  return new Text(rows.join("\n"), 0, 0);
+  return expanded ? new Text(rows.join("\n"), 0, 0) : clipped(rows);
 }
 
 export function renderResult(result: AgentToolResult<unknown>, expanded: boolean, theme: Theme, action?: string, isError = false): Component {
@@ -72,5 +76,5 @@ export function renderResult(result: AgentToolResult<unknown>, expanded: boolean
   const shown = lines.slice(0, action === "eval" ? PREVIEW : 1);
   const rows = shown.map(line => theme.fg("toolOutput", line));
   if (lines.length > shown.length) rows.push(more(lines.length - shown.length, theme));
-  return { render: width => rows.map(row => truncateToWidth(row, width)), invalidate() {} };
+  return clipped(rows);
 }

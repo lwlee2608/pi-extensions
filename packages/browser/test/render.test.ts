@@ -24,6 +24,7 @@ test("eval shows its code as lines, the first five until expanded", () => {
   const code = Array.from({ length: 8 }, (_, i) => `line${i}`).join("\n");
   assert.equal(call({ action: "eval", code }).length, 7);
   assert.equal(call({ action: "eval", code }, true).length, 9);
+  assert.equal(renderCall({ action: "eval", code: "x".repeat(500) }, theme).render(80).length, 2);
 });
 
 test("expanded call shows long arguments in full", () => {
