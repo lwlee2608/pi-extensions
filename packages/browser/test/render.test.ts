@@ -12,7 +12,7 @@ const result = (text: string, expanded = false, action?: string, isError = false
 
 test("call line names the action and its target, dropping params the action ignores", () => {
   assert.deepEqual(call({ action: "navigate", url: "https://github.com/foo", ref: 0, point: [] }), ["Browser navigate github.com/foo"]);
-  assert.deepEqual(call({ action: "click", ref: 12, point: [1, 2], tabId: 3 }), ["Browser click [12] · tab 3"]);
+  assert.deepEqual(call({ action: "click", ref: 12, point: [1, 2], tabId: 3 }), ["Browser click [12]"]);
   assert.deepEqual(call({ action: "click", point: [412, 230], button: "right", clickCount: 2 }), ["Browser click (412, 230) right ×2"]);
   assert.deepEqual(call({ action: "type", ref: 4, text: "pi\x1b[31m extensions" }), ['Browser type [4] "pi extensions"']);
   assert.deepEqual(call({ action: "drag", point: [1, 2], to: [3, 4] }), ["Browser drag (1, 2) → (3, 4)"]);
@@ -31,4 +31,6 @@ test("collapsed result shows the first line and counts the rest; expanded shows 
   assert.deepEqual(result("Clicked [12] button \"Sign in\" in tab 3."), ['Clicked [12] button "Sign in" in tab 3.']);
   assert.equal(result("{\n  \"a\": 1\n}", false, "eval").length, 3);
   assert.deepEqual(result("boom\nmore", false, "click", true), ["boom", "more"]);
+  const url = `Tab 3: Search <https://x.test/?q=${"a".repeat(300)}>`;
+  assert.equal(renderResult({ content: [{ type: "text", text: url }], details: undefined }, false, theme).render(80).length, 1);
 });

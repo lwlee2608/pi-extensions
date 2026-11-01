@@ -1,5 +1,5 @@
 import { keyHint, type AgentToolResult, type Theme } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import { Text, truncateToWidth, type Component } from "@earendil-works/pi-tui";
 import { stripVTControlCharacters } from "node:util";
 
 export interface CallArgs {
@@ -48,17 +48,19 @@ function target(args: CallArgs): string {
 }
 
 export function renderCall(args: CallArgs, theme: Theme): Text {
-  const parts = [target(args), args.tabId !== undefined && `tab ${args.tabId}`].filter(Boolean).join(" · ");
+  const parts = target(args);
   let text = `${theme.fg("toolTitle", theme.bold(`Browser ${args.action ?? ""}`))}${parts ? ` ${theme.fg("accent", parts)}` : ""}`;
   if (args.action === "eval" && args.code) text += `\n${clean(args.code).split("\n").map(line => theme.fg("muted", `  ${line}`)).join("\n")}`;
   return new Text(text, 0, 0);
 }
 
-export function renderResult(result: AgentToolResult<unknown>, expanded: boolean, theme: Theme, action?: string, isError = false): Text {
+export function renderResult(result: AgentToolResult<unknown>, expanded: boolean, theme: Theme, action?: string, isError = false): Component {
   const lines = clean(result.content.flatMap(item => item.type === "text" ? [item.text] : []).join("\n")).trimEnd().split("\n");
   if (isError) return new Text(theme.fg("error", lines.join("\n")), 0, 0);
-  const shown = expanded ? lines : lines.slice(0, action === "eval" ? 5 : 1);
+  if (expanded) return new Text(lines.map(line => theme.fg("toolOutput", line)).join("\n"), 0, 0);
+  const shown = lines.slice(0, action === "eval" ? 5 : 1);
   const more = lines.length - shown.length;
-  const text = shown.map(line => theme.fg("toolOutput", line)).join("\n");
-  return new Text(more ? `${text}\n${theme.fg("muted", `… ${more} more line${more === 1 ? "" : "s"},`)} ${keyHint("app.tools.expand", "to expand")}` : text, 0, 0);
+  const rows = shown.map(line => theme.fg("toolOutput", line));
+  if (more) rows.push(`${theme.fg("muted", `… ${more} more line${more === 1 ? "" : "s"},`)} ${keyHint("app.tools.expand", "to expand")}`);
+  return { render: width => rows.map(row => truncateToWidth(row, width)), invalidate() {} };
 }
