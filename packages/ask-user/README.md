@@ -2,22 +2,7 @@
 
 Lets the agent stop and ask you questions in the terminal, like Claude Code's AskUserQuestion. The questionnaire renders inline in place of Pi's editor, so the transcript stays visible, and your draft editor text comes back when you're done.
 
-```
-────────────────────────────────────────
-←   ☒ Storage   ☐ Features   ✔ Submit   →
-
-Which features should we include?
-
-❯ 1. [✔] Search
-  2. [ ] Export
-  3. [ ] Type something.
-     Next
-────────────────────────────────────────
-  4. Explain this question
-  5. Chat about this
-
-Space/Enter toggle · ↑/↓ navigate · Tab/←→ switch · n note · Esc cancel
-```
+![Pi asking which visual style a developer portfolio should use, with a Markdown preview of the highlighted option beside the choices](https://github.com/lwlee2608/pi-extensions/releases/download/media/ask-user-demo.png)
 
 ## Install
 
