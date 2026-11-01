@@ -8,6 +8,7 @@ import { Approvals, confirmEval, hostOf, parse, type Choice } from "./approval.t
 import { loadConfirmEval, setConfirmEval } from "./config.ts";
 import { Bridge, listenSocket, type BridgeOptions } from "./bridge.ts";
 import { detectBrowserDirs, installHost } from "./install.ts";
+import { renderCall, renderResult, type CallArgs } from "./render.ts";
 
 const CHROME_DIR = fileURLToPath(new URL("../chrome/", import.meta.url));
 
@@ -218,6 +219,8 @@ export function browserExtension({ browserDirs, platform = process.platform, ...
         }
         return { content: [{ type: "text" as const, text: truncate(page.text, action === "console" || action === "network") }], details: undefined };
       },
+      renderCall: (args, theme, context) => renderCall(taken(args.action, given(args as CallArgs)), theme, context.expanded),
+      renderResult: (result, { expanded }, theme, context) => renderResult(result, expanded, theme, context.args?.action, context.isError),
     });
 
     async function settings(ctx: ExtensionContext): Promise<string | undefined> {
