@@ -219,7 +219,7 @@ export function browserExtension({ browserDirs, platform = process.platform, ...
         }
         return { content: [{ type: "text" as const, text: truncate(page.text, action === "console" || action === "network") }], details: undefined };
       },
-      renderCall: (args, theme) => renderCall(taken(args.action, given(args as CallArgs)), theme),
+      renderCall: (args, theme, context) => renderCall(taken(args.action, given(args as CallArgs)), theme, context.expanded),
       renderResult: (result, { expanded }, theme, context) => renderResult(result, expanded, theme, context.args?.action, context.isError),
     });
 

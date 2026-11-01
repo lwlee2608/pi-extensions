@@ -6,7 +6,7 @@ import { renderCall, renderResult, type CallArgs } from "../src/render.ts";
 
 initTheme();
 const theme = { fg: (_: string, text: string) => text, bold: (text: string) => text } as unknown as Theme;
-const call = (args: CallArgs) => renderCall(taken(args.action!, given(args)), theme).render(200).map(line => line.trimEnd());
+const call = (args: CallArgs, expanded = false) => renderCall(taken(args.action!, given(args)), theme, expanded).render(200).map(line => line.trimEnd());
 const result = (text: string, expanded = false, action?: string, isError = false) =>
   renderResult({ content: [{ type: "text", text }], details: undefined }, expanded, theme, action, isError).render(200).map(line => line.trimEnd());
 
@@ -19,8 +19,17 @@ test("call line names the action and its target, dropping params the action igno
   assert.deepEqual(call({ action: "read" }), ["Browser read"]);
 });
 
-test("eval shows its code as lines", () => {
+test("eval shows its code as lines, the first five until expanded", () => {
   assert.deepEqual(call({ action: "eval", code: "const n = 1;\nn + 1" }), ["Browser eval", "  const n = 1;", "  n + 1"]);
+  const code = Array.from({ length: 8 }, (_, i) => `line${i}`).join("\n");
+  assert.equal(call({ action: "eval", code }).length, 7);
+  assert.equal(call({ action: "eval", code }, true).length, 9);
+});
+
+test("expanded call shows long arguments in full", () => {
+  const text = "x".repeat(100);
+  assert.match(call({ action: "type", ref: 1, text })[0], /x…"$/);
+  assert.equal(call({ action: "type", ref: 1, text }, true)[0], `Browser type [1] "${text}"`);
 });
 
 test("collapsed result shows the first line and counts the rest; expanded shows all", () => {

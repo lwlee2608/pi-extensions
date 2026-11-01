@@ -32,35 +32,45 @@ function short(text: string, max = 60): string {
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }
 
-function target(args: CallArgs): string {
+function target(args: CallArgs, cut: (text: string, max?: number) => string): string {
   const at = args.ref !== undefined ? `[${args.ref}]` : args.point ? xy(args.point) : "";
   switch (args.action) {
-    case "navigate": return `${short(args.url?.replace(/^https?:\/\//, "") ?? "", 80)}${args.newTab ? " in new tab" : ""}`;
+    case "navigate": return `${cut(args.url?.replace(/^https?:\/\//, "") ?? "", 80)}${args.newTab ? " in new tab" : ""}`;
     case "click": return [at, args.button === "right" && "right", args.clickCount && args.clickCount > 1 && `×${args.clickCount}`].filter(Boolean).join(" ");
     case "scroll": return args.delta ? `${at} by ${xy(args.delta)}` : at;
     case "drag": return args.point && args.to ? `${xy(args.point)} → ${xy(args.to)}` : at;
-    case "type": return [at, args.text !== undefined && `"${short(args.text)}"`].filter(Boolean).join(" ");
-    case "keys": return [at, args.keys && short(args.keys)].filter(Boolean).join(" ");
+    case "type": return [at, args.text !== undefined && `"${cut(args.text)}"`].filter(Boolean).join(" ");
+    case "keys": return [at, args.keys && cut(args.keys)].filter(Boolean).join(" ");
     case "zoom": return args.region ? `${xy(args.region.slice(0, 2))} → ${xy(args.region.slice(2))}` : "";
     case "hover": return at;
     default: return "";
   }
 }
 
-export function renderCall(args: CallArgs, theme: Theme): Text {
-  const parts = target(args);
-  let text = `${theme.fg("toolTitle", theme.bold(`Browser ${args.action ?? ""}`))}${parts ? ` ${theme.fg("accent", parts)}` : ""}`;
-  if (args.action === "eval" && args.code) text += `\n${clean(args.code).split("\n").map(line => theme.fg("muted", `  ${line}`)).join("\n")}`;
-  return new Text(text, 0, 0);
+const PREVIEW = 5;
+
+function more(count: number, theme: Theme): string {
+  return `${theme.fg("muted", `… ${count} more line${count === 1 ? "" : "s"},`)} ${keyHint("app.tools.expand", "to expand")}`;
+}
+
+export function renderCall(args: CallArgs, theme: Theme, expanded = false): Text {
+  const parts = target(args, expanded ? clean : short);
+  const rows = [`${theme.fg("toolTitle", theme.bold(`Browser ${args.action ?? ""}`))}${parts ? ` ${theme.fg("accent", parts)}` : ""}`];
+  if (args.action === "eval" && args.code) {
+    const code = clean(args.code).split("\n");
+    const shown = expanded ? code : code.slice(0, PREVIEW);
+    rows.push(...shown.map(line => theme.fg("muted", `  ${line}`)));
+    if (code.length > shown.length) rows.push(more(code.length - shown.length, theme));
+  }
+  return new Text(rows.join("\n"), 0, 0);
 }
 
 export function renderResult(result: AgentToolResult<unknown>, expanded: boolean, theme: Theme, action?: string, isError = false): Component {
   const lines = clean(result.content.flatMap(item => item.type === "text" ? [item.text] : []).join("\n")).trimEnd().split("\n");
   if (isError) return new Text(theme.fg("error", lines.join("\n")), 0, 0);
   if (expanded) return new Text(lines.map(line => theme.fg("toolOutput", line)).join("\n"), 0, 0);
-  const shown = lines.slice(0, action === "eval" ? 5 : 1);
-  const more = lines.length - shown.length;
+  const shown = lines.slice(0, action === "eval" ? PREVIEW : 1);
   const rows = shown.map(line => theme.fg("toolOutput", line));
-  if (more) rows.push(`${theme.fg("muted", `… ${more} more line${more === 1 ? "" : "s"},`)} ${keyHint("app.tools.expand", "to expand")}`);
+  if (lines.length > shown.length) rows.push(more(lines.length - shown.length, theme));
   return { render: width => rows.map(row => truncateToWidth(row, width)), invalidate() {} };
 }
