@@ -79,24 +79,19 @@ test("inspector lists nested workers under their group and shows the selected tr
     for (const width of [1, 5, 20, 59, 60, 80]) for (const line of inspector.render(width)) assert.ok(visibleWidth(line) <= width);
   } finally { inspector?.dispose(); await f.cleanup(); }
 });
-test("inspector wraps long questions and errors, capped, and colors transcript marks", async () => {
+test("inspector wraps long questions and errors, capped, and colors transcript marks", () => {
   const question = "Should I flag every deprecated Store.get() call as blocking, or only report them as warnings in the final summary?";
   const worker = { workerId: "w", runId: "r", state: "blocked", lifetime: "once", label: "review", cwd: "/", model: "m", effort: "low", sessionId: "s",
-    activity: "", output: "", startedAt: Date.now(), error: "x ".repeat(400), questions: [{ questionId: "q", question, state: "pending" }] };
+    activity: "", output: "Task\n● bash npm test\n  ✓ ok\n  ✗ bad", startedAt: Date.now(), error: "x ".repeat(400), questions: [{ questionId: "q", question, state: "pending" }] };
   const manager = { status: () => [worker], history: () => [], onChange: () => () => {} } as unknown as Manager;
   const tagged = { fg: (color: string, text: string) => `<${color}>${text}</${color}>` };
-  const inspector = new Inspector(manager, tagged, () => {}, () => 24, () => {});
+  const plain = new Inspector(manager, theme, () => {}, () => 24, () => {}), colored = new Inspector(manager, tagged, () => {}, () => 24, () => {});
   try {
-    const plainPane = new Inspector(manager, theme, () => {}, () => 24, () => {}).render(50).join(" ").replace(/\s+/g, " ");
-    assert.ok(plainPane.includes(question.replace(/\s+/g, " ")));
-    const errors = new Inspector(manager, theme, () => {}, () => 24, () => {}).render(100).filter(l => /x x x/.test(l));
+    assert.ok(plain.render(50).join(" ").replace(/\s+/g, " ").includes(`? asks (r reply): ${question}`));
+    const errors = plain.render(100).filter(l => /x x x/.test(l));
     assert.equal(errors.length, Math.floor(21 / 3));
     assert.match(errors.at(-1)!, /…\s*$/);
-    const toned = (inspector as unknown as { tone(l: string): string }).tone.bind(inspector);
-    assert.equal(toned("  ✓ ok"), "  <success>✓</success><dim> ok</dim>");
-    assert.equal(toned("  ✗ bad"), "  <error>✗</error><dim> bad</dim>");
-    assert.equal(toned("● bash npm test"), "<accent>● bash</accent> npm test");
-    assert.equal(toned("Task"), "<accent>Task</accent>");
-    assert.equal(toned("plain text"), "plain text");
-  } finally { inspector.dispose(); }
+    const pane = colored.render(200).join("\n");
+    for (const mark of ["<accent>Task</accent>", "<accent>● bash</accent> npm test", "  <success>✓</success><dim> ok</dim>", "  <error>✗</error><dim> bad</dim>"]) assert.ok(pane.includes(mark), mark);
+  } finally { plain.dispose(); colored.dispose(); }
 });

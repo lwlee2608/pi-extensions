@@ -208,7 +208,7 @@ export class Inspector {
       if (lines.length > max) lines.splice(max - 1, Infinity, truncateToWidth(lines[max - 1], Math.max(0, width - 1), "") + "…");
       return lines.map(l => this.theme.fg(color, l));
     };
-    if (question) head.push(...block("warning", `? asks: ${question.question} · r reply`));
+    if (question) head.push(...block("warning", `? asks (r reply): ${question.question}`));
     if (error) head.push(...block("error", `Error: ${error}`));
     if (reminded(worker) && !running) head.push(this.theme.fg("warning", "Saved conversation · c recover"));
     if (this.info) head.push(...[`${worker.model}:${worker.effort} · PID ${worker.pid ?? "not spawned"}`, worker.cwd, `Session: ${worker.sessionFile ?? "not yet persisted"}`,
