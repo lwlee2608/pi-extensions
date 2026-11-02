@@ -187,14 +187,29 @@ export class Inspector {
     while (body.length < rows) body.push("");
     return body.map(l => fit(l, width));
   }
+  private tone(line: string): string {
+    const fg = (color: Parameters<Theme["fg"]>[0], text: string) => this.theme.fg(color, text);
+    const result = /^  ([✓✗])(.*)$/.exec(line), call = /^● (\S+)(.*)$/.exec(line);
+    if (result) return `  ${fg(result[1] === "✓" ? "success" : "error", result[1])}${fg("dim", result[2])}`;
+    if (call) return `${fg("accent", `● ${call[1]}`)}${call[2]}`;
+    if (line === "Task") return fg("accent", line);
+    if (line.startsWith("Error: ")) return fg("error", line);
+    if (line.startsWith("  │ ") || line.startsWith("[Older output omitted")) return fg("dim", line);
+    return line;
+  }
   private pane(worker: Snapshot, width: number, rows: number, now: number): string[] {
     const nodes = tree(this.manager.status(), this.manager.history()), node = nodes.find(n => n.members.some(m => m.workerId === worker.workerId));
     const name = node ? named(node, worker, names(nodes)) : display(worker.label), agent = display(this.manager.history().find(s => s.runId === worker.runId)?.agent ?? "");
     const spent = (worker.result?.usage ?? worker.usage)?.cost.total ?? 0;
     const head = [this.theme.fg("accent", display([name, ...(name.startsWith(agent) ? [] : [agent]), worker.state, duration(elapsed(worker, now)), ...(spent ? [`$${spent.toFixed(2)}`] : [])].join(" · ")))];
     const question = worker.questions?.find(q => q.state === "pending"), error = worker.error ?? worker.result?.error, running = active.includes(worker.state);
-    if (question) head.push(this.theme.fg("warning", display(`? asks: ${question.question} · r reply`)));
-    if (error) head.push(this.theme.fg("error", display(`Error: ${error}`)));
+    const block = (color: "warning" | "error", text: string) => {
+      const lines = text.split("\n").flatMap(l => wrapTextWithAnsi(display(l), Math.max(1, width))), max = Math.max(1, Math.floor(rows / 3));
+      if (lines.length > max) lines.splice(max - 1, Infinity, truncateToWidth(lines[max - 1], Math.max(0, width - 1), "") + "…");
+      return lines.map(l => this.theme.fg(color, l));
+    };
+    if (question) head.push(...block("warning", `? asks: ${question.question} · r reply`));
+    if (error) head.push(...block("error", `Error: ${error}`));
     if (reminded(worker) && !running) head.push(this.theme.fg("warning", "Saved conversation · c recover"));
     if (this.info) head.push(...[`${worker.model}:${worker.effort} · PID ${worker.pid ?? "not spawned"}`, worker.cwd, `Session: ${worker.sessionFile ?? "not yet persisted"}`,
       `${worker.workerId} · ${worker.runId}`].flatMap(l => wrapTextWithAnsi(display(l), Math.max(1, width))).map(l => this.theme.fg("dim", l)));
@@ -202,7 +217,7 @@ export class Inspector {
     const text = [this.transcript];
     if (running && worker.output.trim() && !this.transcript.trimEnd().endsWith(worker.output.trim())) text.push(worker.output);
     if (running && worker.activity.startsWith("tool:") && worker.toolOutput?.trim()) text.push(`  │ ${worker.toolOutput.trim().split("\n").at(-1)}`);
-    const lines = text.join("\n").split("\n").flatMap(l => wrapTextWithAnsi(display(l), Math.max(1, width)));
+    const lines = text.join("\n").split("\n").flatMap(l => wrapTextWithAnsi(this.tone(display(l)), Math.max(1, width)));
     if (running) { const [color, symbol] = icon(worker, now); lines.push(`${this.theme.fg(color, symbol)} ${this.theme.fg("dim", display(worker.activity))}`); }
     this.capacity = Math.max(1, rows - head.length);
     const last = Math.max(0, lines.length - this.capacity);

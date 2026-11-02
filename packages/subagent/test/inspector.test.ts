@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { CURSOR_MARKER, visibleWidth } from "@earendil-works/pi-tui";
 import { Inspector, transcriptTail } from "../src/inspector.ts";
 import { resultText } from "../src/result.ts";
+import type { Manager } from "../src/manager.ts";
 import { fixture, changedUntil } from "./helpers.ts";
 
 const theme = { fg: (_color: unknown, text: string) => text };
@@ -77,4 +78,25 @@ test("inspector lists nested workers under their group and shows the selected tr
     assert.match(selected, /│ Task +\n.*│   REVIEW_TASK/);
     for (const width of [1, 5, 20, 59, 60, 80]) for (const line of inspector.render(width)) assert.ok(visibleWidth(line) <= width);
   } finally { inspector?.dispose(); await f.cleanup(); }
+});
+test("inspector wraps long questions and errors, capped, and colors transcript marks", async () => {
+  const question = "Should I flag every deprecated Store.get() call as blocking, or only report them as warnings in the final summary?";
+  const worker = { workerId: "w", runId: "r", state: "blocked", lifetime: "once", label: "review", cwd: "/", model: "m", effort: "low", sessionId: "s",
+    activity: "", output: "", startedAt: Date.now(), error: "x ".repeat(400), questions: [{ questionId: "q", question, state: "pending" }] };
+  const manager = { status: () => [worker], history: () => [], onChange: () => () => {} } as unknown as Manager;
+  const tagged = { fg: (color: string, text: string) => `<${color}>${text}</${color}>` };
+  const inspector = new Inspector(manager, tagged, () => {}, () => 24, () => {});
+  try {
+    const plainPane = new Inspector(manager, theme, () => {}, () => 24, () => {}).render(50).join(" ").replace(/\s+/g, " ");
+    assert.ok(plainPane.includes(question.replace(/\s+/g, " ")));
+    const errors = new Inspector(manager, theme, () => {}, () => 24, () => {}).render(100).filter(l => /x x x/.test(l));
+    assert.equal(errors.length, Math.floor(21 / 3));
+    assert.match(errors.at(-1)!, /…\s*$/);
+    const toned = (inspector as unknown as { tone(l: string): string }).tone.bind(inspector);
+    assert.equal(toned("  ✓ ok"), "  <success>✓</success><dim> ok</dim>");
+    assert.equal(toned("  ✗ bad"), "  <error>✗</error><dim> bad</dim>");
+    assert.equal(toned("● bash npm test"), "<accent>● bash</accent> npm test");
+    assert.equal(toned("Task"), "<accent>Task</accent>");
+    assert.equal(toned("plain text"), "plain text");
+  } finally { inspector.dispose(); }
 });
