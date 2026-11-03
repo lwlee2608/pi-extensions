@@ -63,11 +63,11 @@ export function renderFooter(
   const paint = (color: ThemeColor, text: string) => theme ? theme.fg(color, text) : text;
   const dim = (text: string) => paint("dim", text);
   const { context, totals } = snapshot;
-  const percent = context.percent === null ? null : Math.max(0, Math.min(100, context.percent));
+  const percent = context.percent === null ? null : Math.round(Math.max(0, Math.min(100, context.percent)));
   const pressure = percent === null || percent <= 70 ? undefined : percent > 90 ? "error" : "warning";
   const filled = Math.round((percent ?? 0) / 5);
   const bar = dim("[") + paint(pressure ?? "text", "━".repeat(filled)) + dim(`${"─".repeat(20 - filled)}]`);
-  const percentText = `${percent === null ? "?" : Math.round(percent)}%`;
+  const percentText = `${percent ?? "?"}%`;
   const thinking = theme ? theme.getThinkingBorderColor(snapshot.thinking)(snapshot.thinking) : snapshot.thinking;
   const cached = totals.cached + totals.fresh > 0
     ? Math.round(totals.cached / (totals.cached + totals.fresh) * 100) : 0;
