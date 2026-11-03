@@ -32,7 +32,7 @@ test("installs only in TUI, follows live state, and cleans up timers and subscri
     ui: {
       setFooter: (factory: any) => {
         footer?.dispose();
-        footer = factory({ requestRender: () => { renders++; } }, { fg: (_color: string, text: string) => text }, {
+        footer = factory({ requestRender: () => { renders++; } }, { fg: (_color: string, text: string) => text, getThinkingBorderColor: () => (text: string) => text }, {
           getGitBranch: () => branch,
           getExtensionStatuses: () => statuses,
           onBranchChange: (callback: () => void) => {

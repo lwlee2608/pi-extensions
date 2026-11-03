@@ -1,4 +1,4 @@
-import type { ContextUsage, SessionEntry, Theme } from "@earendil-works/pi-coding-agent";
+import type { ContextUsage, SessionEntry, Theme, ThemeColor } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth } from "@earendil-works/pi-tui";
 
 export interface Totals {
@@ -45,8 +45,9 @@ function singleLine(text: string): string {
 }
 
 export interface FooterSnapshot {
+  provider?: string;
   model: string;
-  thinking: string;
+  thinking: Parameters<Theme["getThinkingBorderColor"]>[0];
   context: ContextUsage;
   totals: Totals;
   elapsed: number;
@@ -55,20 +56,31 @@ export interface FooterSnapshot {
   statuses: readonly string[];
 }
 
-export function renderFooter(snapshot: FooterSnapshot, width: number, theme?: Pick<Theme, "fg">): string[] {
+export function renderFooter(
+  snapshot: FooterSnapshot, width: number, theme?: Pick<Theme, "fg" | "getThinkingBorderColor">,
+): string[] {
   if (width <= 0) return ["", ""];
-  const dim = (text: string) => theme ? theme.fg("dim", text) : text;
-  const bright = (text: string) => theme ? theme.fg("text", text) : text;
+  const paint = (color: ThemeColor, text: string) => theme ? theme.fg(color, text) : text;
+  const dim = (text: string) => paint("dim", text);
   const { context, totals } = snapshot;
   const percent = context.percent === null ? null : Math.max(0, Math.min(100, context.percent));
+  const pressure = percent === null || percent <= 70 ? undefined : percent > 90 ? "error" : "warning";
   const filled = Math.round((percent ?? 0) / 5);
-  const bar = dim("[") + bright("━".repeat(filled)) + dim(`${"─".repeat(20 - filled)}]`);
+  const bar = dim("[") + paint(pressure ?? "text", "━".repeat(filled)) + dim(`${"─".repeat(20 - filled)}]`);
+  const percentText = `${percent === null ? "?" : Math.round(percent)}%`;
+  const thinking = theme ? theme.getThinkingBorderColor(snapshot.thinking)(snapshot.thinking) : snapshot.thinking;
   const cached = totals.cached + totals.fresh > 0
     ? Math.round(totals.cached / (totals.cached + totals.fresh) * 100) : 0;
   const tokens = context.tokens === null ? "?" : formatTokens(context.tokens);
-  const status = dim(`${snapshot.model} [${snapshot.thinking}] `) + bar
-    + dim(` ${percent === null ? "?" : Math.round(percent)}% ${tokens} / ${formatTokens(context.contextWindow)} tokens • $${totals.cost.toFixed(2)} (${cached}% cached, ${formatTokens(totals.fresh)} new) • ${formatDuration(snapshot.elapsed)}`);
-  const project = `${snapshot.cwd}${snapshot.branch ? ` (${snapshot.branch})` : ""}`;
-  return [status, dim([project, ...snapshot.statuses].filter(Boolean).join(" • "))]
+  const provider = snapshot.provider ? dim(`(${snapshot.provider}) `) : "";
+  const status = provider + paint("text", snapshot.model) + dim(" [") + thinking + dim("] ") + bar + dim(" ")
+    + paint(pressure ?? "text", percentText) + dim(` ${tokens} / ${formatTokens(context.contextWindow)} tokens • `)
+    + paint("text", `$${totals.cost.toFixed(2)}`)
+    + dim(` (${cached}% cached, ${formatTokens(totals.fresh)} new) • ${formatDuration(snapshot.elapsed)}`);
+  const statuses = snapshot.statuses.filter(Boolean).map(text => ` • ${text}`).join("");
+  const project = snapshot.branch
+    ? dim(`${snapshot.cwd} (`) + paint("accent", snapshot.branch) + dim(`)${statuses}`)
+    : dim(`${snapshot.cwd}${statuses}`);
+  return [status, project]
     .map(line => truncateToWidth(singleLine(line), width));
 }
