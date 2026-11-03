@@ -2,6 +2,8 @@
 
 A muted, two-line footer for [Pi](https://pi.dev). Enabled automatically in interactive mode, using your current theme. No special font required.
 
+![Pi footer showing provider, model, thinking level, context bar, token usage, cost, cache ratio, timer, and the project path with Git branch](https://github.com/lwlee2608/pi-extensions/releases/download/media/footer-demo.png)
+
 ```text
 (velocirouter) gpt-6-astra-fast [high] [━━━━━━━━────────────] 40% 280k / 700k tokens • $17.37 (98% cached, 475.6k new) • 19s
 ~/src/project (main) • extension statuses
