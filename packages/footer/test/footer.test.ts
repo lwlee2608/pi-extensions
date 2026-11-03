@@ -18,7 +18,7 @@ test("renders the reference layout and project row", () => {
   ]);
 });
 
-test("highlights model, context percent, and cost; greys provider; accents branch; colors context pressure and thinking level, preserving terminal widths", () => {
+test("highlights model, context usage, and cost; greys provider; accents branch; colors context pressure and thinking level, preserving terminal widths", () => {
   const codes: Record<string, number> = { text: 97, dim: 90, warning: 33, error: 31, accent: 36, thinkingHigh: 35 };
   const fg = (color: string, text: string) => `\u001b[${codes[color]}m${text}\u001b[39m`;
   const theme = { fg, getThinkingBorderColor: (level: string) => (text: string) => fg(`thinking${level[0].toUpperCase()}${level.slice(1)}`, text) };
@@ -28,7 +28,7 @@ test("highlights model, context percent, and cost; greys provider; accents branc
   assert.ok(lines[0].includes("\u001b[35mhigh\u001b[39m"));
   assert.ok(lines[0].includes("\u001b[97m$17.37\u001b[39m"));
   assert.ok(lines[0].includes("\u001b[97m━━━━━━━━\u001b[39m\u001b[90m────────────]"));
-  assert.ok(lines[0].includes("\u001b[97m40%\u001b[39m\u001b[90m 280k / 700k tokens"));
+  assert.ok(lines[0].includes("\u001b[97m40%\u001b[39m\u001b[90m \u001b[39m\u001b[97m280k\u001b[39m\u001b[90m / 700k tokens"));
   assert.ok(at(70).includes("\u001b[97m70%"));
   assert.ok(at(80).includes("\u001b[33m━━━━━━━━━━━━━━━━\u001b[39m") && at(80).includes("\u001b[33m80%"));
   assert.ok(at(95).includes("\u001b[31m━━━━━━━━━━━━━━━━━━━\u001b[39m") && at(95).includes("\u001b[31m95%"));

@@ -74,7 +74,8 @@ export function renderFooter(
   const tokens = context.tokens === null ? "?" : formatTokens(context.tokens);
   const provider = snapshot.provider ? dim(`(${snapshot.provider}) `) : "";
   const status = provider + paint("text", snapshot.model) + dim(" [") + thinking + dim("] ") + bar + dim(" ")
-    + paint(pressure ?? "text", percentText) + dim(` ${tokens} / ${formatTokens(context.contextWindow)} tokens • `)
+    + paint(pressure ?? "text", percentText) + dim(" ") + paint("text", tokens)
+    + dim(` / ${formatTokens(context.contextWindow)} tokens • `)
     + paint("text", `$${totals.cost.toFixed(2)}`)
     + dim(` (${cached}% cached, ${formatTokens(totals.fresh)} new) • ${formatDuration(snapshot.elapsed)}`);
   const statuses = snapshot.statuses.filter(Boolean).map(text => ` • ${text}`).join("");
