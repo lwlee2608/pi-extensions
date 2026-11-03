@@ -15,7 +15,8 @@
   "keywords": ["pi-package", "pi-extension", "footer"],
   "files": ["src"],
   "pi": {
-    "extensions": ["./src/index.ts"]
+    "extensions": ["./src/index.ts"],
+    "image": "https://github.com/lwlee2608/pi-extensions/releases/download/media/footer-demo.png"
   },
   "engines": {
     "node": ">=22.19.0"
