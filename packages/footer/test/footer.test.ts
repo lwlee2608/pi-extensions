@@ -76,7 +76,8 @@ test("sums all billable entry kinds, including tool and summary usage", () => {
 });
 
 test("formats tokens, elapsed time, and home-relative paths", () => {
-  assert.deepEqual([0, 999, 1000, 475600, 1000000, 12345600].map(formatTokens), ["0", "999", "1k", "475.6k", "1M", "12.3M"]);
+  assert.deepEqual([0, 999, 999.5, 1000, 475600, 999949, 999950, 1000000, 12345600].map(formatTokens),
+    ["0", "999", "1k", "1k", "475.6k", "999.9k", "1M", "1M", "12.3M"]);
   assert.deepEqual([0, 19999, 61000, 3661000].map(formatDuration), ["0s", "19s", "1m 1s", "1h 1m"]);
   assert.equal(projectPath("/home/me", "/home/me"), "~");
   assert.equal(projectPath("/home/me/project", "/home/me"), "~/project");

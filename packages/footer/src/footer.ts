@@ -22,8 +22,8 @@ export function summarize(entries: readonly SessionEntry[]): Totals {
 }
 
 export function formatTokens(tokens: number): string {
-  if (tokens < 1000) return String(Math.round(tokens));
-  const [value, unit] = tokens < 1e6 ? [tokens / 1e3, "k"] : [tokens / 1e6, "M"];
+  if (tokens < 999.5) return String(Math.round(tokens));
+  const [value, unit] = tokens < 999_950 ? [tokens / 1e3, "k"] : [tokens / 1e6, "M"];
   return `${value.toFixed(1).replace(/\.0$/, "")}${unit}`;
 }
 
