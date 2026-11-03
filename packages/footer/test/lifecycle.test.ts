@@ -62,8 +62,8 @@ test("installs only in TUI, follows live state, and cleans up timers and subscri
   assert.match(line(), /\$1.00/);
   ctx.model.name = "Model B"; ctx.model.id = "model-b"; ctx.model.provider = "anthropic"; thinking = "low";
   assert.match(line(), /\(anthropic\) model-b \[low\]/);
-  statuses.set("test", "status"); branch = "feature"; branchChanged();
-  assert.equal(footer!.render(300)[1], "/test (feature) • status");
+  statuses.set("test", "status"); statuses.set("a", "first"); branch = "feature"; branchChanged();
+  assert.equal(footer!.render(300)[1], "/test (feature) • first • status");
 
   emit("agent_start");
   const beforeTick = renders;

@@ -63,7 +63,8 @@ export default function (pi: ExtensionAPI): void {
             elapsed: started === undefined ? elapsed : performance.now() - started,
             cwd: projectPath(ctx.cwd, homedir()),
             branch: footerData.getGitBranch(),
-            statuses: [...footerData.getExtensionStatuses().values()],
+            statuses: [...footerData.getExtensionStatuses()]
+              .sort(([a], [b]) => a.localeCompare(b)).map(([, text]) => text),
           }, width, theme);
         },
       };
