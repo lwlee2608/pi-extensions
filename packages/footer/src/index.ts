@@ -54,7 +54,8 @@ export default function (pi: ExtensionAPI): void {
             leaf = currentLeaf;
           }
           return renderFooter({
-            model: ctx.model ? `(${ctx.model.provider}) ${ctx.model.id}` : "No model",
+            provider: ctx.model?.provider,
+            model: ctx.model?.id ?? "No model",
             thinking: pi.getThinkingLevel(),
             context: ctx.getContextUsage() ?? {
               tokens: 0, percent: 0, contextWindow: ctx.model?.contextWindow ?? 0,
@@ -63,7 +64,8 @@ export default function (pi: ExtensionAPI): void {
             elapsed: started === undefined ? elapsed : performance.now() - started,
             cwd: projectPath(ctx.cwd, homedir()),
             branch: footerData.getGitBranch(),
-            statuses: [...footerData.getExtensionStatuses().values()],
+            statuses: [...footerData.getExtensionStatuses()]
+              .sort(([a], [b]) => a.localeCompare(b)).map(([, text]) => text),
           }, width, theme);
         },
       };
