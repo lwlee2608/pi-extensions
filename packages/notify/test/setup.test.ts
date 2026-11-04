@@ -207,7 +207,7 @@ test("existing connectors are listed without tokens and preserved, not edited", 
   const h = await harness(t);
   const existing = [{ type: "telegram", botToken: TOKEN, chatId: "-1", label: "phone" }, { type: "command", run: "echo\nhi" }, "stray", { type: "slack", url: "x" }];
   await h.write(JSON.stringify({ extra: true, connectors: existing }));
-  await h.run("setup", "1. Telegram -1", "Save", true);
+  await h.run("setup", "1. Telegram -1", undefined, "Save", true);
   const options = h.dialogs[0].options!;
   assert.deepEqual(options.slice(0, 5), ["1. Telegram -1", "2. Command echo hi", "3. Unsupported connector", "4. Unsupported connector", "Add connector"]);
   for (const dialog of h.dialogs) assert.ok(!JSON.stringify(dialog).includes(TOKEN));

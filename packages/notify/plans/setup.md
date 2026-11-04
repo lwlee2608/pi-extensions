@@ -34,7 +34,7 @@
 - **Build mode** — Orchestrator; worker Opus 5.5 medium, reviewer Opus 5.5 high
 
 ## Progress
-Active: 2 · 11/21 tasks
+Active: 2 · 12/21 tasks
 
 ### Phase 1 — Create a working config from nothing
 A new user can run `/notify setup`, add a Telegram or command connector, set options, save, and send a test without touching JSON.
@@ -55,7 +55,7 @@ A new user can run `/notify setup`, add a Telegram or command connector, set opt
 ### Phase 2 — Change an existing config without exposing the token
 An existing user can edit or remove any connector from the menu, and the stored token stays hidden and intact.
 **Blocked by:** 1
-- [ ] Edit Telegram connectors, where empty token input keeps the stored value, the literal is never prefilled, and chat IDs and `$VAR` values are prefilled (packages/notify/src/setup.ts)
+- [x] Edit Telegram connectors, where empty token input keeps the stored value, the literal is never prefilled, and chat IDs and `$VAR` values are prefilled (packages/notify/src/setup.ts)
 - [ ] Edit command connectors with `run` prefilled (packages/notify/src/setup.ts)
 - [ ] Remove connectors, and limit unsupported connector types to removal only (packages/notify/src/setup.ts)
 - [ ] Flag connectors that fail validation in the menu without showing their secrets (packages/notify/src/setup.ts)
