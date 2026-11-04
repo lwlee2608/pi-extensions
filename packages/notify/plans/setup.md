@@ -31,6 +31,7 @@
 - **Phase count** — 3, in sequence
 - **Credential format checks** — Literal bot tokens and chat IDs are checked on entry using the same rules as `parseConfig`, and rejection messages never echo the value `agent`
 - **Existing connectors before Phase 2** — Listed in the menu and preserved on Save, but not editable yet `agent`
+- **Build mode** — Orchestrator; worker Opus 5.5 medium, reviewer Opus 5.5 high
 
 ## Progress
 Active: 1 · 0/21 tasks
