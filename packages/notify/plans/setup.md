@@ -34,7 +34,7 @@
 - **Build mode** — Orchestrator; worker Opus 5.5 medium, reviewer Opus 5.5 high
 
 ## Progress
-Active: 1 · 10/21 tasks
+Active: 1 · 11/21 tasks
 
 ### Phase 1 — Create a working config from nothing
 A new user can run `/notify setup`, add a Telegram or command connector, set options, save, and send a test without touching JSON.
@@ -49,7 +49,7 @@ A new user can run `/notify setup`, add a Telegram or command connector, set opt
 - [x] Route `/notify setup` ahead of the config load and update the usage text and command description (packages/notify/src/index.ts)
 - [x] Refuse `/notify setup` with a warning while a run is active (packages/notify/src/index.ts)
 - [x] Refresh `nerdFont` and status from the draft after Save, then offer a test through `send()` only if the config validates (packages/notify/src/index.ts)
-- [ ] Test the flow with stubbed dialogs (packages/notify/test/setup.test.ts)
+- [x] Test the flow with stubbed dialogs (packages/notify/test/setup.test.ts)
 **Verify:** `npm test -w packages/notify` passes with new cases showing: from no config, driving the dialogs writes a file that `loadConfig` accepts, with mode `0600`; `$VAR` values are stored unexpanded; Cancel writes nothing; malformed JSON and a non-array `connectors` stay byte-identical; rendering the masked input never contains a literal token; declining the test sends nothing and accepting sends once; during a run, `/notify setup` warns and opens no dialog; saving with an unset `$VAR` or a kept unsupported connector requires confirmation, offers no test, and leaves `/notify on` armed.
 
 ### Phase 2 — Change an existing config without exposing the token
