@@ -34,7 +34,7 @@
 - **Build mode** — Orchestrator; worker Opus 5.5 medium, reviewer Opus 5.5 high
 
 ## Progress
-Active: 3 · 21/21 tasks
+Active: none · 21/21 tasks
 
 ### Phase 1 — Create a working config from nothing
 A new user can run `/notify setup`, add a Telegram or command connector, set options, save, and send a test without touching JSON.
