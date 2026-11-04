@@ -10,6 +10,7 @@ const CANCEL = "Cancel";
 const TELEGRAM = "Telegram";
 const COMMAND = "Shell command";
 const EDIT = "Edit";
+const REMOVE = "Remove";
 const OPTIONS = { onPrompt: "Notify when waiting for input", nerdFont: "Nerd Font status icon" };
 
 function text(value: unknown): string {
@@ -80,11 +81,10 @@ async function addConnector(ui: ExtensionUIContext): Promise<object | undefined>
 async function changeConnector(ui: ExtensionUIContext, draft: Draft, index: number, label: string): Promise<void> {
   const stored = (draft.connectors[index] ?? {}) as Record<string, unknown>;
   const multiLine = stored.type === "command" && typeof stored.run === "string" && text(stored.run) !== stored.run;
-  if ((stored.type !== "telegram" && stored.type !== "command") || multiLine) {
-    ui.notify("Edit this connector in pi-notify/config.json for now.", "info");
-    return;
-  }
-  if (await ui.select(label, [EDIT]) !== EDIT) return;
+  const editable = (stored.type === "telegram" || stored.type === "command") && !multiLine;
+  const action = await ui.select(multiLine ? `${label} (multi-line: edit it in pi-notify/config.json)` : label, editable ? [EDIT, REMOVE] : [REMOVE]);
+  if (action === REMOVE) draft.connectors.splice(index, 1);
+  if (action !== EDIT) return;
   const edited = await (stored.type === "telegram" ? askTelegram : askCommand)(ui, stored);
   if (edited) draft.connectors[index] = edited;
 }
