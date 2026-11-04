@@ -227,9 +227,10 @@ test("text input closes on abort and stops listening once disposed", () => {
   assert.deepEqual(results, [undefined]);
 
   const disposed = new AbortController();
-  new TextInput({ title: "t", signal: disposed.signal }, theme, value => results.push(value)).dispose();
+  const late: unknown[] = [];
+  new TextInput({ title: "t", signal: disposed.signal }, theme, value => late.push(value)).dispose();
   disposed.abort();
-  assert.deepEqual(results, [undefined]);
+  assert.deepEqual(late, []);
 });
 
 test("entry checks reject bad values without echoing them and re-prompt", async t => {
