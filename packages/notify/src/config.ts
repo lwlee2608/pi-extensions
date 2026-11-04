@@ -11,6 +11,7 @@ const VARIABLE = /^\$([A-Za-z_][A-Za-z0-9_]*)$/;
 const BOT_TOKEN = /^\d+:[A-Za-z0-9_-]+$/;
 const CHAT_ID = /^(?:-?\d+|@[A-Za-z0-9_]+)$/;
 
+export const variableEntry = (value: string) => VARIABLE.test(value);
 export const validBotTokenEntry = (value: string) => VARIABLE.test(value) || BOT_TOKEN.test(value);
 export const validChatIdEntry = (value: string) => VARIABLE.test(value) || CHAT_ID.test(value);
 

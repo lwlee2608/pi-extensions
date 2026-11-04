@@ -30,9 +30,10 @@ async function harness(t: TestContext) {
     registerTool: () => {}, getActiveTools: () => [], setActiveTools: () => {},
   } as any);
   const script: Answer[] = [];
-  const dialogs: { kind: string; title: string; options?: string[] }[] = [];
+  const dialogs: { kind: string; title: string; options?: string[]; message?: string; screen?: string }[] = [];
   const screens: string[] = [];
   const warnings: string[] = [];
+  const notices: string[] = [];
   const sent: { chat_id: string; text: string }[] = [];
   let status: string | undefined;
   t.mock.method(globalThis, "fetch", async (_url: string, options: RequestInit) => {
@@ -45,17 +46,17 @@ async function harness(t: TestContext) {
   };
   const ctx = { mode: "tui", cwd: root, sessionManager: { getSessionName: () => "session" }, ui: {
     setStatus: (_key: string, text: string | undefined) => { status = text; },
-    notify: (text: string, type: string) => { if (type === "warning") warnings.push(text); },
+    notify: (text: string, type: string) => { notices.push(text); if (type === "warning") warnings.push(text); },
     select: async (title: string, options: string[]) => {
       dialogs.push({ kind: "select", title, options });
       const answer = next();
       if (answer !== undefined) assert.ok(options.includes(answer as string), `no option ${answer} in ${options}`);
       return answer;
     },
-    confirm: async (title: string) => { dialogs.push({ kind: "confirm", title }); return next(); },
+    confirm: async (title: string, message: string) => { dialogs.push({ kind: "confirm", title, message }); return next(); },
     custom: (factory: any) => new Promise(resolve => {
       const component = factory({ requestRender() {} }, theme, {}, resolve);
-      dialogs.push({ kind: "input", title: component.render(80)[0] });
+      dialogs.push({ kind: "input", title: component.render(80)[0], screen: component.render(80).join("\n") });
       const answer = next();
       if (answer === undefined) { component.handleInput(ESC); return; }
       for (const char of answer as string) { component.handleInput(char); screens.push(component.render(80).join("\n")); }
@@ -64,7 +65,7 @@ async function harness(t: TestContext) {
   } };
   const path = join(root, "pi-notify", "config.json");
   return {
-    root, path, ctx, script, dialogs, screens, warnings, sent,
+    root, path, ctx, script, dialogs, screens, warnings, notices, sent,
     status: () => status,
     emit: (name: string, outcome?: string) => handlers.get(name)!({ outcome }, ctx),
     run: async (args: string, ...answers: Answer[]) => {
@@ -100,7 +101,7 @@ test("a command connector saves and appears in the menu", async t => {
   const h = await harness(t);
   await h.run("setup", "Add connector", "Shell command", "echo hi", "Save", false);
   assert.deepEqual((await loadConfig(h.path)).connectors, [{ type: "command", run: "echo hi" }]);
-  await h.run("setup", "1. Command echo hi", "Cancel");
+  await h.run("setup", "1. Command echo hi", undefined, "Cancel");
 });
 
 test("$VAR values are stored unexpanded", async t => {
@@ -203,16 +204,133 @@ test("zero connectors block Save", async t => {
   assert.match(h.warnings.pop()!, /Add a connector/);
 });
 
-test("existing connectors are listed without tokens and preserved, not edited", async t => {
+test("existing connectors are listed without tokens and preserved on Save", async t => {
   const h = await harness(t);
   const existing = [{ type: "telegram", botToken: TOKEN, chatId: "-1", label: "phone" }, { type: "command", run: "echo\nhi" }, "stray", { type: "slack", url: "x" }];
   await h.write(JSON.stringify({ extra: true, connectors: existing }));
-  await h.run("setup", "1. Telegram -1", "Save", true);
+  await h.run("setup", "1. Telegram -1", undefined, "Save", true);
   const options = h.dialogs[0].options!;
-  assert.deepEqual(options.slice(0, 5), ["1. Telegram -1", "2. Command echo hi", "3. Unsupported connector", "4. Unsupported connector", "Add connector"]);
+  assert.deepEqual(options.slice(0, 5), ["1. Telegram -1", "2. Command echo hi", "3. Unsupported connector (needs fixing)", "4. Unsupported connector (needs fixing)", "Add connector"]);
   for (const dialog of h.dialogs) assert.ok(!JSON.stringify(dialog).includes(TOKEN));
   assert.deepEqual(JSON.parse(await readFile(h.path, "utf8")), { extra: true, connectors: existing });
   assert.equal(h.dialogs.filter(dialog => dialog.title === "Notify setup").length, 2);
+});
+
+const CLEAR = "\x15";
+const inputs = (h: { dialogs: { kind: string; screen?: string }[] }) => h.dialogs.filter(dialog => dialog.kind === "input").map(dialog => dialog.screen!);
+const saved = async (h: { path: string }) => JSON.parse(await readFile(h.path, "utf8"));
+
+test("a literal token never appears in a title, option, prefill, notification or masked render", async t => {
+  const h = await harness(t);
+  await h.write(JSON.stringify({ connectors: [
+    { type: "telegram", botToken: TOKEN, chatId: "-1" },
+    { type: "telegram", botToken: "$NOTIFY_SETUP_UNSET", chatId: TOKEN },
+  ] }));
+  await h.run("setup", "1. Telegram -1", "Edit", "bad/value", "", "", "2. Telegram (invalid) (needs fixing)", "Edit", "", "not-a-chat", undefined, "Save", true);
+  assert.ok(inputs(h)[0].includes("Leave empty to keep the stored token"));
+  assert.ok(h.notices.length > 0 && h.screens.length > 0);
+  const shown = JSON.stringify([h.dialogs, h.screens, h.notices]);
+  for (const secret of [TOKEN, "fake", "bad/value"]) assert.ok(!shown.includes(secret), secret);
+  assert.equal((await saved(h)).connectors[0].botToken, TOKEN);
+});
+
+test("changing only the chat ID leaves the token, $VAR values and unknown keys unchanged", async t => {
+  const h = await harness(t);
+  const literal = { label: "phone", botToken: TOKEN, type: "telegram", chatId: "-1", extra: { a: [1] } };
+  const variable = { type: "telegram", botToken: "$NOTIFY_SETUP_TOKEN", chatId: "$NOTIFY_SETUP_CHAT", label: "env" };
+  process.env.NOTIFY_SETUP_TOKEN = TOKEN;
+  process.env.NOTIFY_SETUP_CHAT = "-5";
+  t.after(() => { delete process.env.NOTIFY_SETUP_TOKEN; delete process.env.NOTIFY_SETUP_CHAT; });
+  await h.write(JSON.stringify({ custom: true, connectors: [literal, variable] }));
+  await h.run("setup", "1. Telegram -1", "Edit", "", `${CLEAR}-999`, "2. Telegram $NOTIFY_SETUP_CHAT", "Edit", "", "", ...SAVE_NO_TEST);
+  assert.equal(JSON.stringify(await saved(h)), JSON.stringify({ custom: true, connectors: [{ ...literal, chatId: "-999" }, variable] }));
+  const [literalToken, literalChat, variableToken, variableChat] = inputs(h);
+  assert.ok(!literalToken.includes("•") && !literalToken.includes(TOKEN), "literal token input is not prefilled");
+  assert.ok(literalChat.includes("> -1"));
+  assert.ok(variableToken.includes("> $NOTIFY_SETUP_TOKEN"));
+  assert.ok(variableChat.includes("> $NOTIFY_SETUP_CHAT"));
+});
+
+test("clearing a prefilled $VAR token keeps it and a bad entry re-prompts with the prefill only", async t => {
+  const h = await harness(t);
+  const content = { type: "telegram", botToken: "$NOTIFY_SETUP_UNSET", chatId: "-1" };
+  await h.write(JSON.stringify({ connectors: [content] }));
+  await h.run("setup", "1. Telegram -1 (needs fixing)", "Edit", ":secret", CLEAR, "", "Save", true);
+  assert.ok(inputs(h)[1].includes("> $NOTIFY_SETUP_UNSET") && !inputs(h)[1].includes("secret"));
+  assert.equal(h.warnings.length, 1);
+  assert.deepEqual(await saved(h), { connectors: [content] });
+});
+
+test("a missing stored token cannot be kept with empty input", async t => {
+  const h = await harness(t);
+  await h.write(JSON.stringify({ connectors: [{ type: "telegram", botToken: 5, chatId: 7 }] }));
+  await h.run("setup", "1. Telegram (invalid) (needs fixing)", "Edit", "", TOKEN, "", "-1", ...SAVE_NO_TEST);
+  assert.ok(!inputs(h)[0].includes("Leave empty"));
+  assert.equal(h.warnings.length, 2);
+  assert.deepEqual((await loadConfig(h.path)).connectors, [{ type: "telegram", botToken: TOKEN, chatId: "-1" }]);
+});
+
+test("a connector with an unset $VAR is flagged, opens and can be fixed", async t => {
+  const h = await harness(t);
+  await h.write(JSON.stringify({ connectors: [
+    { type: "telegram", botToken: "$NOTIFY_SETUP_UNSET", chatId: "-1", label: "phone" },
+    { type: "command", run: "$NOTIFY_SETUP_UNSET" },
+  ] }));
+  await h.run("setup", "1. Telegram -1 (needs fixing)", "Edit", `${CLEAR}${TOKEN}`, "", "2. Command $NOTIFY_SETUP_UNSET (needs fixing)", "Edit", `${CLEAR}echo hi`, ...SAVE_NO_TEST);
+  assert.deepEqual(h.dialogs.filter(dialog => dialog.kind === "confirm").map(dialog => dialog.title), ["Send a test notification?"]);
+  assert.deepEqual((await saved(h)).connectors, [{ type: "telegram", botToken: TOKEN, chatId: "-1", label: "phone" }, { type: "command", run: "echo hi" }]);
+  await h.run("setup", "Cancel");
+  assert.deepEqual(h.dialogs.at(-1)?.options?.slice(0, 2), ["1. Telegram -1", "2. Command echo hi"]);
+});
+
+test("Esc during an edit keeps the stored connector", async t => {
+  const h = await harness(t);
+  const connector = { type: "telegram", botToken: TOKEN, chatId: "-1" };
+  await h.write(JSON.stringify({ connectors: [connector] }));
+  await h.run("setup", "1. Telegram -1", undefined, "1. Telegram -1", "Edit", undefined, "1. Telegram -1", "Edit", "$NOTIFY_SETUP_NEW", undefined, "Save", false);
+  assert.deepEqual(await saved(h), { connectors: [connector] });
+});
+
+test("removing the last connector blocks Save and Cancel leaves the file", async t => {
+  const h = await harness(t);
+  const content = JSON.stringify({ connectors: [{ type: "telegram", botToken: TOKEN, chatId: "-1" }] });
+  await h.write(content);
+  await h.run("setup", "1. Telegram -1", "Remove", "Save", "Cancel");
+  assert.match(h.warnings.pop()!, /Add a connector/);
+  assert.equal(h.dialogs.at(-1)?.options?.[0], "Add connector");
+  assert.equal(await readFile(h.path, "utf8"), content);
+});
+
+test("unsupported connectors can only be removed, and removal targets the chosen row", async t => {
+  const h = await harness(t);
+  const command = { type: "command", run: "true" };
+  await h.write(JSON.stringify({ connectors: ["stray", { type: "slack", url: "x" }, command] }));
+  await h.run("setup", "1. Unsupported connector (needs fixing)", undefined, "2. Unsupported connector (needs fixing)", "Remove", "1. Unsupported connector (needs fixing)", "Remove", ...SAVE_NO_TEST);
+  assert.deepEqual(h.dialogs[1].options, ["Remove"]);
+  assert.deepEqual(h.dialogs[3].options, ["Remove"]);
+  assert.deepEqual(await saved(h), { connectors: [command] });
+});
+
+test("command edits prefill run, keep unknown keys and keep an unchanged run byte-identical", async t => {
+  const h = await harness(t);
+  await h.write(JSON.stringify({ connectors: [{ type: "command", run: " echo hi ", label: "shell" }, { type: "command", run: "true" }] }));
+  await h.run("setup", "1. Command  echo hi ", "Edit", "", "2. Command true", "Edit", " --x", ...SAVE_NO_TEST);
+  assert.ok(inputs(h)[0].includes(">  echo hi"));
+  assert.deepEqual((await saved(h)).connectors, [{ type: "command", run: " echo hi ", label: "shell" }, { type: "command", run: "true --x" }]);
+});
+
+test("a multi-line run is not editable, so it cannot be flattened, and can still be removed", async t => {
+  const h = await harness(t);
+  const multiLine = { type: "command", run: "printf a\nprintf\tb" };
+  await h.write(JSON.stringify({ connectors: [multiLine, { type: "command", run: "true" }] }));
+  const label = "1. Command printf a printf b";
+  await h.run("setup", label, undefined, ...SAVE_NO_TEST);
+  assert.deepEqual(h.dialogs[1].options, ["Remove"]);
+  assert.match(h.dialogs[1].title, /multi-line.*config\.json/);
+  assert.equal(inputs(h).length, 0);
+  assert.deepEqual((await saved(h)).connectors[0], multiLine);
+  await h.run("setup", label, "Remove", ...SAVE_NO_TEST);
+  assert.deepEqual((await saved(h)).connectors, [{ type: "command", run: "true" }]);
 });
 
 test("declining the test sends nothing and accepting sends once", async t => {
