@@ -34,22 +34,22 @@
 - **Build mode** — Orchestrator; worker Opus 5.5 medium, reviewer Opus 5.5 high
 
 ## Progress
-Active: 1 · 0/21 tasks
+Active: 1 · 11/21 tasks
 
 ### Phase 1 — Create a working config from nothing
 A new user can run `/notify setup`, add a Telegram or command connector, set options, save, and send a test without touching JSON.
 **Blocked by:** none
-- [ ] Load raw config into an editable draft, and refuse malformed JSON, a non-object file, or a non-array `connectors` without writing (packages/notify/src/config.ts)
-- [ ] Save the draft atomically with owner-only permissions, writing through a symlinked config (packages/notify/src/config.ts)
-- [ ] Add a text input with an initial value and optional mask, masking literal tokens while `$VARIABLE` references stay readable (packages/notify/src/text-input.ts)
-- [ ] Add the pi-tui peer dependency (packages/notify/package.json)
-- [ ] Build the menu with connector rows, Add connector, option toggles, Save, and Cancel, opening on Add connector when the list is empty (packages/notify/src/setup.ts)
-- [ ] Prompt for Telegram and command connector fields, with chat ID hint text and format checks (packages/notify/src/setup.ts)
-- [ ] Block Save with zero connectors, and ask for confirmation on Save when the draft fails `parseConfig` (packages/notify/src/setup.ts)
-- [ ] Route `/notify setup` ahead of the config load and update the usage text and command description (packages/notify/src/index.ts)
-- [ ] Refuse `/notify setup` with a warning while a run is active (packages/notify/src/index.ts)
-- [ ] Refresh `nerdFont` and status from the draft after Save, then offer a test through `send()` only if the config validates (packages/notify/src/index.ts)
-- [ ] Test the flow with stubbed dialogs (packages/notify/test/setup.test.ts)
+- [x] Load raw config into an editable draft, and refuse malformed JSON, a non-object file, or a non-array `connectors` without writing (packages/notify/src/config.ts)
+- [x] Save the draft atomically with owner-only permissions, writing through a symlinked config (packages/notify/src/config.ts)
+- [x] Add a text input with an initial value and optional mask, masking literal tokens while `$VARIABLE` references stay readable (packages/notify/src/text-input.ts)
+- [x] Add the pi-tui peer dependency (packages/notify/package.json)
+- [x] Build the menu with connector rows, Add connector, option toggles, Save, and Cancel, opening on Add connector when the list is empty (packages/notify/src/setup.ts)
+- [x] Prompt for Telegram and command connector fields, with chat ID hint text and format checks (packages/notify/src/setup.ts)
+- [x] Block Save with zero connectors, and ask for confirmation on Save when the draft fails `parseConfig` (packages/notify/src/setup.ts)
+- [x] Route `/notify setup` ahead of the config load and update the usage text and command description (packages/notify/src/index.ts)
+- [x] Refuse `/notify setup` with a warning while a run is active (packages/notify/src/index.ts)
+- [x] Refresh `nerdFont` and status from the draft after Save, then offer a test through `send()` only if the config validates (packages/notify/src/index.ts)
+- [x] Test the flow with stubbed dialogs (packages/notify/test/setup.test.ts)
 **Verify:** `npm test -w packages/notify` passes with new cases showing: from no config, driving the dialogs writes a file that `loadConfig` accepts, with mode `0600`; `$VAR` values are stored unexpanded; Cancel writes nothing; malformed JSON and a non-array `connectors` stay byte-identical; rendering the masked input never contains a literal token; declining the test sends nothing and accepting sends once; during a run, `/notify setup` warns and opens no dialog; saving with an unset `$VAR` or a kept unsupported connector requires confirmation, offers no test, and leaves `/notify on` armed.
 
 ### Phase 2 — Change an existing config without exposing the token
@@ -61,6 +61,7 @@ An existing user can edit or remove any connector from the menu, and the stored 
 - [ ] Flag connectors that fail validation in the menu without showing their secrets (packages/notify/src/setup.ts)
 - [ ] Test edits against configs with literal tokens, `$VAR` values, and unknown keys (packages/notify/test/setup.test.ts)
 **Verify:** `npm test -w packages/notify` passes with new cases showing: from a config with a literal token, no dialog title, option, prefill, notification, or masked render contains it; changing only the chat ID leaves the token, `$VAR` values, and unknown keys unchanged in the saved file; a connector with an unset `$VAR` opens and can be fixed; removing the last connector blocks Save.
+**Note:** Paste prefill alters a multi-line `run`: `handlePaste` (`text-input.ts:19`) strips newlines and expands tabs, so a stored `printf a\nprintf\tb` becomes `printf aprintf    b` and Enter would silently save a different command, while `parseConfig` accepts multi-line `run`; the `run` edit must handle this, e.g. keep the stored value when input is unchanged, or treat a multi-line `run` as not editable.
 
 ### Phase 3 — Keep setup safe during session changes and concurrent edits
 A user can use setup without lost edits or a half-open dialog, and the README explains it, including that setup is refused during a run.

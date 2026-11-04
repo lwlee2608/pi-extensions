@@ -4,6 +4,7 @@ import { Type } from "typebox";
 import { loadConfig } from "./config.ts";
 import { sendCommand, sendTelegram } from "./connectors.ts";
 import { formatMessage } from "./message.ts";
+import { runSetup } from "./setup.ts";
 import { NotifyState } from "./state.ts";
 
 export default function (pi: ExtensionAPI): void {
@@ -70,12 +71,27 @@ export default function (pi: ExtensionAPI): void {
     status(ctx);
     if (outcome) void send(ctx, formatMessage(ctx.sessionManager.getSessionName(), ctx.cwd, outcome));
   });
+  async function setup(ctx: ExtensionContext): Promise<void> {
+    if (activeRun) {
+      ctx.ui.notify("Notify setup is unavailable during a run; try again when it finishes.", "warning");
+      return;
+    }
+    const result = await runSetup(ctx.ui, path);
+    if (!result) return;
+    nerdFont = result.draft.nerdFont === true;
+    status(ctx);
+    ctx.ui.notify("Notify config saved.", "info");
+    if (result.valid && await ctx.ui.confirm("Send a test notification?", "This sends to every connector and runs any shell command connector.")) {
+      void send(ctx, formatMessage(ctx.sessionManager.getSessionName(), ctx.cwd, "test"));
+    }
+  }
   async function act(args: string, ctx: ExtensionContext, tool = false): Promise<void> {
     if (ctx.mode !== "tui") {
       if (tool) throw new Error("notify_me is only available in TUI mode.");
       return;
     }
     const action = args.trim();
+    if (action === "setup") return setup(ctx);
     const current = generation;
     const request = ++command;
     const stale = () => {
@@ -102,11 +118,11 @@ export default function (pi: ExtensionAPI): void {
       state.armed = action === "on" || (tool && state.armed === "on") ? "on" : "once";
       status(ctx);
     } else {
-      ctx.ui.notify("Usage: /notify [on|off|test]", "warning");
+      ctx.ui.notify("Usage: /notify [on|off|test|setup]", "warning");
     }
   }
   pi.registerCommand("notify", {
-    description: "Arm phone notifications: next run (no args), on, off, or test",
+    description: "Arm phone notifications: next run (no args), on, off, or test; setup edits the config",
     handler: (args, ctx) => act(args, ctx),
   });
   pi.registerTool({
