@@ -84,7 +84,7 @@ test("Telegram sends JSON without parse mode, checks API failures, redacts error
   await assert.rejects(pending, /Telegram send failed/);
 });
 
-test("command passes text literally in env, redacts failures and cleans up on abort/timeout", async () => {
+test("command passes text literally in env, redacts failures and cleans up on abort/timeout", async t => {
   const root = await mkdtemp(join(tmpdir(), "notify-command-"));
   try {
     const text = 'hello "quotes"\n$(touch injected); `touch injected`';
@@ -95,9 +95,10 @@ test("command passes text literally in env, redacts failures and cleans up on ab
     const controller = new AbortController();
     const pending = sendCommand({ type: "command", run: "sleep 1; touch leaked" }, text, controller.signal, root);
     controller.abort(); await assert.rejects(pending, /Command send failed/);
-    const start = Date.now();
-    await assert.rejects(sendCommand({ type: "command", run: "sleep 11; touch leaked" }, text, undefined, root), /timeout/);
-    assert.ok(Date.now() - start < SEND_TIMEOUT_MS + 2000);
+    const realSetTimeout = globalThis.setTimeout;
+    const timer = t.mock.method(globalThis, "setTimeout", (fn: () => void, ms: number) => { assert.equal(ms, SEND_TIMEOUT_MS); return realSetTimeout(fn, 100); });
+    await assert.rejects(sendCommand({ type: "command", run: "sleep 1; touch leaked" }, text, undefined, root), /timeout/);
+    timer.mock.restore();
     await new Promise(resolve => setTimeout(resolve, 1200));
     await assert.rejects(readFile(join(root, "leaked")), /ENOENT/);
     await assert.rejects(sendCommand({ type: "command", run: "touch leaked" }, text, controller.signal, root), /Command send failed/);
