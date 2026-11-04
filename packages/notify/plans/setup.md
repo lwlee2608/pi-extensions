@@ -34,7 +34,7 @@
 - **Build mode** — Orchestrator; worker Opus 5.5 medium, reviewer Opus 5.5 high
 
 ## Progress
-Active: 1 · 11/21 tasks
+Active: 2 · 11/21 tasks
 
 ### Phase 1 — Create a working config from nothing
 A new user can run `/notify setup`, add a Telegram or command connector, set options, save, and send a test without touching JSON.
@@ -72,6 +72,7 @@ A user can use setup without lost edits or a half-open dialog, and the README ex
 - [ ] Test each guard, including that arming state is unchanged by setup (packages/notify/test/setup.test.ts)
 - [ ] Document `/notify setup` and lead Configure with it, keeping the manual JSON docs (packages/notify/README.md)
 **Verify:** `npm test -w packages/notify` passes with new cases showing: a second `/notify setup` while one is open opens no new dialog; session reset closes setup and leaves the file unchanged; changing the file after opening triggers a confirm, and declining leaves the outside edit intact; `/notify on` status is the same before and after setup.
+**Note:** Known and not scheduled, from Phase 1 review. The run guard (`index.ts:75`) misses the time before `agent_start`, such as pre-prompt compaction; `!ctx.isIdle()` closes the compaction part only. `followSymlinks` (`config.ts:81`) resolves link text lexically, so a link like `sym/../config.json` can write to the wrong path; `realpath` first would fix it. The masked input's hidden cursor can move on left/right.
 
 ## Demo
 User runs, with a real Telegram bot and phone:
