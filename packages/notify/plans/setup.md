@@ -34,13 +34,13 @@
 - **Build mode** — Orchestrator; worker Opus 5.5 medium, reviewer Opus 5.5 high
 
 ## Progress
-Active: 1 · 0/21 tasks
+Active: 1 · 2/21 tasks
 
 ### Phase 1 — Create a working config from nothing
 A new user can run `/notify setup`, add a Telegram or command connector, set options, save, and send a test without touching JSON.
 **Blocked by:** none
-- [ ] Load raw config into an editable draft, and refuse malformed JSON, a non-object file, or a non-array `connectors` without writing (packages/notify/src/config.ts)
-- [ ] Save the draft atomically with owner-only permissions, writing through a symlinked config (packages/notify/src/config.ts)
+- [x] Load raw config into an editable draft, and refuse malformed JSON, a non-object file, or a non-array `connectors` without writing (packages/notify/src/config.ts)
+- [x] Save the draft atomically with owner-only permissions, writing through a symlinked config (packages/notify/src/config.ts)
 - [ ] Add a text input with an initial value and optional mask, masking literal tokens while `$VARIABLE` references stay readable (packages/notify/src/text-input.ts)
 - [ ] Add the pi-tui peer dependency (packages/notify/package.json)
 - [ ] Build the menu with connector rows, Add connector, option toggles, Save, and Cancel, opening on Add connector when the list is empty (packages/notify/src/setup.ts)
