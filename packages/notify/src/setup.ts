@@ -60,27 +60,32 @@ async function askTelegram(ui: ExtensionUIContext, stored: Record<string, unknow
   return chatId === undefined ? undefined : { ...stored, type: "telegram", botToken: botToken || kept, chatId };
 }
 
+async function askCommand(ui: ExtensionUIContext, stored: Record<string, unknown> = {}): Promise<object | undefined> {
+  const initial = typeof stored.run === "string" ? stored.run : undefined;
+  const run = await ask(ui, {
+    title: "Shell command",
+    hint: "Runs in the session directory with the message in $PI_NOTIFY_TEXT. Only use commands you trust.",
+    initial,
+  }, value => value ? undefined : "The command cannot be empty.");
+  return run === undefined ? undefined : { ...stored, type: "command", run: run === initial?.trim() ? initial : run };
+}
+
 async function addConnector(ui: ExtensionUIContext): Promise<object | undefined> {
   const type = await ui.select("Connector type", [TELEGRAM, COMMAND]);
   if (type === TELEGRAM) return askTelegram(ui);
-  if (type === COMMAND) {
-    const run = await ask(ui, {
-      title: "Shell command",
-      hint: "Runs in the session directory with the message in $PI_NOTIFY_TEXT. Only use commands you trust.",
-    }, value => value ? undefined : "The command cannot be empty.");
-    return run === undefined ? undefined : { type: "command", run };
-  }
+  if (type === COMMAND) return askCommand(ui);
   return undefined;
 }
 
 async function changeConnector(ui: ExtensionUIContext, draft: Draft, index: number, label: string): Promise<void> {
   const stored = (draft.connectors[index] ?? {}) as Record<string, unknown>;
-  if (stored.type !== "telegram") {
+  const multiLine = stored.type === "command" && typeof stored.run === "string" && text(stored.run) !== stored.run;
+  if ((stored.type !== "telegram" && stored.type !== "command") || multiLine) {
     ui.notify("Edit this connector in pi-notify/config.json for now.", "info");
     return;
   }
   if (await ui.select(label, [EDIT]) !== EDIT) return;
-  const edited = await askTelegram(ui, stored);
+  const edited = await (stored.type === "telegram" ? askTelegram : askCommand)(ui, stored);
   if (edited) draft.connectors[index] = edited;
 }
 

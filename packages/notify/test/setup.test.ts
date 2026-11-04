@@ -100,7 +100,7 @@ test("a command connector saves and appears in the menu", async t => {
   const h = await harness(t);
   await h.run("setup", "Add connector", "Shell command", "echo hi", "Save", false);
   assert.deepEqual((await loadConfig(h.path)).connectors, [{ type: "command", run: "echo hi" }]);
-  await h.run("setup", "1. Command echo hi", "Cancel");
+  await h.run("setup", "1. Command echo hi", undefined, "Cancel");
 });
 
 test("$VAR values are stored unexpanded", async t => {
