@@ -6,18 +6,32 @@ import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
+import { getKeybindings, visibleWidth } from "@earendil-works/pi-tui";
 import { loadConfig, loadDraft, saveDraft } from "../src/config.ts";
+import { SetupMenu } from "../src/setup-menu.ts";
 import { TextInput } from "../src/text-input.ts";
 
 const TOKEN = "123:fake-token";
-const theme = { fg: (_color: string, text: string) => text } as any;
+const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text } as any;
 const ENTER = "\r";
 const ESC = "\x1b";
+const UP = "\x1b[A";
+const DOWN = "\x1b[B";
+const NARROW = [40, 30, 20, 10, 5, 3, 1];
 
 const OPEN = Symbol("stays open until the signal aborts");
 const HUNG = Symbol("replaced by another dialog, so never resolves");
 
-type Answer = string | boolean | undefined | symbol | (() => Answer);
+interface MenuAnswer { row: string; nth?: number; after?: () => void }
+type Answer = string | boolean | undefined | symbol | MenuAnswer | (() => Answer);
+
+const tidy = (text: string) => text.replace(/\s+/g, " ").trim();
+const press = (menu: SetupMenu, key: string) => {
+  const before = menu.render(80).join("\n");
+  menu.handleInput(key);
+  return menu.render(80).join("\n") !== before;
+};
+const cursorRow = (menu: SetupMenu) => tidy(menu.render(80).find(line => line.startsWith(" → "))!.slice(3));
 
 async function harness(t: TestContext) {
   const root = await mkdtemp(join(tmpdir(), "notify-setup-"));
@@ -37,7 +51,7 @@ async function harness(t: TestContext) {
     registerTool: () => {}, getActiveTools: () => [], setActiveTools: () => {},
   } as any, setup => { detached = setup; });
   const script: Answer[] = [];
-  const dialogs: { kind: string; title: string; options?: string[]; message?: string; screen?: string }[] = [];
+  const dialogs: { kind: string; title: string; options?: string[]; message?: string; screen?: string; narrow?: string[][]; cursor?: number }[] = [];
   const screens: string[] = [];
   const warnings: string[] = [];
   const notices: string[] = [];
@@ -67,6 +81,26 @@ async function harness(t: TestContext) {
   const hold = <T>(answer: symbol, signal: AbortSignal | undefined, closed: T) => new Promise<T>(resolve => {
     if (answer === OPEN) signal?.addEventListener("abort", () => resolve(closed), { once: true });
   });
+  const driveMenu = (menu: SetupMenu) => {
+    let cursor = 0;
+    while (press(menu, UP)) cursor++;
+    const options = [cursorRow(menu)];
+    while (press(menu, DOWN)) options.push(cursorRow(menu));
+    for (let i = options.length - 1; i > cursor; i--) menu.handleInput(UP);
+    const narrow = NARROW.map(width => menu.render(width));
+    NARROW.forEach((width, i) => check(narrow[i].every(line => visibleWidth(line) <= width), `menu overflows width ${width}`));
+    dialogs.push({ kind: "menu", title: tidy(menu.render(80)[0]), options, cursor, screen: menu.render(80).join("\n"), narrow });
+    const answer = next();
+    if (typeof answer === "symbol") return;
+    if (answer === undefined) { menu.handleInput(ESC); return; }
+    const { row, nth = 0, after } = (typeof answer === "string" ? { row: answer } : answer) as MenuAnswer;
+    const target = options.flatMap((option, i) => option === tidy(row) ? [i] : [])[nth];
+    check(target !== undefined, `no row ${row} in ${options}`);
+    for (let i = cursor; i < target; i++) menu.handleInput(DOWN);
+    for (let i = cursor; i > target; i--) menu.handleInput(UP);
+    menu.handleInput(ENTER);
+    after?.();
+  };
   const ctx = { mode: "tui", cwd: root, sessionManager: { getSessionName: () => "session" }, ui: {
     setStatus: (_key: string, text: string | undefined) => { active(); status = text; },
     notify: (text: string, type: string) => { active(); notices.push(text); if (type === "warning") warnings.push(text); },
@@ -87,7 +121,8 @@ async function harness(t: TestContext) {
     custom: (factory: any) => track(new Promise(resolve => {
       active();
       let component: any;
-      component = factory({ requestRender() {} }, theme, {}, (value: unknown) => { resolve(value); component.dispose?.(); });
+      component = factory({ requestRender() {} }, theme, getKeybindings(), (value: unknown) => { resolve(value); component.dispose?.(); });
+      if (component instanceof SetupMenu) { driveMenu(component); return; }
       dialogs.push({ kind: "input", title: component.render(80)[0], screen: component.render(80).join("\n") });
       const answer = next();
       if (typeof answer === "symbol") return;
@@ -125,14 +160,16 @@ async function harness(t: TestContext) {
   };
 }
 
+const menus = (h: { dialogs: { kind: string; options?: string[]; cursor?: number }[] }) => h.dialogs.filter(dialog => dialog.kind === "menu");
+const onCursor = (dialog: { options?: string[]; cursor?: number }) => dialog.options![dialog.cursor!];
 const flush = async () => { for (let i = 0; i < 30; i++) await new Promise(resolve => setTimeout(resolve, 2)); };
 const TELEGRAM = ["+ Add connector", "Telegram", TOKEN, "-123"];
 const SAVE_NO_TEST = ["Save and close", false];
 
 test("from no config, the dialogs write a config loadConfig accepts with owner-only permissions", async t => {
   const h = await harness(t);
-  await h.run("setup", ...TELEGRAM, "Option: notify when waiting for input [off]", "Option: Nerd Font status icon [off]", ...SAVE_NO_TEST);
-  assert.deepEqual(h.dialogs[0].options, ["+ Add connector", "Option: notify when waiting for input [off]", "Option: Nerd Font status icon [off]", "Save and close", "Discard and close"]);
+  await h.run("setup", ...TELEGRAM, "Notify when waiting for input off", "Nerd Font status icon off", ...SAVE_NO_TEST);
+  assert.deepEqual(h.dialogs[0].options, ["+ Add connector", "Notify when waiting for input off", "Nerd Font status icon off", "Save and close", "Discard and close"]);
   assert.deepEqual(await loadConfig(h.path), {
     onPrompt: true, nerdFont: true, connectors: [{ type: "telegram", botToken: TOKEN, chatId: "-123" }],
   });
@@ -146,7 +183,7 @@ test("a command connector saves and appears in the menu", async t => {
   const h = await harness(t);
   await h.run("setup", "+ Add connector", "Shell command", "echo hi", "Save and close", false);
   assert.deepEqual((await loadConfig(h.path)).connectors, [{ type: "command", run: "echo hi" }]);
-  await h.run("setup", "Edit 1: Command, echo hi", undefined, "Discard and close");
+  await h.run("setup", "Command, echo hi", undefined, "Discard and close");
 });
 
 test("$VAR values are stored unexpanded", async t => {
@@ -185,6 +222,7 @@ test("a parseable config without connectors opens and keeps unknown keys", async
   await h.write(JSON.stringify({ custom: { a: 1 }, onPrompt: "yes" }));
   await h.run("setup", ...TELEGRAM, "Save and close", true);
   const saved = JSON.parse(await readFile(h.path, "utf8"));
+  assert.ok(h.dialogs[0].options!.includes("Notify when waiting for input off"));
   assert.deepEqual(saved.custom, { a: 1 });
   assert.equal(saved.onPrompt, "yes");
   assert.equal(h.dialogs.find(dialog => dialog.kind === "confirm")?.title, "Save this invalid config?");
@@ -267,9 +305,9 @@ test("existing connectors are listed without tokens and preserved on Save", asyn
   const h = await harness(t);
   const existing = [{ type: "telegram", botToken: TOKEN, chatId: "-1", label: "phone" }, { type: "command", run: "echo\nhi" }, "stray", { type: "slack", url: "x" }];
   await h.write(JSON.stringify({ extra: true, connectors: existing }));
-  await h.run("setup", "Edit 1: Telegram, chat -1", undefined, "Save and close", true);
+  await h.run("setup", "Telegram, chat -1", undefined, "Save and close", true);
   const options = h.dialogs[0].options!;
-  assert.deepEqual(options.slice(0, 5), ["Edit 1: Telegram, chat -1", "Remove 2: Command, echo hi", "Remove 3: Unsupported connector (needs fixing)", "Remove 4: Unsupported connector (needs fixing)", "+ Add connector"]);
+  assert.deepEqual(options.slice(0, 5), ["Telegram, chat -1", "Command, echo hi (remove only)", "Not a connector (needs fixing) (remove only)", "Unsupported connector (needs fixing) (remove only)", "+ Add connector"]);
   for (const dialog of h.dialogs) assert.ok(!JSON.stringify(dialog).includes(TOKEN));
   assert.deepEqual(JSON.parse(await readFile(h.path, "utf8")), { extra: true, connectors: existing });
   assert.equal(h.dialogs.filter(dialog => dialog.title === "Notify setup").length, 2);
@@ -285,7 +323,7 @@ test("a literal token never appears in a title, option, prefill, notification or
     { type: "telegram", botToken: TOKEN, chatId: "-1" },
     { type: "telegram", botToken: "$NOTIFY_SETUP_UNSET", chatId: TOKEN },
   ] }));
-  await h.run("setup", "Edit 1: Telegram, chat -1", "Edit", "bad/value", "", "", "Edit 2: Telegram, chat (invalid) (needs fixing)", "Edit", "", "not-a-chat", undefined, "Save and close", true);
+  await h.run("setup", "Telegram, chat -1", "Edit", "bad/value", "", "", "Telegram, chat (invalid) (needs fixing)", "Edit", "", "not-a-chat", undefined, "Save and close", true);
   assert.ok(inputs(h)[0].includes("Leave empty to keep the stored token"));
   assert.ok(h.notices.length > 0 && h.screens.length > 0);
   const shown = JSON.stringify([h.dialogs, h.screens, h.notices]);
@@ -301,7 +339,7 @@ test("changing only the chat ID leaves the token, $VAR values and unknown keys u
   process.env.NOTIFY_SETUP_CHAT = "-5";
   t.after(() => { delete process.env.NOTIFY_SETUP_TOKEN; delete process.env.NOTIFY_SETUP_CHAT; });
   await h.write(JSON.stringify({ custom: true, connectors: [literal, variable] }));
-  await h.run("setup", "Edit 1: Telegram, chat -1", "Edit", "", `${CLEAR}-999`, "Edit 2: Telegram, chat $NOTIFY_SETUP_CHAT", "Edit", "", "", ...SAVE_NO_TEST);
+  await h.run("setup", "Telegram, chat -1", "Edit", "", `${CLEAR}-999`, "Telegram, chat $NOTIFY_SETUP_CHAT", "Edit", "", "", ...SAVE_NO_TEST);
   assert.equal(JSON.stringify(await saved(h)), JSON.stringify({ custom: true, connectors: [{ ...literal, chatId: "-999" }, variable] }));
   const [literalToken, literalChat, variableToken, variableChat] = inputs(h);
   assert.ok(!literalToken.includes("•") && !literalToken.includes(TOKEN), "literal token input is not prefilled");
@@ -314,7 +352,7 @@ test("clearing a prefilled $VAR token keeps it and a bad entry re-prompts with t
   const h = await harness(t);
   const content = { type: "telegram", botToken: "$NOTIFY_SETUP_UNSET", chatId: "-1" };
   await h.write(JSON.stringify({ connectors: [content] }));
-  await h.run("setup", "Edit 1: Telegram, chat -1 (needs fixing)", "Edit", ":secret", CLEAR, "", "Save and close", true);
+  await h.run("setup", "Telegram, chat -1 (needs fixing)", "Edit", ":secret", CLEAR, "", "Save and close", true);
   assert.ok(inputs(h)[1].includes("> $NOTIFY_SETUP_UNSET") && !inputs(h)[1].includes("secret"));
   assert.equal(h.warnings.length, 1);
   assert.deepEqual(await saved(h), { connectors: [content] });
@@ -323,7 +361,7 @@ test("clearing a prefilled $VAR token keeps it and a bad entry re-prompts with t
 test("a missing stored token cannot be kept with empty input", async t => {
   const h = await harness(t);
   await h.write(JSON.stringify({ connectors: [{ type: "telegram", botToken: 5, chatId: 7 }] }));
-  await h.run("setup", "Edit 1: Telegram, chat (invalid) (needs fixing)", "Edit", "", TOKEN, "", "-1", ...SAVE_NO_TEST);
+  await h.run("setup", "Telegram, chat (invalid) (needs fixing)", "Edit", "", TOKEN, "", "-1", ...SAVE_NO_TEST);
   assert.ok(!inputs(h)[0].includes("Leave empty"));
   assert.equal(h.warnings.length, 2);
   assert.deepEqual((await loadConfig(h.path)).connectors, [{ type: "telegram", botToken: TOKEN, chatId: "-1" }]);
@@ -335,18 +373,18 @@ test("a connector with an unset $VAR is flagged, opens and can be fixed", async 
     { type: "telegram", botToken: "$NOTIFY_SETUP_UNSET", chatId: "-1", label: "phone" },
     { type: "command", run: "$NOTIFY_SETUP_UNSET" },
   ] }));
-  await h.run("setup", "Edit 1: Telegram, chat -1 (needs fixing)", "Edit", `${CLEAR}${TOKEN}`, "", "Edit 2: Command, $NOTIFY_SETUP_UNSET (needs fixing)", "Edit", `${CLEAR}echo hi`, ...SAVE_NO_TEST);
+  await h.run("setup", "Telegram, chat -1 (needs fixing)", "Edit", `${CLEAR}${TOKEN}`, "", "Command, $NOTIFY_SETUP_UNSET (needs fixing)", "Edit", `${CLEAR}echo hi`, ...SAVE_NO_TEST);
   assert.deepEqual(h.dialogs.filter(dialog => dialog.kind === "confirm").map(dialog => dialog.title), ["Send a test notification?"]);
   assert.deepEqual((await saved(h)).connectors, [{ type: "telegram", botToken: TOKEN, chatId: "-1", label: "phone" }, { type: "command", run: "echo hi" }]);
   await h.run("setup", "Discard and close");
-  assert.deepEqual(h.dialogs.at(-1)?.options?.slice(0, 2), ["Edit 1: Telegram, chat -1", "Edit 2: Command, echo hi"]);
+  assert.deepEqual(h.dialogs.at(-1)?.options?.slice(0, 2), ["Telegram, chat -1", "Command, echo hi"]);
 });
 
 test("Esc during an edit keeps the stored connector", async t => {
   const h = await harness(t);
   const connector = { type: "telegram", botToken: TOKEN, chatId: "-1" };
   await h.write(JSON.stringify({ connectors: [connector] }));
-  await h.run("setup", "Edit 1: Telegram, chat -1", undefined, "Edit 1: Telegram, chat -1", "Edit", undefined, "Edit 1: Telegram, chat -1", "Edit", "$NOTIFY_SETUP_NEW", undefined, "Save and close", false);
+  await h.run("setup", "Telegram, chat -1", undefined, "Telegram, chat -1", "Edit", undefined, "Telegram, chat -1", "Edit", "$NOTIFY_SETUP_NEW", undefined, "Save and close", false);
   assert.deepEqual(await saved(h), { connectors: [connector] });
 });
 
@@ -354,7 +392,7 @@ test("removing the last connector blocks Save and close, and Discard and close l
   const h = await harness(t);
   const content = JSON.stringify({ connectors: [{ type: "telegram", botToken: TOKEN, chatId: "-1" }] });
   await h.write(content);
-  await h.run("setup", "Edit 1: Telegram, chat -1", "Remove", "Save and close", "Discard and close");
+  await h.run("setup", "Telegram, chat -1", "Remove", "Save and close", "Discard and close");
   assert.match(h.warnings.pop()!, /Add a connector/);
   assert.equal(h.dialogs.at(-1)?.options?.[0], "+ Add connector");
   assert.equal(await readFile(h.path, "utf8"), content);
@@ -364,7 +402,7 @@ test("unsupported connectors can only be removed, and removal targets the chosen
   const h = await harness(t);
   const command = { type: "command", run: "true" };
   await h.write(JSON.stringify({ connectors: ["stray", { type: "slack", url: "x" }, command] }));
-  await h.run("setup", "Remove 1: Unsupported connector (needs fixing)", undefined, "Remove 2: Unsupported connector (needs fixing)", "Remove", "Remove 1: Unsupported connector (needs fixing)", "Remove", ...SAVE_NO_TEST);
+  await h.run("setup", "Not a connector (needs fixing) (remove only)", undefined, "Unsupported connector (needs fixing) (remove only)", "Remove", "Not a connector (needs fixing) (remove only)", "Remove", ...SAVE_NO_TEST);
   assert.deepEqual(h.dialogs[1].options, ["Remove"]);
   assert.deepEqual(h.dialogs[3].options, ["Remove"]);
   assert.deepEqual(await saved(h), { connectors: [command] });
@@ -373,7 +411,7 @@ test("unsupported connectors can only be removed, and removal targets the chosen
 test("command edits prefill run, keep unknown keys and keep an unchanged run byte-identical", async t => {
   const h = await harness(t);
   await h.write(JSON.stringify({ connectors: [{ type: "command", run: " echo hi ", label: "shell" }, { type: "command", run: "true" }] }));
-  await h.run("setup", "Edit 1: Command,  echo hi ", "Edit", "", "Edit 2: Command, true", "Edit", " --x", ...SAVE_NO_TEST);
+  await h.run("setup", "Command,  echo hi ", "Edit", "", "Command, true", "Edit", " --x", ...SAVE_NO_TEST);
   assert.ok(inputs(h)[0].includes(">  echo hi"));
   assert.deepEqual((await saved(h)).connectors, [{ type: "command", run: " echo hi ", label: "shell" }, { type: "command", run: "true --x" }]);
 });
@@ -382,7 +420,7 @@ test("a multi-line run is not editable, so it cannot be flattened, and can still
   const h = await harness(t);
   const multiLine = { type: "command", run: "printf a\nprintf\tb" };
   await h.write(JSON.stringify({ connectors: [multiLine, { type: "command", run: "true" }] }));
-  const label = "Remove 1: Command, printf a printf b";
+  const label = "Command, printf a printf b (remove only)";
   await h.run("setup", label, undefined, ...SAVE_NO_TEST);
   assert.deepEqual(h.dialogs[1].options, ["Remove"]);
   assert.match(h.dialogs[1].title, /multi-line.*config\.json/);
@@ -392,21 +430,31 @@ test("a multi-line run is not editable, so it cannot be flattened, and can still
   assert.deepEqual((await saved(h)).connectors, [{ type: "command", run: "true" }]);
 });
 
-test("the menu shows the approved row labels in order", async t => {
+test("the menu renders the approved sections in order", async t => {
   const h = await harness(t);
-  await h.write(JSON.stringify({ onPrompt: true, connectors: [{ type: "telegram", botToken: TOKEN, chatId: "7551561956" }] }));
+  await h.write(JSON.stringify({ onPrompt: true, connectors: [{ type: "telegram", botToken: TOKEN, chatId: "7551561956" }, { type: "command", run: "echo hi" }] }));
   await h.run("setup", "Discard and close");
-  assert.deepEqual(h.dialogs[0].options, [
-    "Edit 1: Telegram, chat 7551561956",
-    "+ Add connector",
-    "Option: notify when waiting for input [on]",
-    "Option: Nerd Font status icon [off]",
-    "Save and close",
-    "Discard and close",
+  assert.deepEqual(h.dialogs[0].screen!.split("\n").map(line => line.trimEnd()), [
+    " Notify setup",
+    "",
+    " Connectors",
+    " → Telegram, chat 7551561956",
+    "   Command, echo hi",
+    "   + Add connector",
+    "",
+    " Options",
+    "   Notify when waiting for input     on",
+    "   Nerd Font status icon             off",
+    "",
+    ` ${"─".repeat(78)}`,
+    "   Save and close",
+    "   Discard and close",
+    "",
+    " ↑↓ navigate   enter select   esc discard",
   ]);
 });
 
-test("a row says Edit only when its select offers Edit, and shows no control characters", async t => {
+test("a row is marked remove only when its select offers only Remove, and shows no control characters", async t => {
   const h = await harness(t);
   await h.write(JSON.stringify({ connectors: [
     { type: "telegram", botToken: TOKEN, chatId: "$NOTIFY_SETUP_UNSET" },
@@ -418,26 +466,26 @@ test("a row says Edit only when its select offers Edit, and shows no control cha
     null,
   ] }));
   const rows = [
-    "Edit 1: Telegram, chat $NOTIFY_SETUP_UNSET (needs fixing)",
-    "Edit 2: Telegram, chat (invalid) (needs fixing)",
-    "Edit 3: Command, true",
-    "Edit 4: Command, (invalid) (needs fixing)",
-    "Remove 5: Command, echo hi ",
-    "Remove 6: Unsupported connector (needs fixing)",
-    "Remove 7: Unsupported connector (needs fixing)",
+    "Telegram, chat $NOTIFY_SETUP_UNSET (needs fixing)",
+    "Telegram, chat (invalid) (needs fixing)",
+    "Command, true",
+    "Command, (invalid) (needs fixing)",
+    "Command, echo hi (remove only)",
+    "Unsupported connector (needs fixing) (remove only)",
+    "Not a connector (needs fixing) (remove only)",
   ];
   await h.run("setup", ...rows.flatMap(row => [row, undefined]), "Discard and close");
   assert.deepEqual(h.dialogs[0].options!.slice(0, rows.length), rows);
   const actions = h.dialogs.filter(dialog => dialog.title !== "Notify setup").map(dialog => dialog.options);
-  assert.deepEqual(actions, rows.map(row => row.startsWith("Edit") ? ["Edit", "Remove"] : ["Remove"]));
+  assert.deepEqual(actions, rows.map(row => row.endsWith("(remove only)") ? ["Remove"] : ["Edit", "Remove"]));
   assert.ok(!JSON.stringify(h.dialogs).includes("fake"));
 });
 
 test("two identical Telegram connectors can each be edited or removed, and no label holds the token", async t => {
   const h = await harness(t);
   const same = { type: "telegram", botToken: TOKEN, chatId: "-1" };
-  const FIRST = "Edit 1: Telegram, chat -1";
-  const SECOND = "Edit 2: Telegram, chat -1";
+  const FIRST = { row: "Telegram, chat -1", nth: 0 };
+  const SECOND = { row: "Telegram, chat -1", nth: 1 };
   await h.write(JSON.stringify({ connectors: [same, same] }));
   await h.run("setup", SECOND, "Edit", "", `${CLEAR}-2`, ...SAVE_NO_TEST);
   assert.deepEqual((await saved(h)).connectors, [same, { ...same, chatId: "-2" }]);
@@ -456,6 +504,140 @@ test("two identical Telegram connectors can each be edited or removed, and no la
   assert.deepEqual((await saved(h)).connectors, [a]);
 
   for (const dialog of h.dialogs) assert.ok(!`${dialog.title} ${dialog.options}`.includes("fake"));
+});
+
+const SECTIONS = [
+  { header: "First", rows: [{ id: 0, label: "same" }, { id: 1, label: "same" }] },
+  { header: "Second", rows: [{ id: "x", label: "x", note: "on " }] },
+  { rows: [{ id: "y", label: "y" }] },
+];
+const menu = (done: (id: unknown) => void = () => {}, options = {}) => new SetupMenu({ title: "T", hint: "H", sections: SECTIONS, ...options }, theme, getKeybindings(), done);
+
+test("the cursor skips headers, blanks and the divider both ways and stops at the ends", () => {
+  const m = menu();
+  const line = () => m.render(30).findIndex(text => text.startsWith(" → "));
+  const stops = [3, 4, 7, 10];
+  assert.equal(m.render(30)[9].trim(), "─".repeat(28));
+  assert.equal(line(), stops[0]);
+  m.handleInput(UP);
+  assert.equal(line(), stops[0]);
+  for (const stop of stops.slice(1)) { m.handleInput(DOWN); assert.equal(line(), stop); }
+  m.handleInput(DOWN);
+  assert.equal(line(), stops.at(-1));
+  for (const stop of stops.slice(0, -1).reverse()) { m.handleInput(UP); assert.equal(line(), stop); }
+  m.handleInput("j");
+  assert.equal(line(), stops[1]);
+  m.handleInput("k");
+  assert.equal(line(), stops[0]);
+});
+
+test("the menu returns the row id, so identical labels stay apart, and Esc returns nothing", () => {
+  const chosen: unknown[] = [];
+  const m = menu(id => chosen.push(id));
+  m.handleInput(ENTER);
+  m.handleInput(DOWN);
+  m.handleInput(ENTER);
+  m.handleInput(ESC);
+  assert.deepEqual(chosen, [0, 1, undefined]);
+  assert.ok(menu(() => {}, { initial: "y" }).render(30)[10].startsWith(" → y"));
+  assert.ok(menu(() => {}, { initial: "gone" }).render(30)[3].startsWith(" → same"));
+});
+
+test("the menu closes on abort and stops listening once disposed", () => {
+  const chosen: unknown[] = [];
+  const open = new AbortController();
+  menu(id => chosen.push(id), { signal: open.signal });
+  open.abort();
+  assert.deepEqual(chosen, [undefined]);
+
+  const disposed = new AbortController();
+  const late: unknown[] = [];
+  menu(id => late.push(id), { signal: disposed.signal }).dispose();
+  disposed.abort();
+  assert.deepEqual(late, []);
+});
+
+test("long rows fit narrow widths and keep their marker, and option values stay aligned", async t => {
+  const h = await harness(t);
+  const long = "x".repeat(200);
+  await h.write(JSON.stringify({ onPrompt: true, connectors: [{ type: "command", run: `${long}\n` }, { type: "command", run: "界".repeat(100) }, { type: "slack" }] }));
+  await h.run("setup", "Discard and close");
+  const plain = (lines: string[]) => lines.map(line => line.replace(/\x1b\[[0-9;]*m/g, ""));
+  const at40 = plain(h.dialogs[0].narrow![0]);
+  assert.ok(at40.some(line => line.startsWith(" → Command, xxx") && line.endsWith("… (remove only)")));
+  assert.ok(at40.some(line => line.startsWith("   Unsuppo…") && line.endsWith("(needs fixing) (remove only)")));
+  assert.ok(tidy(at40.join(" ")).includes("esc discard"), "the footer stays readable when wrapped");
+  for (const lines of h.dialogs[0].narrow!.slice(0, 3).map(plain)) {
+    const values = lines.filter(line => /(on |off)$/.test(line)).map(line => line.search(/(on |off)$/));
+    assert.equal(values.length, 2);
+    assert.equal(values[0], values[1]);
+  }
+
+  const row = menu(() => {}, { sections: [{ rows: [{ id: 0, label: "a label too long for this", note: " (needs fixing) (remove only)" }] }] }).render(20)[3];
+  assert.ok(plain([row])[0].startsWith(" → a label…"), "the label keeps some of a narrow row");
+});
+
+test("no render holds a literal token, including one hand-placed in chatId", async t => {
+  const h = await harness(t);
+  await h.write(JSON.stringify({ connectors: [
+    { type: "telegram", botToken: TOKEN, chatId: "-1" },
+    { type: "telegram", botToken: TOKEN, chatId: TOKEN },
+    { type: TOKEN, botToken: TOKEN },
+    TOKEN,
+  ] }));
+  await h.run("setup", "Telegram, chat (invalid) (needs fixing)", undefined, "Discard and close");
+  assert.deepEqual(h.dialogs[0].options!.slice(1, 4), ["Telegram, chat (invalid) (needs fixing)", "Unsupported connector (needs fixing) (remove only)", "Not a connector (needs fixing) (remove only)"]);
+  const shown = JSON.stringify(h.dialogs);
+  for (const secret of [TOKEN, "fake", "123:"]) assert.ok(!shown.includes(secret), secret);
+});
+
+test("the menu opens on Add connector with no connectors and on the first row otherwise", async t => {
+  const h = await harness(t);
+  await h.run("setup", "Discard and close");
+  await h.write(JSON.stringify({ connectors: [{ type: "command", run: "a" }, { type: "command", run: "b" }] }));
+  await h.run("setup", "Discard and close");
+  assert.deepEqual(menus(h).map(onCursor), ["+ Add connector", "Command, a"]);
+});
+
+test("the cursor stays on the row acted on across toggles, sub-dialog Esc and a blocked Save", async t => {
+  const h = await harness(t);
+  await h.write(JSON.stringify({ connectors: [{ type: "command", run: "a" }, { type: "command", run: "b" }, { type: "slack" }] }));
+  const slack = "Unsupported connector (needs fixing) (remove only)";
+  await h.run("setup",
+    "Nerd Font status icon off",
+    "Nerd Font status icon on",
+    "Command, b", undefined,
+    "Command, b", "Edit", undefined,
+    "+ Add connector", undefined,
+    "Save and close", false,
+    slack, undefined,
+    "Discard and close");
+  assert.deepEqual(menus(h).map(onCursor), [
+    "Command, a",
+    "Nerd Font status icon on",
+    "Nerd Font status icon off",
+    "Command, b",
+    "Command, b",
+    "+ Add connector",
+    "Save and close",
+    slack,
+  ]);
+  assert.equal(h.dialogs.filter(dialog => dialog.title === "Notify setup").length, 8);
+});
+
+test("the cursor follows Add connector and an edited row", async t => {
+  const h = await harness(t);
+  await h.write(COMMAND_CONFIG);
+  await h.run("setup", "+ Add connector", "Shell command", "echo hi", "Command, echo hi", "Edit", `${CLEAR}echo bye`, "Discard and close");
+  assert.deepEqual(menus(h).map(onCursor), ["Command, true", "+ Add connector", "Command, echo bye"]);
+});
+
+test("the cursor is clamped after a removal", async t => {
+  const h = await harness(t);
+  const [a, b, c] = ["a", "b", "c"].map(run => ({ type: "command", run }));
+  await h.write(JSON.stringify({ connectors: [a, b, c] }));
+  await h.run("setup", "Command, b", "Remove", "Command, c", "Remove", "Command, a", "Remove", "Discard and close");
+  assert.deepEqual(menus(h).map(onCursor), ["Command, a", "Command, c", "Command, a", "+ Add connector"]);
 });
 
 test("declining the test sends nothing and accepting sends once", async t => {
@@ -510,7 +692,7 @@ for (const [name, connector] of [
     assert.equal(h.dialogs.at(-2)?.title, "Save this invalid config?");
 
     h.dialogs.length = 0;
-    await h.run("setup", "Option: Nerd Font status icon [off]", "Save and close", true);
+    await h.run("setup", "Nerd Font status icon off", "Save and close", true);
     assert.deepEqual(h.dialogs.filter(dialog => dialog.kind === "confirm").map(dialog => dialog.title), ["Save this invalid config?"]);
     assert.equal(JSON.parse(await readFile(h.path, "utf8")).nerdFont, true);
     await assert.rejects(loadConfig(h.path));
@@ -526,7 +708,7 @@ test("a valid save refreshes nerdFont status without changing arming", async t =
   assert.equal(h.status(), undefined);
   await h.run("on");
   assert.equal(h.status(), "🔔 on");
-  await h.run("setup", "Option: Nerd Font status icon [off]", ...SAVE_NO_TEST);
+  await h.run("setup", "Nerd Font status icon off", ...SAVE_NO_TEST);
   assert.equal(h.status(), " on");
 });
 
@@ -535,7 +717,7 @@ const until = async (check: () => boolean) => {
   assert.ok(check(), "condition not reached");
 };
 const COMMAND_CONFIG = JSON.stringify({ connectors: [{ type: "command", run: "true" }] });
-const ROW = "Edit 1: Command, true";
+const ROW = "Command, true";
 const OVERWRITE = "Overwrite outside changes?";
 const ALREADY_OPEN = "Notify setup is already open; if you cannot see it, /reload clears it.";
 const edit = (path: string, content: string, answer: Answer) => () => { writeFileSync(path, content); return answer; };
@@ -572,17 +754,17 @@ test("the command handler returns while setup stays open, so Pi's input loop is 
 
 test("a setup failure is reported as a warning, and stays silent after session reset", async t => {
   const h = await harness(t);
-  const { select } = h.ctx.ui;
-  h.ctx.ui.select = (async () => { throw new Error("dialog broke"); }) as any;
+  const { custom } = h.ctx.ui;
+  h.ctx.ui.custom = (async () => { throw new Error("dialog broke"); }) as any;
   await h.run("setup");
   assert.deepEqual(h.warnings, ["Notify setup failed: dialog broke"]);
 
   h.warnings.length = 0;
-  h.ctx.ui.select = (async () => { h.emit("session_shutdown"); throw new Error("dialog broke"); }) as any;
+  h.ctx.ui.custom = (async () => { h.emit("session_shutdown"); throw new Error("dialog broke"); }) as any;
   await h.run("setup");
   assert.deepEqual(h.warnings, []);
   h.emit("session_start");
-  h.ctx.ui.select = select;
+  h.ctx.ui.custom = custom;
   await h.run("setup", "Discard and close");
   assert.equal(h.dialogs.length, 1);
 });
@@ -602,7 +784,7 @@ test("a dialog that never resolves blocks a second setup only until session rese
 });
 
 for (const [name, kind, answers] of [
-  ["the menu", "select", [OPEN]],
+  ["the menu", "menu", [OPEN]],
   ["the connector type", "select", ["+ Add connector", OPEN]],
   ["the connector action", "select", [ROW, OPEN]],
   ["the masked token input", "input", ["+ Add connector", "Telegram", OPEN]],
@@ -639,15 +821,16 @@ test("session reset at the overwrite confirm leaves the outside edit", async t =
 });
 
 const INVALID_CONFIG = JSON.stringify({ connectors: [{ type: "slack" }] });
-for (const [name, content, before, choice] of [
-  ["Save and close is chosen", COMMAND_CONFIG, [], "Save and close"],
-  ["Save and close is chosen on an invalid config", INVALID_CONFIG, [], "Save and close"],
-  ["a connector type is chosen", COMMAND_CONFIG, ["+ Add connector"], "Telegram"],
-] as [string, string, Answer[], string][]) {
+const saveThen = (reset: () => void): Answer => ({ row: "Save and close", after: reset });
+for (const [name, content, before, choose] of [
+  ["Save and close is chosen", COMMAND_CONFIG, [], saveThen],
+  ["Save and close is chosen on an invalid config", INVALID_CONFIG, [], saveThen],
+  ["a connector type is chosen", COMMAND_CONFIG, ["+ Add connector"], (reset: () => void) => () => { reset(); return "Telegram"; }],
+] as [string, string, Answer[], (reset: () => void) => Answer][]) {
   test(`session reset at the moment ${name} opens no dialog and writes nothing`, async t => {
     const h = await harness(t);
     await h.write(content);
-    await h.run("setup", ...before, () => { h.emit("session_shutdown"); return choice; });
+    await h.run("setup", ...before, choose(() => h.emit("session_shutdown")));
     assert.equal(h.depth(), 0);
     assert.equal(h.dialogs.length, before.length + 1);
     assert.equal(await readFile(h.path, "utf8"), content);
@@ -713,7 +896,7 @@ test("changing the file after opening asks first, and declining leaves the outsi
   assert.deepEqual(h.dialogs.map(dialog => dialog.title), ["Notify setup", OVERWRITE, "Notify setup"]);
   assert.equal(await readFile(h.path, "utf8"), outside);
 
-  await h.run("setup", edit(h.path, COMMAND_CONFIG, "Option: Nerd Font status icon [off]"), "Save and close", true, false);
+  await h.run("setup", edit(h.path, COMMAND_CONFIG, "Nerd Font status icon off"), "Save and close", true, false);
   assert.deepEqual(await saved(h), { connectors: [{ type: "command", run: "outside" }], nerdFont: true });
 });
 

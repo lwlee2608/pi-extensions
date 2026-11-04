@@ -12,7 +12,7 @@ Requires Node.js 22.19+ and Pi 1.0.0. Run `/reload` after installing.
 
 ## Configure
 
-Run `/notify setup` in the TUI. It adds, edits, and removes Telegram and shell command connectors, toggles `onPrompt` and `nerdFont`, and offers a test send after saving.
+Run `/notify setup` in the TUI. Its menu has a section for connectors, a section for options, and Save and close or Discard and close below a divider. It adds, edits, and removes Telegram and shell command connectors, toggles `onPrompt` and `nerdFont`, and offers a test send after saving.
 
 - Changes stay in a draft until Save and close. Discard and close or Esc at the menu writes nothing; Esc in a sub-dialog goes back.
 - Literal bot tokens are masked as you type and never shown again. On edit, empty input keeps the stored token. `$VAR` references stay readable and are saved unexpanded.
@@ -20,7 +20,7 @@ Run `/notify setup` in the TUI. It adds, edits, and removes Telegram and shell c
 - If the file changed since setup opened, Save and close asks before overwriting it.
 - Malformed JSON, a non-object file, or a `connectors` value that is not an array is refused with a warning; fix those by hand. A bad connector opens normally so it can be fixed.
 - Saving a config that fails validation asks first, offers no test, and keeps all notifications refused until it is fixed.
-- Unknown keys survive a save. Unsupported connector types and multi-line `run` values can only be removed; edit a multi-line `run` in the file.
+- Unknown keys survive a save. Unsupported connector types and multi-line `run` values show `(remove only)`; edit a multi-line `run` in the file.
 - Setup never changes arming. The test send runs every connector, including shell commands, and only on an explicit yes.
 - The file is written atomically with mode `0600`, and a symlinked config is written through.
 

@@ -6,7 +6,7 @@
 
 ## Decisions
 - **Interview depth** — key decisions only
-- **Flow shape** — One menu of connectors and options on Pi's select dialog, with one small custom text input for every text field. A new user goes straight to adding a connector. Changes stay in a draft until Save; Esc in a sub-dialog goes back, and Cancel or Esc at the menu writes nothing
+- **Flow shape** — One sectioned custom menu of connectors, options, and save/discard, with one small custom text input for every text field; Pi's select has no headers, unselectable rows, or initial index `research`. A new user goes straight to adding a connector. Changes stay in a draft until Save; Esc in a sub-dialog goes back, and Cancel or Esc at the menu writes nothing
 - **Existing connectors** — Add, edit, or remove any connector in the list. Save is blocked with zero connectors
 - **Invalid existing config** — Malformed JSON, a non-object file, or a `connectors` value that is present but not an array: warn and write nothing; the user fixes it by hand. A parseable file with a bad connector opens normally so it can be fixed. A non-object connector entry is treated like an unsupported type, and a non-boolean option shows as off and stays unchanged unless toggled `agent`
 - **Typing a literal bot token** — Masked by the custom input, while `$VARIABLE` references stay readable. Adds a pi-tui peer dependency to notify
@@ -51,8 +51,7 @@ A new user can run `/notify setup`, add a Telegram or command connector, set opt
 - [x] Refresh `nerdFont` and status from the draft after Save, then offer a test through `send()` only if the config validates (packages/notify/src/index.ts)
 - [x] Test the flow with stubbed dialogs (packages/notify/test/setup.test.ts)
 **Verify:** `npm test -w packages/notify` passes with new cases showing: from no config, driving the dialogs writes a file that `loadConfig` accepts, with mode `0600`; `$VAR` values are stored unexpanded; Cancel writes nothing; malformed JSON and a non-array `connectors` stay byte-identical; rendering the masked input never contains a literal token; declining the test sends nothing and accepting sends once; during a run, `/notify setup` warns and opens no dialog; saving with an unset `$VAR` or a kept unsupported connector requires confirmation, offers no test, and leaves `/notify on` armed.
-**Note:** After demo feedback that the flat menu mixed connectors, options and actions, rows were relabelled (`Edit 1: Telegram, chat <id>`, `Remove 3: ...`, `+ Add connector`, `Option: ... [on]`, `Save and close`, `Discard and close`, where Decisions and Verify text says Save and Cancel), keeping the number so `labels.indexOf(choice)` stays unambiguous.
-**Note:** Known and not scheduled, from the same demo: the action select reuses the row label as its title, so `Edit 1: ...` also offers Remove; a title without the verb would read better.
+**Note:** After demo feedback that the flat menu mixed connectors, options and actions, the menu became sections: Connectors (`Telegram, chat <id>`, `Command, <run>`, `+ Add connector`), Options (a value column of on/off), then a divider and `Save and close`, `Discard and close`, where Decisions and Verify text says Save and Cancel. Rows are tracked by id, so identical connectors stay apart. A row with only Remove says `(remove only)`. The cursor stays on the row just acted on and clamps after a removal.
 
 ### Phase 2 — Change an existing config without exposing the token
 An existing user can edit or remove any connector from the menu, and the stored token stays hidden and intact.
@@ -80,8 +79,8 @@ A user can use setup without lost edits or a half-open dialog, and the README ex
 
 ## Demo
 User runs, with a real Telegram bot and phone:
-1. `PI_CODING_AGENT_DIR=$(mktemp -d) pi -e ./packages/notify/src/index.ts`, then `/notify setup`; the flow opens on Add connector
+1. `PI_CODING_AGENT_DIR=$(mktemp -d) pi -e ./packages/notify/src/index.ts`, then `/notify setup`; the flow opens on `+ Add connector`
 2. Add a Telegram connector with a literal token and confirm it is masked while typing
-3. Save and accept the test; the message arrives on the phone
-4. Rerun `/notify setup`, change `onPrompt`, and save; the token is never shown and the next test still arrives
-5. Add a command connector, then Discard and close; `config.json` is unchanged
+3. `Save and close` and accept the test; the message arrives on the phone
+4. Rerun `/notify setup`, toggle `Notify when waiting for input`, and `Save and close`; the token is never shown and the next test still arrives
+5. `+ Add connector` for a command connector, then `Discard and close`; `config.json` is unchanged
