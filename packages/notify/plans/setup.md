@@ -34,7 +34,7 @@
 - **Build mode** — Orchestrator; worker Opus 5.5 medium, reviewer Opus 5.5 high
 
 ## Progress
-Active: 3 · 16/21 tasks
+Active: 3 · 17/21 tasks
 
 ### Phase 1 — Create a working config from nothing
 A new user can run `/notify setup`, add a Telegram or command connector, set options, save, and send a test without touching JSON.
@@ -67,7 +67,7 @@ An existing user can edit or remove any connector from the menu, and the stored 
 ### Phase 3 — Keep setup safe during session changes and concurrent edits
 A user can use setup without lost edits or a half-open dialog, and the README explains it, including that setup is refused during a run.
 **Blocked by:** 2
-- [ ] Ignore a second `/notify setup` while one is open (packages/notify/src/index.ts)
+- [x] Ignore a second `/notify setup` while one is open (packages/notify/src/index.ts)
 - [ ] Close setup without writing on session reset, including the custom input (packages/notify/src/setup.ts, packages/notify/src/index.ts)
 - [ ] Ask before overwriting when the file changed since setup opened (packages/notify/src/setup.ts)
 - [ ] Test each guard, including that arming state is unchanged by setup (packages/notify/test/setup.test.ts)

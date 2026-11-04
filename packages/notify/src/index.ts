@@ -15,6 +15,7 @@ export default function (pi: ExtensionAPI): void {
   let activeRun = false;
   let nerdFont = false;
   let controller = new AbortController();
+  let openSetup: AbortController | undefined;
 
   function status(ctx: ExtensionContext): void {
     ctx.ui.setStatus("notify", state.armed === "off" ? undefined : `${nerdFont ? "\uf0f3" : "🔔"} ${state.armed}`);
@@ -72,17 +73,23 @@ export default function (pi: ExtensionAPI): void {
     if (outcome) void send(ctx, formatMessage(ctx.sessionManager.getSessionName(), ctx.cwd, outcome));
   });
   async function setup(ctx: ExtensionContext): Promise<void> {
+    if (openSetup === controller) return;
     if (activeRun) {
       ctx.ui.notify("Notify setup is unavailable during a run; try again when it finishes.", "warning");
       return;
     }
-    const result = await runSetup(ctx.ui, path);
-    if (!result) return;
-    nerdFont = result.draft.nerdFont === true;
-    status(ctx);
-    ctx.ui.notify("Notify config saved.", "info");
-    if (result.valid && await ctx.ui.confirm("Send a test notification?", "This sends to every connector and runs any shell command connector.")) {
-      void send(ctx, formatMessage(ctx.sessionManager.getSessionName(), ctx.cwd, "test"));
+    const current = openSetup = controller;
+    try {
+      const result = await runSetup(ctx.ui, path);
+      if (!result) return;
+      nerdFont = result.draft.nerdFont === true;
+      status(ctx);
+      ctx.ui.notify("Notify config saved.", "info");
+      if (result.valid && await ctx.ui.confirm("Send a test notification?", "This sends to every connector and runs any shell command connector.")) {
+        void send(ctx, formatMessage(ctx.sessionManager.getSessionName(), ctx.cwd, "test"));
+      }
+    } finally {
+      if (openSetup === current) openSetup = undefined;
     }
   }
   async function act(args: string, ctx: ExtensionContext, tool = false): Promise<void> {
