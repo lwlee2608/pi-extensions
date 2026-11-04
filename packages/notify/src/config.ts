@@ -50,7 +50,7 @@ export function parseConfig(value: unknown, env: NodeJS.ProcessEnv = process.env
 export async function loadConfig(path: string): Promise<Config> {
   let raw: string;
   try { raw = await readFile(path, "utf8"); }
-  catch { throw new Error("Cannot read pi-notify/config.json; configure a telegram or command connector first."); }
+  catch { throw new Error("Cannot read pi-notify/config.json; run /notify setup or configure a telegram or command connector first."); }
   let value: unknown;
   try { value = JSON.parse(raw); }
   catch { throw new Error("Notify config is not valid JSON."); }
