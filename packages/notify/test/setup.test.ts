@@ -81,6 +81,8 @@ async function harness(t: TestContext) {
   const hold = <T>(answer: symbol, signal: AbortSignal | undefined, closed: T) => new Promise<T>(resolve => {
     if (answer === OPEN) signal?.addEventListener("abort", () => resolve(closed), { once: true });
   });
+  let openMenu: SetupMenu | undefined;
+  let menuOpens = 0;
   const driveMenu = (menu: SetupMenu) => {
     let cursor = 0;
     while (press(menu, UP)) cursor++;
@@ -100,6 +102,7 @@ async function harness(t: TestContext) {
     for (let i = cursor; i > target; i--) menu.handleInput(UP);
     menu.handleInput(ENTER);
     after?.();
+    if (openMenu === menu) driveMenu(menu);
   };
   const ctx = { mode: "tui", cwd: root, sessionManager: { getSessionName: () => "session" }, ui: {
     setStatus: (_key: string, text: string | undefined) => { active(); status = text; },
@@ -121,8 +124,8 @@ async function harness(t: TestContext) {
     custom: (factory: any) => track(new Promise(resolve => {
       active();
       let component: any;
-      component = factory({ requestRender() {} }, theme, getKeybindings(), (value: unknown) => { resolve(value); component.dispose?.(); });
-      if (component instanceof SetupMenu) { driveMenu(component); return; }
+      component = factory({ requestRender() {} }, theme, getKeybindings(), (value: unknown) => { openMenu = undefined; resolve(value); component.dispose?.(); });
+      if (component instanceof SetupMenu) { menuOpens++; openMenu = component; driveMenu(component); return; }
       dialogs.push({ kind: "input", title: component.render(80)[0], screen: component.render(80).join("\n") });
       const answer = next();
       if (typeof answer === "symbol") return;
@@ -143,6 +146,7 @@ async function harness(t: TestContext) {
     handler: (args: string) => command(args, ctx),
     status: () => status,
     depth: () => depth,
+    menuOpens: () => menuOpens,
     emit: (name: string, outcome?: string) => {
       if (name === "session_start") stale = false;
       const result = handlers.get(name)!({ outcome }, ctx);
@@ -623,6 +627,26 @@ test("the cursor stays on the row acted on across toggles, sub-dialog Esc and a 
     slack,
   ]);
   assert.equal(h.dialogs.filter(dialog => dialog.title === "Notify setup").length, 8);
+});
+
+test("a toggle stays in the open menu without resolving, and only a save writes it", async t => {
+  const chosen: unknown[] = [];
+  let value = " off";
+  const m = menu(id => chosen.push(id), { sections: [{ rows: [{ id: "x", label: "x", note: value, toggle: () => value = " on " }] }] });
+  m.handleInput(ENTER);
+  assert.deepEqual(chosen, []);
+  assert.ok(m.render(30).some(line => line.startsWith(" → x on")));
+
+  const h = await harness(t);
+  const content = JSON.stringify({ onPrompt: "yes", connectors: [{ type: "command", run: "true" }] });
+  await h.write(content);
+  await h.run("setup", "Nerd Font status icon off", "Nerd Font status icon on", "Nerd Font status icon off", undefined);
+  assert.equal(h.menuOpens(), 1);
+  assert.equal(await readFile(h.path, "utf8"), content);
+
+  await h.run("setup", "Notify when waiting for input off", "Save and close", false);
+  assert.equal(h.menuOpens(), 2);
+  assert.equal((await saved(h)).onPrompt, true);
 });
 
 test("the cursor follows Add connector and an edited row", async t => {

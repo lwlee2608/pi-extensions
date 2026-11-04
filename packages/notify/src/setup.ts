@@ -67,11 +67,16 @@ function connectorRow(connector: unknown, id: number): MenuRow {
   return { id, label, note: `${connectorValid(connector) ? "" : " (needs fixing)"}${editable(stored) ? "" : " (remove only)"}` };
 }
 
+function optionRow(draft: Draft, key: keyof typeof OPTIONS): MenuRow {
+  const value = () => draft[key] === true ? " on " : " off";
+  return { id: key, label: OPTIONS[key].padEnd(VALUE_COLUMN), note: value(), toggle: () => { draft[key] = draft[key] !== true; return value(); } };
+}
+
 function menuSections(draft: Draft): MenuSection[] {
   const keys = Object.keys(OPTIONS) as (keyof typeof OPTIONS)[];
   return [
     { header: "Connectors", rows: [...draft.connectors.map(connectorRow), { id: ADD, label: ADD }] },
-    { header: "Options", rows: keys.map(key => ({ id: key, label: OPTIONS[key].padEnd(VALUE_COLUMN), note: draft[key] === true ? " on " : " off" })) },
+    { header: "Options", rows: keys.map(key => optionRow(draft, key)) },
     { rows: [{ id: SAVE, label: SAVE }, { id: DISCARD, label: DISCARD }] },
   ];
 }
@@ -179,8 +184,6 @@ export async function runSetup(piUi: ExtensionUIContext, path: string, signal: A
     } else if (choice === SAVE) {
       const result = await save(ui, path, draft, opened, signal);
       if (result) return result;
-    } else {
-      draft[choice] = draft[choice] !== true;
     }
   }
 }

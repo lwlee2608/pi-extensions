@@ -2,7 +2,7 @@ import type { Theme } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type KeybindingsManager } from "@earendil-works/pi-tui";
 
 export type RowId = number | string;
-export interface MenuRow { id: RowId; label: string; note?: string }
+export interface MenuRow { id: RowId; label: string; note?: string; toggle?: () => string }
 export interface MenuSection { header?: string; rows: MenuRow[] }
 export interface SetupMenuOptions { title: string; hint: string; sections: MenuSection[]; initial?: RowId; signal?: AbortSignal }
 
@@ -31,7 +31,7 @@ export class SetupMenu implements Component {
   handleInput(data: string): void {
     if (this.keys.matches(data, "tui.select.up") || data === "k") this.cursor = Math.max(0, this.cursor - 1);
     else if (this.keys.matches(data, "tui.select.down") || data === "j") this.cursor = Math.min(this.rows.length - 1, this.cursor + 1);
-    else if (this.keys.matches(data, "tui.select.confirm") || data === "\n") this.done(this.rows[this.cursor].id);
+    else if (this.keys.matches(data, "tui.select.confirm") || data === "\n") this.confirm(this.rows[this.cursor]);
     else if (this.keys.matches(data, "tui.select.cancel")) this.cancel();
   }
 
@@ -47,6 +47,11 @@ export class SetupMenu implements Component {
     }
     lines.push("", ...wrapTextWithAnsi(theme.fg("dim", this.options.hint), Math.max(1, width - 2)));
     return lines.map(line => truncateToWidth(` ${line}`, width, ""));
+  }
+
+  private confirm(row: MenuRow): void {
+    if (row.toggle) row.note = row.toggle();
+    else this.done(row.id);
   }
 
   private row(row: MenuRow, width: number): string {
