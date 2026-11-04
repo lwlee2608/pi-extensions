@@ -45,20 +45,21 @@ async function harness(t: TestContext) {
   let status: string | undefined;
   let depth = 0;
   let stale = false;
-  let usedStale = false;
+  let failure: Error | undefined;
   t.mock.method(globalThis, "fetch", async (_url: string, options: RequestInit) => {
     sent.push(JSON.parse(options.body as string));
     return new Response('{"ok":true}');
   });
+  const check = (ok: boolean, message: string) => {
+    if (!ok) failure ??= new Error(message);
+    assert.ok(ok, message);
+  };
   const next = () => {
-    assert.ok(script.length > 0, `unexpected dialog after: ${dialogs.at(-1)?.title}`);
+    check(script.length > 0, `unexpected dialog after: ${dialogs.at(-1)?.title}`);
     const answer = script.shift();
     return typeof answer === "function" ? answer() : answer;
   };
-  const active = () => {
-    usedStale ||= stale;
-    assert.ok(!stale, "ctx used after session shutdown");
-  };
+  const active = () => check(!stale, "ctx used after session shutdown");
   const track = <T>(dialog: Promise<T>) => {
     depth++;
     return dialog.finally(() => { depth--; });
@@ -74,7 +75,7 @@ async function harness(t: TestContext) {
       dialogs.push({ kind: "select", title, options });
       const answer = next();
       if (typeof answer === "symbol") return hold(answer, opts?.signal, undefined);
-      if (answer !== undefined) assert.ok(options.includes(answer as string), `no option ${String(answer)} in ${options}`);
+      if (answer !== undefined) check(options.includes(answer as string), `no option ${String(answer)} in ${options}`);
       return answer;
     })()),
     confirm: (title: string, message: string, opts?: { signal?: AbortSignal }) => track((async () => {
@@ -100,7 +101,7 @@ async function harness(t: TestContext) {
     script.push(...answers);
     detached = undefined;
     const handler = command(args, ctx);
-    return Promise.all([handler, detached]).then(() => assert.ok(!usedStale, "ctx used after session shutdown"));
+    return Promise.all([handler, detached]).then(() => { if (failure) throw failure; });
   };
   return {
     root, path, ctx, script, dialogs, screens, warnings, notices, sent, start,
