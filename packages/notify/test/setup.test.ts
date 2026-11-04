@@ -83,6 +83,7 @@ async function harness(t: TestContext) {
   });
   let openMenu: SetupMenu | undefined;
   let menuOpens = 0;
+  const terminal = { rows: 40 };
   const driveMenu = (menu: SetupMenu) => {
     let cursor = 0;
     while (press(menu, UP)) cursor++;
@@ -124,7 +125,7 @@ async function harness(t: TestContext) {
     custom: (factory: any) => track(new Promise(resolve => {
       active();
       let component: any;
-      component = factory({ requestRender() {} }, theme, getKeybindings(), (value: unknown) => { openMenu = undefined; resolve(value); component.dispose?.(); });
+      component = factory({ requestRender() {}, terminal }, theme, getKeybindings(), (value: unknown) => { openMenu = undefined; resolve(value); component.dispose?.(); });
       if (component instanceof SetupMenu) { menuOpens++; openMenu = component; driveMenu(component); return; }
       dialogs.push({ kind: "input", title: component.render(80)[0], screen: component.render(80).join("\n") });
       const answer = next();
@@ -147,6 +148,7 @@ async function harness(t: TestContext) {
     status: () => status,
     depth: () => depth,
     menuOpens: () => menuOpens,
+    terminal,
     emit: (name: string, outcome?: string) => {
       if (name === "session_start") stale = false;
       const result = handlers.get(name)!({ outcome }, ctx);
@@ -647,6 +649,28 @@ test("a toggle stays in the open menu without resolving, and only a save writes 
   await h.run("setup", "Notify when waiting for input off", "Save and close", false);
   assert.equal(h.menuOpens(), 2);
   assert.equal((await saved(h)).onPrompt, true);
+});
+
+test("a short terminal keeps the cursor row visible and the menu within its height", async t => {
+  const h = await harness(t);
+  await h.write(JSON.stringify({ connectors: [{ type: "command", run: "a" }, { type: "command", run: "b" }] }));
+  await h.run("setup", "Discard and close");
+  const all = h.dialogs[0].options!;
+  for (const rows of [14, 10, 5, 1]) {
+    h.terminal.rows = rows;
+    const seen: string[] = [];
+    await h.run("setup", () => {
+      seen.push(...h.dialogs.at(-1)!.options!);
+      return "Discard and close";
+    });
+    assert.deepEqual(seen, all, `every row is reachable at ${rows} rows`);
+    assert.ok(h.dialogs.at(-1)!.screen!.split("\n").length <= Math.max(3, rows - 4));
+  }
+
+  const lines = (rows: number) => menu(() => {}, { rows: () => rows }).render(30);
+  assert.equal(lines(40).length, 13, "a tall terminal shows everything");
+  assert.equal(lines(40)[0].trim(), "T");
+  assert.equal(lines(40).at(-1)!.trim(), "H");
 });
 
 test("the cursor follows Add connector and an edited row", async t => {

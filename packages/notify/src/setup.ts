@@ -26,7 +26,7 @@ interface Dialogs {
 
 function dialogs(ui: ExtensionUIContext, signal: AbortSignal): Dialogs {
   return {
-    menu: async options => signal.aborted ? undefined : ui.custom<RowId | undefined>((_tui, theme, keys, done) => new SetupMenu({ ...options, signal }, theme, keys, done)),
+    menu: async options => signal.aborted ? undefined : ui.custom<RowId | undefined>((tui, theme, keys, done) => new SetupMenu({ ...options, signal, rows: () => tui.terminal.rows }, theme, keys, done)),
     select: async (title, options) => signal.aborted ? undefined : ui.select(title, options, { signal }),
     confirm: async (title, message) => !signal.aborted && ui.confirm(title, message, { signal }),
     input: async options => signal.aborted ? undefined : ui.custom<string | undefined>((_tui, theme, _keys, done) => new TextInput({ ...options, signal }, theme, done)),

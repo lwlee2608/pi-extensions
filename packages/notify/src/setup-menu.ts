@@ -4,9 +4,12 @@ import { truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type K
 export type RowId = number | string;
 export interface MenuRow { id: RowId; label: string; note?: string; toggle?: () => string }
 export interface MenuSection { header?: string; rows: MenuRow[] }
-export interface SetupMenuOptions { title: string; hint: string; sections: MenuSection[]; initial?: RowId; signal?: AbortSignal }
+export interface SetupMenuOptions { title: string; hint: string; sections: MenuSection[]; initial?: RowId; signal?: AbortSignal; rows?: () => number }
 
 const MIN_LABEL = 8;
+const MIN_LINES = 3;
+// Pi clips tall dialogs from the bottom, so leave room for its transcript line and footer.
+const RESERVED_ROWS = 4;
 
 export class SetupMenu implements Component {
   private readonly options: SetupMenuOptions;
@@ -41,12 +44,18 @@ export class SetupMenu implements Component {
   render(width: number): string[] {
     const { theme } = this;
     const lines = [theme.fg("accent", theme.bold(this.options.title))];
+    let at = 0;
     for (const { header, rows } of this.options.sections) {
       lines.push("", header ? theme.fg("muted", header) : theme.fg("border", "─".repeat(Math.max(0, width - 2))));
-      for (const row of rows) lines.push(this.row(row, width));
+      for (const row of rows) {
+        if (row === this.rows[this.cursor]) at = lines.length;
+        lines.push(this.row(row, width));
+      }
     }
     lines.push("", ...wrapTextWithAnsi(theme.fg("dim", this.options.hint), Math.max(1, width - 2)));
-    return lines.map(line => truncateToWidth(` ${line}`, width, ""));
+    const max = this.options.rows ? Math.max(MIN_LINES, this.options.rows() - RESERVED_ROWS) : lines.length;
+    const start = Math.max(0, Math.min(at - (max >> 1), lines.length - max));
+    return lines.slice(start, start + max).map(line => truncateToWidth(` ${line}`, width, ""));
   }
 
   private confirm(row: MenuRow): void {
