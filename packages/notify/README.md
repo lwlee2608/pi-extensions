@@ -12,7 +12,21 @@ Requires Node.js 22.19+ and Pi 1.0.0. Run `/reload` after installing.
 
 ## Configure
 
-Create `~/.pi/agent/pi-notify/config.json` (under `PI_CODING_AGENT_DIR` when overridden):
+Run `/notify setup` in the TUI. It adds, edits, and removes Telegram and shell command connectors, toggles `onPrompt` and `nerdFont`, and offers a test send after saving.
+
+- Changes stay in a draft until Save. Cancel or Esc at the menu writes nothing; Esc in a sub-dialog goes back.
+- Literal bot tokens are masked as you type and never shown again. On edit, empty input keeps the stored token. `$VAR` references stay readable and are saved unexpanded.
+- Setup is refused during a run; try again when it finishes. A second `/notify setup` while one is open does nothing, and a session reset closes setup without writing.
+- If the file changed since setup opened, Save asks before overwriting it.
+- Malformed JSON, a non-object file, or a `connectors` value that is not an array is refused with a warning; fix those by hand. A bad connector opens normally so it can be fixed.
+- Saving a config that fails validation asks first, offers no test, and keeps all notifications refused until it is fixed.
+- Unknown keys survive a save. Unsupported connector types and multi-line `run` values can only be removed; edit a multi-line `run` in the file.
+- Setup never changes arming. The test send runs every connector, including shell commands, and only on an explicit yes.
+- The file is written atomically with mode `0600`, and a symlinked config is written through.
+
+### Manual config
+
+Setup and hand edits share one file. To write it yourself, create `~/.pi/agent/pi-notify/config.json` (under `PI_CODING_AGENT_DIR` when overridden):
 
 ```json
 {
@@ -51,6 +65,7 @@ Only configure commands you trust: they execute with your permissions and can ac
 | `/notify on` | Notify on every completed or errored run in this session. |
 | `/notify off` | Disarm. |
 | `/notify test` | Send a test immediately without changing arming. |
+| `/notify setup` | Create or edit the config in the TUI. Refused during a run. |
 | “Notify me when you finish” | The agent can call `notify_me` to arm one-shot; `/notify on` stays on. |
 
 The agent's tool description restricts `notify_me` to explicit user requests; it must not arm proactively. The tool is removed from active tools outside TUI, and calls outside TUI fail. Arming shows `🔔 once` or `🔔 on` in extension status (including Pi Footer). New, resumed, and forked sessions reset to off; arming is never persisted.
