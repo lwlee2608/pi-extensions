@@ -1,0 +1,77 @@
+# Notify Setup
+**The Job** — `/notify setup`, an interactive TUI flow that creates and edits `pi-notify/config.json`: Telegram and shell-command connectors, plus `onPrompt` and `nerdFont`.
+**The Why** — New users stall on hand-writing JSON before their first notification, and existing users must open the file for every later change. Both matter equally (issue #68).
+**The Guardrail** — `config.json` stays the only config source and hand edits stay supported. Setup never displays an existing literal bot token, and arming plus `/notify on|off|test` behave as before.
+**Done means** — From no config, `/notify setup` saves a working connector and `/notify test` delivers. Rerunning it changes settings without showing the stored token.
+
+## Decisions
+- **Interview depth** — key decisions only
+- **Flow shape** — One menu of connectors and options on Pi's select and input dialogs. A new user goes straight to adding a connector. Changes stay in a draft until Save; Esc in a sub-dialog goes back, and Cancel or Esc at the menu writes nothing
+- **Existing connectors** — Add, edit, or remove any connector in the list. Save is blocked with zero connectors
+- **Invalid existing config** — Malformed JSON or a non-object file: warn and write nothing; the user fixes it by hand. A parseable file with a bad connector opens normally so it can be fixed
+- **Typing a literal bot token** — Masked by a small custom input, while `$VARIABLE` references stay readable. Adds a pi-tui peer dependency to notify
+- **Test send after Save** — Confirm dialog after Save, reusing the `/notify test` path. A command connector runs only on this explicit yes
+- **Telegram chat ID help** — Hint text in the prompt only; no auto-detection through Telegram
+- **Demo** — User runs it with a real bot and phone
+- **Where does the plan live?** — `packages/notify/plans/`, matching other packages `research`
+- **Can Pi's dialogs mask input?** — No. `ctx.ui.input` and pi-tui `Input` have no mask option; masking needs a small custom component through `ctx.ui.custom` `research`
+- **Does `/notify setup` fit the current command path?** — Not as is. `act()` loads and validates config first, so a missing or broken config would block setup. Setup must branch before that load `research`
+- **Can setup reuse `parseConfig`?** — Not for editing. It returns resolved values, so saving its output would write `$VAR` secrets out as literals. Setup edits the raw JSON and uses `parseConfig` only to validate `research`
+- **Prompt pings during setup** — Each dialog fires `ui_prompt_start`, so an armed run with `onPrompt` would ping per dialog. Suppress pings while setup is open `agent`
+- **Reentry and session change** — A second `/notify setup` while open does nothing. A session reset dismisses setup without writing `agent`
+- **Arming state** — Setup does not change arming. After saving, the in-memory `nerdFont` and status refresh `agent`
+- **Saving** — Atomic temp file and rename, file `0600`, new directory `0700`. A symlinked config is written through, not replaced `agent`
+- **Concurrent edits** — No lock. If the file changed since setup opened, ask before overwriting `agent`
+- **Fields setup does not manage** — Unknown top-level and connector keys survive a save. Unsupported connector types are listed and can only be removed `agent`
+- **Unresolved `$VAR` at save** — Allowed with a warning that all notifications stay refused until it is set in Pi's environment, because one bad connector fails the whole config `agent`
+- **Literal bot token on edit** — Empty input keeps the stored token `agent`
+- **Command connector `run`** — Shown and prefilled, since only bot tokens are protected by issue #68 `agent`
+- **Phase count** — 3, in sequence
+- **Credential format checks** — Literal bot tokens and chat IDs are checked on entry using the same rules as `parseConfig`, and rejection messages never echo the value `agent`
+- **Existing connectors before Phase 2** — Listed in the menu and preserved on Save, but not editable yet `agent`
+
+## Progress
+Active: 1 · 0/20 tasks
+
+### Phase 1 — Create a working config from nothing
+A new user can run `/notify setup`, add a Telegram or command connector, set options, save, and send a test without touching JSON.
+**Blocked by:** none
+- [ ] Load raw config into an editable draft, and refuse malformed JSON or a non-object file without writing (packages/notify/src/config.ts)
+- [ ] Save the draft atomically with owner-only permissions, writing through a symlinked config (packages/notify/src/config.ts)
+- [ ] Add a masked token input that keeps `$VARIABLE` references readable (packages/notify/src/secret-input.ts)
+- [ ] Add the pi-tui peer dependency (packages/notify/package.json)
+- [ ] Build the menu with connector rows, Add connector, option toggles, Save, and Cancel, opening on Add connector when the list is empty (packages/notify/src/setup.ts)
+- [ ] Prompt for Telegram and command connector fields, with chat ID hint text and format checks (packages/notify/src/setup.ts)
+- [ ] Block Save with zero connectors, and warn on Save about any unset `$VAR` (packages/notify/src/setup.ts)
+- [ ] Route `/notify setup` ahead of the config load and update the usage text and command description (packages/notify/src/index.ts)
+- [ ] Refresh `nerdFont` and status after Save, then offer a test send (packages/notify/src/index.ts)
+- [ ] Test the flow with stubbed dialogs (packages/notify/test/setup.test.ts)
+**Verify:** `npm test -w packages/notify` passes with new cases showing: from no config, driving the dialogs writes a file that `loadConfig` accepts, with mode `0600`; `$VAR` values are stored unexpanded; Cancel writes nothing; malformed JSON stays byte-identical; rendering the masked input never contains a literal token; declining the test sends nothing and accepting sends once.
+
+### Phase 2 — Change an existing config without exposing the token
+An existing user can edit or remove any connector from the menu, and the stored token stays hidden and intact.
+**Blocked by:** 1
+- [ ] Edit Telegram connectors, where empty token input keeps the stored value and the literal is never prefilled (packages/notify/src/setup.ts)
+- [ ] Edit command connectors with `run` prefilled (packages/notify/src/setup.ts)
+- [ ] Remove connectors, and limit unsupported connector types to removal only (packages/notify/src/setup.ts)
+- [ ] Flag connectors that fail validation in the menu without showing their secrets (packages/notify/src/setup.ts)
+- [ ] Test edits against configs with literal tokens, `$VAR` values, and unknown keys (packages/notify/test/setup.test.ts)
+**Verify:** `npm test -w packages/notify` passes with new cases showing: from a config with a literal token, no dialog title, option, prefill, notification, or masked render contains it; changing only the chat ID leaves the token, `$VAR` values, and unknown keys unchanged in the saved file; a connector with an unset `$VAR` opens and can be fixed; removing the last connector blocks Save.
+
+### Phase 3 — Keep setup safe during runs, session changes, and concurrent edits
+A user can open setup at any time without stray pings, lost edits, or a half-open dialog, and the README explains it.
+**Blocked by:** 2
+- [ ] Suppress prompt pings while setup is open, and ignore a second `/notify setup` (packages/notify/src/index.ts)
+- [ ] Close setup without writing on session reset, including the masked input (packages/notify/src/setup.ts, packages/notify/src/index.ts)
+- [ ] Ask before overwriting when the file changed since setup opened (packages/notify/src/setup.ts)
+- [ ] Test each guard, including that arming state is unchanged by setup (packages/notify/test/setup.test.ts)
+- [ ] Document `/notify setup` and lead Configure with it, keeping the manual JSON docs (packages/notify/README.md)
+**Verify:** `npm test -w packages/notify` passes with new cases showing: armed with `onPrompt` during a run, opening setup sends no ping while the real settle still sends; session reset closes setup and leaves the file unchanged; changing the file after opening triggers a confirm, and declining leaves the outside edit intact; `/notify on` status is the same before and after setup.
+
+## Demo
+User runs, with a real Telegram bot and phone:
+1. `PI_CODING_AGENT_DIR=$(mktemp -d) pi -e ./packages/notify/src/index.ts`, then `/notify setup`; the flow opens on Add connector
+2. Add a Telegram connector with a literal token and confirm it is masked while typing
+3. Save and accept the test; the message arrives on the phone
+4. Rerun `/notify setup`, change `onPrompt`, and save; the token is never shown and the next test still arrives
+5. Add a command connector, then Cancel; `config.json` is unchanged
