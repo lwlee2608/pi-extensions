@@ -1,5 +1,5 @@
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
-import { loadDraft, parseConfig, saveDraft, validBotTokenEntry, validChatIdEntry, variableEntry, type Draft } from "./config.ts";
+import { loadDraft, parseConfig, readRaw, saveDraft, validBotTokenEntry, validChatIdEntry, variableEntry, type Draft } from "./config.ts";
 import { TextInput, type TextInputOptions } from "./text-input.ts";
 
 export interface SetupResult { draft: Draft; valid: boolean }
@@ -12,6 +12,22 @@ const COMMAND = "Shell command";
 const EDIT = "Edit";
 const REMOVE = "Remove";
 const OPTIONS = { onPrompt: "Notify when waiting for input", nerdFont: "Nerd Font status icon" };
+
+interface Dialogs {
+  select(title: string, options: string[]): Promise<string | undefined>;
+  confirm(title: string, message: string): Promise<boolean>;
+  input(options: TextInputOptions): Promise<string | undefined>;
+  warn(message: string): void;
+}
+
+function dialogs(ui: ExtensionUIContext, signal: AbortSignal): Dialogs {
+  return {
+    select: async (title, options) => signal.aborted ? undefined : ui.select(title, options, { signal }),
+    confirm: async (title, message) => !signal.aborted && ui.confirm(title, message, { signal }),
+    input: async options => signal.aborted ? undefined : ui.custom<string | undefined>((_tui, theme, _keys, done) => new TextInput({ ...options, signal }, theme, done)),
+    warn: message => { if (!signal.aborted) ui.notify(message, "warning"); },
+  };
+}
 
 function text(value: unknown): string {
   return typeof value === "string" ? value.replace(/[\x00-\x1f\x7f-\x9f]/g, " ") : "(invalid)";
@@ -36,20 +52,20 @@ function optionLabel(draft: Draft, key: keyof typeof OPTIONS): string {
   return `${OPTIONS[key]}: ${draft[key] === true ? "on" : "off"}`;
 }
 
-async function ask(ui: ExtensionUIContext, options: TextInputOptions, problem: (value: string) => string | undefined): Promise<string | undefined> {
+async function ask(ui: Dialogs, options: TextInputOptions, problem: (value: string) => string | undefined): Promise<string | undefined> {
   let initial = options.initial ?? "";
   for (;;) {
-    const value = await ui.custom<string | undefined>((_tui, theme, _keys, done) => new TextInput({ ...options, initial }, theme, done));
+    const value = await ui.input({ ...options, initial });
     if (value === undefined) return undefined;
     const trimmed = value.trim();
     const message = problem(trimmed);
     if (!message) return trimmed;
-    ui.notify(message, "warning");
+    ui.warn(message);
     if (!options.mask) initial = value;
   }
 }
 
-async function askTelegram(ui: ExtensionUIContext, stored: Record<string, unknown> = {}): Promise<object | undefined> {
+async function askTelegram(ui: Dialogs, stored: Record<string, unknown> = {}): Promise<object | undefined> {
   const kept = typeof stored.botToken === "string" && stored.botToken.trim() ? stored.botToken : undefined;
   const botToken = await ask(ui, {
     title: "Telegram bot token",
@@ -66,7 +82,7 @@ async function askTelegram(ui: ExtensionUIContext, stored: Record<string, unknow
   return chatId === undefined ? undefined : { ...stored, type: "telegram", botToken: botToken || kept, chatId };
 }
 
-async function askCommand(ui: ExtensionUIContext, stored: Record<string, unknown> = {}): Promise<object | undefined> {
+async function askCommand(ui: Dialogs, stored: Record<string, unknown> = {}): Promise<object | undefined> {
   const initial = typeof stored.run === "string" ? stored.run : undefined;
   const run = await ask(ui, {
     title: "Shell command",
@@ -76,14 +92,14 @@ async function askCommand(ui: ExtensionUIContext, stored: Record<string, unknown
   return run === undefined ? undefined : { ...stored, type: "command", run: run === initial?.trim() ? initial : run };
 }
 
-async function addConnector(ui: ExtensionUIContext): Promise<object | undefined> {
+async function addConnector(ui: Dialogs): Promise<object | undefined> {
   const type = await ui.select("Connector type", [TELEGRAM, COMMAND]);
   if (type === TELEGRAM) return askTelegram(ui);
   if (type === COMMAND) return askCommand(ui);
   return undefined;
 }
 
-async function changeConnector(ui: ExtensionUIContext, draft: Draft, index: number, label: string): Promise<void> {
+async function changeConnector(ui: Dialogs, draft: Draft, index: number, label: string): Promise<void> {
   const stored = (draft.connectors[index] ?? {}) as Record<string, unknown>;
   const multiLine = stored.type === "command" && typeof stored.run === "string" && text(stored.run) !== stored.run;
   const editable = (stored.type === "telegram" || stored.type === "command") && !multiLine;
@@ -94,9 +110,9 @@ async function changeConnector(ui: ExtensionUIContext, draft: Draft, index: numb
   if (edited) draft.connectors[index] = edited;
 }
 
-async function save(ui: ExtensionUIContext, path: string, draft: Draft): Promise<SetupResult | undefined> {
+async function save(ui: Dialogs, path: string, draft: Draft, opened: string | undefined, signal: AbortSignal): Promise<SetupResult | undefined> {
   if (draft.connectors.length === 0) {
-    ui.notify("Add a connector before saving.", "warning");
+    ui.warn("Add a connector before saving.");
     return undefined;
   }
   let valid = true;
@@ -106,19 +122,23 @@ async function save(ui: ExtensionUIContext, path: string, draft: Draft): Promise
     const message = `${(error as Error).message} All notifications stay refused until it is fixed.`;
     if (!await ui.confirm("Save this invalid config?", message)) return undefined;
   }
+  if (await readRaw(path) !== opened && !await ui.confirm("Overwrite outside changes?", "pi-notify/config.json changed since setup opened. Saving replaces those changes.")) return undefined;
+  if (signal.aborted) return undefined;
   try { await saveDraft(path, draft); }
   catch {
-    ui.notify("Cannot save pi-notify/config.json.", "warning");
+    ui.warn("Cannot save pi-notify/config.json.");
     return undefined;
   }
   return { draft, valid };
 }
 
-export async function runSetup(ui: ExtensionUIContext, path: string): Promise<SetupResult | undefined> {
+export async function runSetup(piUi: ExtensionUIContext, path: string, signal: AbortSignal): Promise<SetupResult | undefined> {
+  const ui = dialogs(piUi, signal);
+  const opened = await readRaw(path);
   let draft: Draft;
   try { draft = await loadDraft(path); }
   catch (error) {
-    ui.notify((error as Error).message, "warning");
+    ui.warn((error as Error).message);
     return undefined;
   }
   const keys = Object.keys(OPTIONS) as (keyof typeof OPTIONS)[];
@@ -133,7 +153,7 @@ export async function runSetup(ui: ExtensionUIContext, path: string): Promise<Se
       const connector = await addConnector(ui);
       if (connector) draft.connectors.push(connector);
     } else if (choice === SAVE) {
-      const result = await save(ui, path, draft);
+      const result = await save(ui, path, draft, opened, signal);
       if (result) return result;
     } else if (option) {
       draft[option] = draft[option] !== true;

@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import fsPromises from "node:fs/promises";
 import { lstat, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
@@ -11,7 +14,10 @@ const theme = { fg: (_color: string, text: string) => text } as any;
 const ENTER = "\r";
 const ESC = "\x1b";
 
-type Answer = string | boolean | undefined;
+const OPEN = Symbol("stays open until the signal aborts");
+const HUNG = Symbol("replaced by another dialog, so never resolves");
+
+type Answer = string | boolean | undefined | symbol | (() => Answer);
 
 async function harness(t: TestContext) {
   const root = await mkdtemp(join(tmpdir(), "notify-setup-"));
@@ -25,10 +31,11 @@ async function harness(t: TestContext) {
   const { default: extension } = await import("../src/index.ts");
   const handlers = new Map<string, (event: any, ctx: any) => unknown>();
   let command!: (args: string, ctx: any) => Promise<void>;
+  let detached: Promise<void> | undefined;
   extension({ on: (name: string, fn: any) => handlers.set(name, fn),
     registerCommand: (_name: string, def: any) => { command = def.handler; },
     registerTool: () => {}, getActiveTools: () => [], setActiveTools: () => {},
-  } as any);
+  } as any, setup => { detached = setup; });
   const script: Answer[] = [];
   const dialogs: { kind: string; title: string; options?: string[]; message?: string; screen?: string }[] = [];
   const screens: string[] = [];
@@ -36,41 +43,79 @@ async function harness(t: TestContext) {
   const notices: string[] = [];
   const sent: { chat_id: string; text: string }[] = [];
   let status: string | undefined;
+  let depth = 0;
+  let stale = false;
+  let failure: Error | undefined;
   t.mock.method(globalThis, "fetch", async (_url: string, options: RequestInit) => {
     sent.push(JSON.parse(options.body as string));
     return new Response('{"ok":true}');
   });
-  const next = () => {
-    assert.ok(script.length > 0, `unexpected dialog after: ${dialogs.at(-1)?.title}`);
-    return script.shift();
+  const check = (ok: boolean, message: string) => {
+    if (!ok) failure ??= new Error(message);
+    assert.ok(ok, message);
   };
+  const next = () => {
+    check(script.length > 0, `unexpected dialog after: ${dialogs.at(-1)?.title}`);
+    const answer = script.shift();
+    return typeof answer === "function" ? answer() : answer;
+  };
+  const active = () => check(!stale, "ctx used after session shutdown");
+  const track = <T>(dialog: Promise<T>) => {
+    depth++;
+    return dialog.finally(() => { depth--; });
+  };
+  const hold = <T>(answer: symbol, signal: AbortSignal | undefined, closed: T) => new Promise<T>(resolve => {
+    if (answer === OPEN) signal?.addEventListener("abort", () => resolve(closed), { once: true });
+  });
   const ctx = { mode: "tui", cwd: root, sessionManager: { getSessionName: () => "session" }, ui: {
-    setStatus: (_key: string, text: string | undefined) => { status = text; },
-    notify: (text: string, type: string) => { notices.push(text); if (type === "warning") warnings.push(text); },
-    select: async (title: string, options: string[]) => {
+    setStatus: (_key: string, text: string | undefined) => { active(); status = text; },
+    notify: (text: string, type: string) => { active(); notices.push(text); if (type === "warning") warnings.push(text); },
+    select: (title: string, options: string[], opts?: { signal?: AbortSignal }) => track((async () => {
+      active();
       dialogs.push({ kind: "select", title, options });
       const answer = next();
-      if (answer !== undefined) assert.ok(options.includes(answer as string), `no option ${answer} in ${options}`);
+      if (typeof answer === "symbol") return hold(answer, opts?.signal, undefined);
+      if (answer !== undefined) check(options.includes(answer as string), `no option ${String(answer)} in ${options}`);
       return answer;
-    },
-    confirm: async (title: string, message: string) => { dialogs.push({ kind: "confirm", title, message }); return next(); },
-    custom: (factory: any) => new Promise(resolve => {
-      const component = factory({ requestRender() {} }, theme, {}, resolve);
+    })()),
+    confirm: (title: string, message: string, opts?: { signal?: AbortSignal }) => track((async () => {
+      active();
+      dialogs.push({ kind: "confirm", title, message });
+      const answer = next();
+      return typeof answer === "symbol" ? hold(answer, opts?.signal, false) : answer;
+    })()),
+    custom: (factory: any) => track(new Promise(resolve => {
+      active();
+      let component: any;
+      component = factory({ requestRender() {} }, theme, {}, (value: unknown) => { resolve(value); component.dispose?.(); });
       dialogs.push({ kind: "input", title: component.render(80)[0], screen: component.render(80).join("\n") });
       const answer = next();
+      if (typeof answer === "symbol") return;
       if (answer === undefined) { component.handleInput(ESC); return; }
       for (const char of answer as string) { component.handleInput(char); screens.push(component.render(80).join("\n")); }
       component.handleInput(ENTER);
-    }),
+    })),
   } };
   const path = join(root, "pi-notify", "config.json");
+  const start = (args: string, ...answers: Answer[]) => {
+    script.push(...answers);
+    detached = undefined;
+    const handler = command(args, ctx);
+    return Promise.all([handler, detached]).then(() => { if (failure) throw failure; });
+  };
   return {
-    root, path, ctx, script, dialogs, screens, warnings, notices, sent,
+    root, path, ctx, script, dialogs, screens, warnings, notices, sent, start,
+    handler: (args: string) => command(args, ctx),
     status: () => status,
-    emit: (name: string, outcome?: string) => handlers.get(name)!({ outcome }, ctx),
+    depth: () => depth,
+    emit: (name: string, outcome?: string) => {
+      if (name === "session_start") stale = false;
+      const result = handlers.get(name)!({ outcome }, ctx);
+      if (name === "session_shutdown") stale = true;
+      return result;
+    },
     run: async (args: string, ...answers: Answer[]) => {
-      script.push(...answers);
-      await command(args, ctx);
+      await start(args, ...answers);
       assert.deepEqual(script, [], "unused answers");
     },
     write: async (content: string) => {
@@ -181,6 +226,20 @@ test("text input submits, escapes and appends after its initial value", () => {
   input.handleInput(ENTER);
   input.handleInput(ESC);
   assert.deepEqual(results, ["-123", undefined]);
+});
+
+test("text input closes on abort and stops listening once disposed", () => {
+  const results: (string | undefined)[] = [];
+  const open = new AbortController();
+  new TextInput({ title: "t", initial: "x", signal: open.signal }, theme, value => results.push(value));
+  open.abort();
+  assert.deepEqual(results, [undefined]);
+
+  const disposed = new AbortController();
+  const late: unknown[] = [];
+  new TextInput({ title: "t", signal: disposed.signal }, theme, value => late.push(value)).dispose();
+  disposed.abort();
+  assert.deepEqual(late, []);
 });
 
 test("entry checks reject bad values without echoing them and re-prompt", async t => {
@@ -404,6 +463,228 @@ test("a valid save refreshes nerdFont status without changing arming", async t =
   await h.run("setup", "Nerd Font status icon: off", ...SAVE_NO_TEST);
   assert.equal(h.status(), " on");
 });
+
+const until = async (check: () => boolean) => {
+  for (let i = 0; i < 500 && !check(); i++) await new Promise(resolve => setTimeout(resolve, 2));
+  assert.ok(check(), "condition not reached");
+};
+const COMMAND_CONFIG = JSON.stringify({ connectors: [{ type: "command", run: "true" }] });
+const ROW = "1. Command true";
+const OVERWRITE = "Overwrite outside changes?";
+const ALREADY_OPEN = "Notify setup is already open; if you cannot see it, /reload clears it.";
+const edit = (path: string, content: string, answer: Answer) => () => { writeFileSync(path, content); return answer; };
+
+test("a second /notify setup while one is open opens no new dialog", async t => {
+  const h = await harness(t);
+  const first = h.start("setup", OPEN);
+  await until(() => h.depth() === 1);
+  await h.run("setup");
+  h.emit("agent_start");
+  await h.run("setup");
+  await flush();
+  assert.equal(h.dialogs.length, 1);
+  assert.deepEqual(h.notices, [ALREADY_OPEN, ALREADY_OPEN]);
+  h.emit("session_shutdown");
+  await first;
+  h.emit("session_start");
+  await h.run("setup", "Cancel");
+  await h.run("setup", "Cancel");
+  assert.equal(h.dialogs.length, 3);
+});
+
+test("the command handler returns while setup stays open, so Pi's input loop is not held", async t => {
+  const h = await harness(t);
+  h.script.push(OPEN);
+  await h.handler("setup");
+  await until(() => h.depth() === 1);
+  assert.equal(h.dialogs.length, 1);
+  await h.handler("setup");
+  assert.deepEqual(h.warnings, [ALREADY_OPEN]);
+  h.emit("session_shutdown");
+  await until(() => h.depth() === 0);
+});
+
+test("a setup failure is reported as a warning, and stays silent after session reset", async t => {
+  const h = await harness(t);
+  const { select } = h.ctx.ui;
+  h.ctx.ui.select = (async () => { throw new Error("dialog broke"); }) as any;
+  await h.run("setup");
+  assert.deepEqual(h.warnings, ["Notify setup failed: dialog broke"]);
+
+  h.warnings.length = 0;
+  h.ctx.ui.select = (async () => { h.emit("session_shutdown"); throw new Error("dialog broke"); }) as any;
+  await h.run("setup");
+  assert.deepEqual(h.warnings, []);
+  h.emit("session_start");
+  h.ctx.ui.select = select;
+  await h.run("setup", "Cancel");
+  assert.equal(h.dialogs.length, 1);
+});
+
+test("a dialog that never resolves blocks a second setup only until session reset", async t => {
+  const h = await harness(t);
+  void h.start("setup", HUNG);
+  await until(() => h.dialogs.length === 1);
+  await h.run("setup");
+  assert.equal(h.dialogs.length, 1);
+  assert.deepEqual(h.warnings, [ALREADY_OPEN]);
+  h.emit("session_shutdown");
+  h.emit("session_start");
+  await h.run("setup", "Cancel");
+  assert.equal(h.dialogs.length, 2);
+  assert.deepEqual(h.warnings, [ALREADY_OPEN]);
+});
+
+for (const [name, kind, answers] of [
+  ["the menu", "select", [OPEN]],
+  ["the connector type", "select", ["Add connector", OPEN]],
+  ["the connector action", "select", [ROW, OPEN]],
+  ["the masked token input", "input", ["Add connector", "Telegram", OPEN]],
+  ["the chat ID input", "input", ["Add connector", "Telegram", TOKEN, OPEN]],
+  ["the command input", "input", [ROW, "Edit", OPEN]],
+  ["the invalid config confirm", "confirm", [ROW, "Remove", "Add connector", "Shell command", "$NOTIFY_SETUP_UNSET", "Save", OPEN]],
+] as [string, string, Answer[]][]) {
+  test(`session reset at ${name} closes setup, writes nothing and leaves prompt depth at zero`, async t => {
+    const h = await harness(t);
+    await h.write(COMMAND_CONFIG);
+    const running = h.start("setup", ...answers);
+    await until(() => h.script.length === 0 && h.depth() === 1);
+    assert.equal(h.dialogs.at(-1)?.kind, kind);
+    const opened = h.dialogs.length;
+    h.emit("session_shutdown");
+    await running;
+    assert.equal(h.depth(), 0);
+    assert.equal(h.dialogs.length, opened);
+    assert.deepEqual(h.notices, []);
+    assert.equal(await readFile(h.path, "utf8"), COMMAND_CONFIG);
+  });
+}
+
+test("session reset at the overwrite confirm leaves the outside edit", async t => {
+  const h = await harness(t);
+  await h.write(COMMAND_CONFIG);
+  const outside = JSON.stringify({ connectors: [], outside: true });
+  const running = h.start("setup", edit(h.path, outside, "Save"), OPEN);
+  await until(() => h.dialogs.at(-1)?.title === OVERWRITE);
+  h.emit("session_shutdown");
+  await running;
+  assert.equal(h.depth(), 0);
+  assert.equal(await readFile(h.path, "utf8"), outside);
+});
+
+const INVALID_CONFIG = JSON.stringify({ connectors: [{ type: "slack" }] });
+for (const [name, content, before, choice] of [
+  ["Save is chosen", COMMAND_CONFIG, [], "Save"],
+  ["Save is chosen on an invalid config", INVALID_CONFIG, [], "Save"],
+  ["a connector type is chosen", COMMAND_CONFIG, ["Add connector"], "Telegram"],
+] as [string, string, Answer[], string][]) {
+  test(`session reset at the moment ${name} opens no dialog and writes nothing`, async t => {
+    const h = await harness(t);
+    await h.write(content);
+    await h.run("setup", ...before, () => { h.emit("session_shutdown"); return choice; });
+    assert.equal(h.depth(), 0);
+    assert.equal(h.dialogs.length, before.length + 1);
+    assert.equal(await readFile(h.path, "utf8"), content);
+  });
+}
+
+test("a write that fails after session reset warns nobody", async t => {
+  const h = await harness(t);
+  await h.write(COMMAND_CONFIG);
+  t.mock.method(fsPromises, "rename", async () => { h.emit("session_shutdown"); throw new Error("EIO"); });
+  syncBuiltinESMExports();
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+  await h.run("setup", "Save");
+  assert.deepEqual(h.notices, []);
+  assert.equal(await readFile(h.path, "utf8"), COMMAND_CONFIG);
+});
+
+test("an old setup closing after reset does not release the new setup's guard", async t => {
+  const h = await harness(t);
+  const first = h.start("setup", OPEN);
+  await until(() => h.depth() === 1);
+  h.emit("session_shutdown");
+  h.emit("session_start");
+  const second = h.start("setup", OPEN);
+  await first;
+  await until(() => h.depth() === 1 && h.dialogs.length === 2);
+  await h.run("setup");
+  await flush();
+  assert.equal(h.dialogs.length, 2);
+  h.emit("session_shutdown");
+  await second;
+});
+
+test("session reset during the write touches no stale ctx and offers no test", async t => {
+  const h = await harness(t);
+  await h.write(COMMAND_CONFIG);
+  const { rename } = fsPromises;
+  t.mock.method(fsPromises, "rename", async (from: string, to: string) => { h.emit("session_shutdown"); await rename(from, to); });
+  syncBuiltinESMExports();
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+  await h.run("setup", "Save");
+  assert.equal(h.dialogs.length, 1);
+  assert.deepEqual(h.notices, []);
+  assert.deepEqual(await saved(h), JSON.parse(COMMAND_CONFIG));
+});
+
+test("session reset at the test offer closes it without sending", async t => {
+  const h = await harness(t);
+  const running = h.start("setup", "Add connector", "Shell command", "touch ran", "Save", OPEN);
+  await until(() => h.dialogs.at(-1)?.title === "Send a test notification?");
+  h.emit("session_shutdown");
+  await running;
+  await flush();
+  assert.equal(h.depth(), 0);
+  await assert.rejects(lstat(join(h.root, "ran")), /ENOENT/);
+});
+
+test("changing the file after opening asks first, and declining leaves the outside edit", async t => {
+  const h = await harness(t);
+  await h.write(COMMAND_CONFIG);
+  const outside = JSON.stringify({ connectors: [{ type: "command", run: "outside" }] });
+  await h.run("setup", edit(h.path, outside, "Save"), false, "Cancel");
+  assert.deepEqual(h.dialogs.map(dialog => dialog.title), ["Notify setup", OVERWRITE, "Notify setup"]);
+  assert.equal(await readFile(h.path, "utf8"), outside);
+
+  await h.run("setup", edit(h.path, COMMAND_CONFIG, "Nerd Font status icon: off"), "Save", true, false);
+  assert.deepEqual(await saved(h), { connectors: [{ type: "command", run: "outside" }], nerdFont: true });
+});
+
+test("a file created or removed after opening also asks, and rewriting the same bytes does not", async t => {
+  const h = await harness(t);
+  const created = () => { mkdirSync(join(h.root, "pi-notify"), { recursive: true }); return edit(h.path, COMMAND_CONFIG, "Save")(); };
+  await h.run("setup", ...TELEGRAM, created, false, "Cancel");
+  assert.equal(h.dialogs.at(-2)?.title, OVERWRITE);
+  assert.equal(await readFile(h.path, "utf8"), COMMAND_CONFIG);
+
+  await h.run("setup", () => { rmSync(h.path); return "Save"; }, false, "Cancel");
+  assert.equal(h.dialogs.at(-2)?.title, OVERWRITE);
+  await assert.rejects(lstat(h.path), /ENOENT/);
+
+  await h.write(COMMAND_CONFIG);
+  h.dialogs.length = 0;
+  await h.run("setup", edit(h.path, COMMAND_CONFIG, "Save"), false);
+  assert.ok(!h.dialogs.some(dialog => dialog.title === OVERWRITE));
+});
+
+for (const [args, shown] of [["", "🔔 once"], ["on", "🔔 on"], ["off", undefined]] as const) {
+  test(`/notify ${args || "(no args)"} status is the same before and after setup`, async t => {
+    const h = await harness(t);
+    await h.write(JSON.stringify({ connectors: [{ type: "telegram", botToken: TOKEN, chatId: "-1" }] }));
+    await h.run(args);
+    assert.equal(h.status(), shown);
+    await h.run("setup", "Cancel");
+    assert.equal(h.status(), shown);
+    await h.run("setup", ...SAVE_NO_TEST);
+    assert.equal(h.status(), shown);
+    h.emit("agent_start");
+    h.emit("agent_before_settle", "completed");
+    h.emit("agent_settled");
+    await flush();
+    assert.equal(h.sent.length, shown ? 1 : 0);
+  });
+}
 
 test("non-TUI modes open no dialog and bad subcommands show setup in usage", async t => {
   const h = await harness(t);

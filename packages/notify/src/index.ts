@@ -7,7 +7,7 @@ import { formatMessage } from "./message.ts";
 import { runSetup } from "./setup.ts";
 import { NotifyState } from "./state.ts";
 
-export default function (pi: ExtensionAPI): void {
+export default function (pi: ExtensionAPI, onSetup: (setup: Promise<void>) => void = () => {}): void {
   const path = join(getAgentDir(), "pi-notify", "config.json");
   const state = new NotifyState();
   let generation = 0;
@@ -15,6 +15,7 @@ export default function (pi: ExtensionAPI): void {
   let activeRun = false;
   let nerdFont = false;
   let controller = new AbortController();
+  let openSetup: AbortController | undefined;
 
   function status(ctx: ExtensionContext): void {
     ctx.ui.setStatus("notify", state.armed === "off" ? undefined : `${nerdFont ? "\uf0f3" : "🔔"} ${state.armed}`);
@@ -72,17 +73,27 @@ export default function (pi: ExtensionAPI): void {
     if (outcome) void send(ctx, formatMessage(ctx.sessionManager.getSessionName(), ctx.cwd, outcome));
   });
   async function setup(ctx: ExtensionContext): Promise<void> {
+    if (openSetup === controller) {
+      ctx.ui.notify("Notify setup is already open; if you cannot see it, /reload clears it.", "warning");
+      return;
+    }
     if (activeRun) {
       ctx.ui.notify("Notify setup is unavailable during a run; try again when it finishes.", "warning");
       return;
     }
-    const result = await runSetup(ctx.ui, path);
-    if (!result) return;
-    nerdFont = result.draft.nerdFont === true;
-    status(ctx);
-    ctx.ui.notify("Notify config saved.", "info");
-    if (result.valid && await ctx.ui.confirm("Send a test notification?", "This sends to every connector and runs any shell command connector.")) {
-      void send(ctx, formatMessage(ctx.sessionManager.getSessionName(), ctx.cwd, "test"));
+    const current = openSetup = controller;
+    try {
+      const { signal } = current;
+      const result = await runSetup(ctx.ui, path, signal);
+      if (!result || signal.aborted) return;
+      nerdFont = result.draft.nerdFont === true;
+      status(ctx);
+      ctx.ui.notify("Notify config saved.", "info");
+      if (result.valid && await ctx.ui.confirm("Send a test notification?", "This sends to every connector and runs any shell command connector.", { signal })) {
+        void send(ctx, formatMessage(ctx.sessionManager.getSessionName(), ctx.cwd, "test"));
+      }
+    } finally {
+      if (openSetup === current) openSetup = undefined;
     }
   }
   async function act(args: string, ctx: ExtensionContext, tool = false): Promise<void> {
@@ -91,7 +102,14 @@ export default function (pi: ExtensionAPI): void {
       return;
     }
     const action = args.trim();
-    if (action === "setup") return setup(ctx);
+    if (action === "setup") {
+      const { signal } = controller;
+      // Pi's input loop awaits this handler, so holding it open behind a replaced dialog would swallow every later input.
+      onSetup(setup(ctx).catch(error => {
+        if (!signal.aborted) ctx.ui.notify(`Notify setup failed: ${(error as Error).message}`, "warning");
+      }));
+      return;
+    }
     const current = generation;
     const request = ++command;
     const stale = () => {

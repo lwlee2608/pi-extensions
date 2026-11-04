@@ -20,7 +20,7 @@
 - **Does `/notify setup` fit the current command path?** — Not as is. `act()` loads and validates config first, so a missing or broken config would block setup. Setup must branch before that load `research`
 - **Can setup reuse `parseConfig`?** — Not for editing. It returns resolved values, so saving its output would write `$VAR` secrets out as literals. Setup edits the raw JSON and uses `parseConfig` only to validate `research`
 - **Setup during a run** — Refused with a warning while a run is active, because an agent dialog would replace setup's and hang it. This also means setup's own dialogs send no prompt pings, so no suppression is needed. A run started by another extension while setup is open is not handled
-- **Reentry and session change** — A second `/notify setup` while open does nothing. A session reset dismisses setup without writing `agent`
+- **Reentry and session change** — A second `/notify setup` while open opens no dialog and shows a notice that `/reload` clears a setup the user cannot see, because the guard's practical trigger is a dialog already replaced. A session reset dismisses setup without writing `agent`
 - **Arming state** — Setup does not change arming. After saving, the in-memory `nerdFont` and status refresh from the draft, since `loadConfig` throws on a config that is saved but invalid `agent`
 - **Saving** — Atomic temp file and rename, file `0600`, new directory `0700`. A symlinked config is written through, not replaced `agent`
 - **Concurrent edits** — No lock. If the file changed since setup opened, ask before overwriting `agent`
@@ -34,7 +34,7 @@
 - **Build mode** — Orchestrator; worker Opus 5.5 medium, reviewer Opus 5.5 high
 
 ## Progress
-Active: 3 · 16/21 tasks
+Active: 3 · 21/21 tasks
 
 ### Phase 1 — Create a working config from nothing
 A new user can run `/notify setup`, add a Telegram or command connector, set options, save, and send a test without touching JSON.
@@ -67,13 +67,14 @@ An existing user can edit or remove any connector from the menu, and the stored 
 ### Phase 3 — Keep setup safe during session changes and concurrent edits
 A user can use setup without lost edits or a half-open dialog, and the README explains it, including that setup is refused during a run.
 **Blocked by:** 2
-- [ ] Ignore a second `/notify setup` while one is open (packages/notify/src/index.ts)
-- [ ] Close setup without writing on session reset, including the custom input (packages/notify/src/setup.ts, packages/notify/src/index.ts)
-- [ ] Ask before overwriting when the file changed since setup opened (packages/notify/src/setup.ts)
-- [ ] Test each guard, including that arming state is unchanged by setup (packages/notify/test/setup.test.ts)
-- [ ] Document `/notify setup` and lead Configure with it, keeping the manual JSON docs (packages/notify/README.md)
+- [x] Refuse a second `/notify setup` while one is open, with a notice (packages/notify/src/index.ts)
+- [x] Close setup without writing on session reset, including the custom input (packages/notify/src/setup.ts, packages/notify/src/index.ts)
+- [x] Ask before overwriting when the file changed since setup opened (packages/notify/src/setup.ts)
+- [x] Test each guard, including that arming state is unchanged by setup (packages/notify/test/setup.test.ts)
+- [x] Document `/notify setup` and lead Configure with it, keeping the manual JSON docs (packages/notify/README.md)
 **Verify:** `npm test -w packages/notify` passes with new cases showing: a second `/notify setup` while one is open opens no new dialog; session reset closes setup and leaves the file unchanged; changing the file after opening triggers a confirm, and declining leaves the outside edit intact; `/notify on` status is the same before and after setup.
-**Note:** Known and not scheduled, from Phase 1 review. The run guard (`index.ts:75`) misses the time before `agent_start`, such as pre-prompt compaction; `!ctx.isIdle()` closes the compaction part only. `followSymlinks` (`config.ts:81`) resolves link text lexically, so a link like `sym/../config.json` can write to the wrong path; `realpath` first would fix it. The masked input's hidden cursor can move on left/right.
+**Note:** How the code refines Reentry and session change: the command handler returns while setup runs detached, because Pi's input loop awaits it, and a held handler behind a replaced dialog swallows every later input. Confirmed in real Pi.
+**Note:** Known and not scheduled, from Phase 1 review. The run guard (`index.ts:75`) misses the time before `agent_start`, such as pre-prompt compaction; `!ctx.isIdle()` closes the compaction part only. `followSymlinks` (`config.ts:81`) resolves link text lexically, so a link like `sym/../config.json` can write to the wrong path; `realpath` first would fix it. The masked input's hidden cursor can move on left/right. From Phase 3 review: a hung setup leaves Pi's prompt depth raised, so `ui_prompt_start` stops firing and `onPrompt` pings silently stop while the session stays usable, until reset; aborting setup on `agent_start` could fix it but would change the "not handled" decision. A run can start with setup visible through queued input or CLI messages such as `pi "/notify setup" "do x"`; an agent dialog may then replace setup, and `/reload` clears it.
 
 ## Demo
 User runs, with a real Telegram bot and phone:

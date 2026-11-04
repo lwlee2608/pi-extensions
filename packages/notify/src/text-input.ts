@@ -1,7 +1,7 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { CURSOR_MARKER, Input, truncateToWidth, wrapTextWithAnsi, type Component, type Focusable } from "@earendil-works/pi-tui";
 
-export interface TextInputOptions { title: string; hint?: string; initial?: string; mask?: boolean }
+export interface TextInputOptions { title: string; hint?: string; initial?: string; mask?: boolean; signal?: AbortSignal }
 
 const READABLE = /^\$(?:[A-Za-z_][A-Za-z0-9_]*)?$/;
 
@@ -9,12 +9,15 @@ export class TextInput implements Component, Focusable {
   private readonly input = new Input();
   private readonly options: TextInputOptions;
   private readonly theme: Theme;
+  private readonly cancel: () => void;
 
   constructor(options: TextInputOptions, theme: Theme, done: (value: string | undefined) => void) {
     this.options = options;
     this.theme = theme;
+    this.cancel = () => done(undefined);
     this.input.onSubmit = done;
-    this.input.onEscape = () => done(undefined);
+    this.input.onEscape = this.cancel;
+    options.signal?.addEventListener("abort", this.cancel, { once: true });
     // Input.setValue leaves the cursor at column 0; a paste leaves it after the text.
     if (options.initial) this.input.handleInput(`\x1b[200~${options.initial}\x1b[201~`);
   }
@@ -24,6 +27,7 @@ export class TextInput implements Component, Focusable {
 
   handleInput(data: string): void { this.input.handleInput(data); }
   invalidate(): void {}
+  dispose(): void { this.options.signal?.removeEventListener("abort", this.cancel); }
 
   render(width: number): string[] {
     const { title, hint } = this.options;
