@@ -31,10 +31,11 @@ async function harness(t: TestContext) {
   const { default: extension } = await import("../src/index.ts");
   const handlers = new Map<string, (event: any, ctx: any) => unknown>();
   let command!: (args: string, ctx: any) => Promise<void>;
+  let detached: Promise<void> | undefined;
   extension({ on: (name: string, fn: any) => handlers.set(name, fn),
     registerCommand: (_name: string, def: any) => { command = def.handler; },
     registerTool: () => {}, getActiveTools: () => [], setActiveTools: () => {},
-  } as any);
+  } as any, setup => { detached = setup; });
   const script: Answer[] = [];
   const dialogs: { kind: string; title: string; options?: string[]; message?: string; screen?: string }[] = [];
   const screens: string[] = [];
@@ -44,6 +45,7 @@ async function harness(t: TestContext) {
   let status: string | undefined;
   let depth = 0;
   let stale = false;
+  let usedStale = false;
   t.mock.method(globalThis, "fetch", async (_url: string, options: RequestInit) => {
     sent.push(JSON.parse(options.body as string));
     return new Response('{"ok":true}');
@@ -53,7 +55,10 @@ async function harness(t: TestContext) {
     const answer = script.shift();
     return typeof answer === "function" ? answer() : answer;
   };
-  const active = () => assert.ok(!stale, "ctx used after session shutdown");
+  const active = () => {
+    usedStale ||= stale;
+    assert.ok(!stale, "ctx used after session shutdown");
+  };
   const track = <T>(dialog: Promise<T>) => {
     depth++;
     return dialog.finally(() => { depth--; });
@@ -93,10 +98,13 @@ async function harness(t: TestContext) {
   const path = join(root, "pi-notify", "config.json");
   const start = (args: string, ...answers: Answer[]) => {
     script.push(...answers);
-    return command(args, ctx);
+    detached = undefined;
+    const handler = command(args, ctx);
+    return Promise.all([handler, detached]).then(() => assert.ok(!usedStale, "ctx used after session shutdown"));
   };
   return {
     root, path, ctx, script, dialogs, screens, warnings, notices, sent, start,
+    handler: (args: string) => command(args, ctx),
     status: () => status,
     depth: () => depth,
     emit: (name: string, outcome?: string) => {
@@ -481,6 +489,35 @@ test("a second /notify setup while one is open opens no new dialog", async t => 
   await h.run("setup", "Cancel");
   await h.run("setup", "Cancel");
   assert.equal(h.dialogs.length, 3);
+});
+
+test("the command handler returns while setup stays open, so Pi's input loop is not held", async t => {
+  const h = await harness(t);
+  h.script.push(OPEN);
+  await h.handler("setup");
+  await until(() => h.depth() === 1);
+  assert.equal(h.dialogs.length, 1);
+  await h.handler("setup");
+  assert.deepEqual(h.warnings, [ALREADY_OPEN]);
+  h.emit("session_shutdown");
+  await until(() => h.depth() === 0);
+});
+
+test("a setup failure is reported as a warning, and stays silent after session reset", async t => {
+  const h = await harness(t);
+  const { select } = h.ctx.ui;
+  h.ctx.ui.select = (async () => { throw new Error("dialog broke"); }) as any;
+  await h.run("setup");
+  assert.deepEqual(h.warnings, ["Notify setup failed: dialog broke"]);
+
+  h.warnings.length = 0;
+  h.ctx.ui.select = (async () => { h.emit("session_shutdown"); throw new Error("dialog broke"); }) as any;
+  await h.run("setup");
+  assert.deepEqual(h.warnings, []);
+  h.emit("session_start");
+  h.ctx.ui.select = select;
+  await h.run("setup", "Cancel");
+  assert.equal(h.dialogs.length, 1);
 });
 
 test("a dialog that never resolves blocks a second setup only until session reset", async t => {

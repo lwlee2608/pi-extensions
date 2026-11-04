@@ -73,6 +73,7 @@ A user can use setup without lost edits or a half-open dialog, and the README ex
 - [x] Test each guard, including that arming state is unchanged by setup (packages/notify/test/setup.test.ts)
 - [x] Document `/notify setup` and lead Configure with it, keeping the manual JSON docs (packages/notify/README.md)
 **Verify:** `npm test -w packages/notify` passes with new cases showing: a second `/notify setup` while one is open opens no new dialog; session reset closes setup and leaves the file unchanged; changing the file after opening triggers a confirm, and declining leaves the outside edit intact; `/notify on` status is the same before and after setup.
+**Note:** How the code refines Reentry and session change: the command handler returns while setup runs detached, because Pi's input loop awaits it, and a held handler behind a replaced dialog swallows every later input. Confirmed in real Pi.
 **Note:** Known and not scheduled, from Phase 1 review. The run guard (`index.ts:75`) misses the time before `agent_start`, such as pre-prompt compaction; `!ctx.isIdle()` closes the compaction part only. `followSymlinks` (`config.ts:81`) resolves link text lexically, so a link like `sym/../config.json` can write to the wrong path; `realpath` first would fix it. The masked input's hidden cursor can move on left/right.
 
 ## Demo

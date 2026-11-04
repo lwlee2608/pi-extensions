@@ -7,7 +7,7 @@ import { formatMessage } from "./message.ts";
 import { runSetup } from "./setup.ts";
 import { NotifyState } from "./state.ts";
 
-export default function (pi: ExtensionAPI): void {
+export default function (pi: ExtensionAPI, onSetup: (setup: Promise<void>) => void = () => {}): void {
   const path = join(getAgentDir(), "pi-notify", "config.json");
   const state = new NotifyState();
   let generation = 0;
@@ -102,7 +102,14 @@ export default function (pi: ExtensionAPI): void {
       return;
     }
     const action = args.trim();
-    if (action === "setup") return setup(ctx);
+    if (action === "setup") {
+      const { signal } = controller;
+      // Pi's input loop awaits this handler, so holding it open behind a replaced dialog would swallow every later input.
+      onSetup(setup(ctx).catch(error => {
+        if (!signal.aborted) ctx.ui.notify(`Notify setup failed: ${(error as Error).message}`, "warning");
+      }));
+      return;
+    }
     const current = generation;
     const request = ++command;
     const stale = () => {
