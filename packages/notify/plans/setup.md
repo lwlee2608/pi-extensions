@@ -34,7 +34,7 @@
 - **Build mode** — Orchestrator; worker Opus 5.5 medium, reviewer Opus 5.5 high
 
 ## Progress
-Active: 3 · 18/21 tasks
+Active: 3 · 19/21 tasks
 
 ### Phase 1 — Create a working config from nothing
 A new user can run `/notify setup`, add a Telegram or command connector, set options, save, and send a test without touching JSON.
@@ -69,7 +69,7 @@ A user can use setup without lost edits or a half-open dialog, and the README ex
 **Blocked by:** 2
 - [x] Ignore a second `/notify setup` while one is open (packages/notify/src/index.ts)
 - [x] Close setup without writing on session reset, including the custom input (packages/notify/src/setup.ts, packages/notify/src/index.ts)
-- [ ] Ask before overwriting when the file changed since setup opened (packages/notify/src/setup.ts)
+- [x] Ask before overwriting when the file changed since setup opened (packages/notify/src/setup.ts)
 - [ ] Test each guard, including that arming state is unchanged by setup (packages/notify/test/setup.test.ts)
 - [ ] Document `/notify setup` and lead Configure with it, keeping the manual JSON docs (packages/notify/README.md)
 **Verify:** `npm test -w packages/notify` passes with new cases showing: a second `/notify setup` while one is open opens no new dialog; session reset closes setup and leaves the file unchanged; changing the file after opening triggers a confirm, and declining leaves the outside edit intact; `/notify on` status is the same before and after setup.

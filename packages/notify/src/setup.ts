@@ -1,5 +1,5 @@
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
-import { loadDraft, parseConfig, saveDraft, validBotTokenEntry, validChatIdEntry, variableEntry, type Draft } from "./config.ts";
+import { loadDraft, parseConfig, readRaw, saveDraft, validBotTokenEntry, validChatIdEntry, variableEntry, type Draft } from "./config.ts";
 import { TextInput, type TextInputOptions } from "./text-input.ts";
 
 export interface SetupResult { draft: Draft; valid: boolean }
@@ -110,7 +110,7 @@ async function changeConnector(ui: Dialogs, draft: Draft, index: number, label: 
   if (edited) draft.connectors[index] = edited;
 }
 
-async function save(ui: Dialogs, path: string, draft: Draft, signal: AbortSignal): Promise<SetupResult | undefined> {
+async function save(ui: Dialogs, path: string, draft: Draft, opened: string | undefined, signal: AbortSignal): Promise<SetupResult | undefined> {
   if (draft.connectors.length === 0) {
     ui.warn("Add a connector before saving.");
     return undefined;
@@ -122,6 +122,7 @@ async function save(ui: Dialogs, path: string, draft: Draft, signal: AbortSignal
     const message = `${(error as Error).message} All notifications stay refused until it is fixed.`;
     if (!await ui.confirm("Save this invalid config?", message)) return undefined;
   }
+  if (await readRaw(path) !== opened && !await ui.confirm("Overwrite outside changes?", "pi-notify/config.json changed since setup opened. Saving replaces those changes.")) return undefined;
   if (signal.aborted) return undefined;
   try { await saveDraft(path, draft); }
   catch {
@@ -133,6 +134,7 @@ async function save(ui: Dialogs, path: string, draft: Draft, signal: AbortSignal
 
 export async function runSetup(piUi: ExtensionUIContext, path: string, signal: AbortSignal): Promise<SetupResult | undefined> {
   const ui = dialogs(piUi, signal);
+  const opened = await readRaw(path);
   let draft: Draft;
   try { draft = await loadDraft(path); }
   catch (error) {
@@ -151,7 +153,7 @@ export async function runSetup(piUi: ExtensionUIContext, path: string, signal: A
       const connector = await addConnector(ui);
       if (connector) draft.connectors.push(connector);
     } else if (choice === SAVE) {
-      const result = await save(ui, path, draft, signal);
+      const result = await save(ui, path, draft, opened, signal);
       if (result) return result;
     } else if (option) {
       draft[option] = draft[option] !== true;

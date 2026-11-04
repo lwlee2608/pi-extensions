@@ -58,6 +58,8 @@ export async function loadConfig(path: string): Promise<Config> {
   return parseConfig(value);
 }
 
+export const readRaw = (path: string): Promise<string | undefined> => readFile(path, "utf8").catch(() => undefined);
+
 export async function loadDraft(path: string): Promise<Draft> {
   let raw: string;
   try { raw = await readFile(path, "utf8"); }
