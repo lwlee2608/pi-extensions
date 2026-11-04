@@ -73,7 +73,10 @@ export default function (pi: ExtensionAPI): void {
     if (outcome) void send(ctx, formatMessage(ctx.sessionManager.getSessionName(), ctx.cwd, outcome));
   });
   async function setup(ctx: ExtensionContext): Promise<void> {
-    if (openSetup === controller) return;
+    if (openSetup === controller) {
+      ctx.ui.notify("Notify setup is already open; if you cannot see it, /reload clears it.", "warning");
+      return;
+    }
     if (activeRun) {
       ctx.ui.notify("Notify setup is unavailable during a run; try again when it finishes.", "warning");
       return;

@@ -462,6 +462,7 @@ const until = async (check: () => boolean) => {
 const COMMAND_CONFIG = JSON.stringify({ connectors: [{ type: "command", run: "true" }] });
 const ROW = "1. Command true";
 const OVERWRITE = "Overwrite outside changes?";
+const ALREADY_OPEN = "Notify setup is already open; if you cannot see it, /reload clears it.";
 const edit = (path: string, content: string, answer: Answer) => () => { writeFileSync(path, content); return answer; };
 
 test("a second /notify setup while one is open opens no new dialog", async t => {
@@ -473,7 +474,7 @@ test("a second /notify setup while one is open opens no new dialog", async t => 
   await h.run("setup");
   await flush();
   assert.equal(h.dialogs.length, 1);
-  assert.deepEqual(h.notices, []);
+  assert.deepEqual(h.notices, [ALREADY_OPEN, ALREADY_OPEN]);
   h.emit("session_shutdown");
   await first;
   h.emit("session_start");
@@ -488,10 +489,12 @@ test("a dialog that never resolves blocks a second setup only until session rese
   await until(() => h.dialogs.length === 1);
   await h.run("setup");
   assert.equal(h.dialogs.length, 1);
+  assert.deepEqual(h.warnings, [ALREADY_OPEN]);
   h.emit("session_shutdown");
   h.emit("session_start");
   await h.run("setup", "Cancel");
   assert.equal(h.dialogs.length, 2);
+  assert.deepEqual(h.warnings, [ALREADY_OPEN]);
 });
 
 for (const [name, kind, answers] of [

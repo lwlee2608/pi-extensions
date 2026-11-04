@@ -16,7 +16,7 @@ Run `/notify setup` in the TUI. It adds, edits, and removes Telegram and shell c
 
 - Changes stay in a draft until Save. Cancel or Esc at the menu writes nothing; Esc in a sub-dialog goes back.
 - Literal bot tokens are masked as you type and never shown again. On edit, empty input keeps the stored token. `$VAR` references stay readable and are saved unexpanded.
-- Setup is refused during a run; try again when it finishes. A second `/notify setup` while one is open does nothing, and a session reset closes setup without writing.
+- Setup is refused during a run; try again when it finishes. A second `/notify setup` while one is open shows a notice instead of a new dialog; if you cannot see the open one, `/reload` clears it. A session reset closes setup without writing.
 - If the file changed since setup opened, Save asks before overwriting it.
 - Malformed JSON, a non-object file, or a `connectors` value that is not an array is refused with a warning; fix those by hand. A bad connector opens normally so it can be fixed.
 - Saving a config that fails validation asks first, offers no test, and keeps all notifications refused until it is fixed.

@@ -20,7 +20,7 @@
 - **Does `/notify setup` fit the current command path?** — Not as is. `act()` loads and validates config first, so a missing or broken config would block setup. Setup must branch before that load `research`
 - **Can setup reuse `parseConfig`?** — Not for editing. It returns resolved values, so saving its output would write `$VAR` secrets out as literals. Setup edits the raw JSON and uses `parseConfig` only to validate `research`
 - **Setup during a run** — Refused with a warning while a run is active, because an agent dialog would replace setup's and hang it. This also means setup's own dialogs send no prompt pings, so no suppression is needed. A run started by another extension while setup is open is not handled
-- **Reentry and session change** — A second `/notify setup` while open does nothing. A session reset dismisses setup without writing `agent`
+- **Reentry and session change** — A second `/notify setup` while open opens no dialog and shows a notice that `/reload` clears a setup the user cannot see, because the guard's practical trigger is a dialog already replaced. A session reset dismisses setup without writing `agent`
 - **Arming state** — Setup does not change arming. After saving, the in-memory `nerdFont` and status refresh from the draft, since `loadConfig` throws on a config that is saved but invalid `agent`
 - **Saving** — Atomic temp file and rename, file `0600`, new directory `0700`. A symlinked config is written through, not replaced `agent`
 - **Concurrent edits** — No lock. If the file changed since setup opened, ask before overwriting `agent`
@@ -67,7 +67,7 @@ An existing user can edit or remove any connector from the menu, and the stored 
 ### Phase 3 — Keep setup safe during session changes and concurrent edits
 A user can use setup without lost edits or a half-open dialog, and the README explains it, including that setup is refused during a run.
 **Blocked by:** 2
-- [x] Ignore a second `/notify setup` while one is open (packages/notify/src/index.ts)
+- [x] Refuse a second `/notify setup` while one is open, with a notice (packages/notify/src/index.ts)
 - [x] Close setup without writing on session reset, including the custom input (packages/notify/src/setup.ts, packages/notify/src/index.ts)
 - [x] Ask before overwriting when the file changed since setup opened (packages/notify/src/setup.ts)
 - [x] Test each guard, including that arming state is unchanged by setup (packages/notify/test/setup.test.ts)
