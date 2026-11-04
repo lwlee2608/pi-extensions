@@ -1,6 +1,6 @@
 {
   "name": "@lwlee2608/pi-notify",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Phone notifications when an armed Pi run finishes.",
   "type": "module",
   "license": "MIT",
