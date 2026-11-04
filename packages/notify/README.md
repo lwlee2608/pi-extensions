@@ -14,10 +14,10 @@ Requires Node.js 22.19+ and Pi 1.0.0. Run `/reload` after installing.
 
 Run `/notify setup` in the TUI. It adds, edits, and removes Telegram and shell command connectors, toggles `onPrompt` and `nerdFont`, and offers a test send after saving.
 
-- Changes stay in a draft until Save. Cancel or Esc at the menu writes nothing; Esc in a sub-dialog goes back.
+- Changes stay in a draft until Save and close. Discard and close or Esc at the menu writes nothing; Esc in a sub-dialog goes back.
 - Literal bot tokens are masked as you type and never shown again. On edit, empty input keeps the stored token. `$VAR` references stay readable and are saved unexpanded.
 - Setup is refused during a run; try again when it finishes. A second `/notify setup` while one is open shows a notice instead of a new dialog; if you cannot see the open one, `/reload` clears it. A session reset closes setup without writing.
-- If the file changed since setup opened, Save asks before overwriting it.
+- If the file changed since setup opened, Save and close asks before overwriting it.
 - Malformed JSON, a non-object file, or a `connectors` value that is not an array is refused with a warning; fix those by hand. A bad connector opens normally so it can be fixed.
 - Saving a config that fails validation asks first, offers no test, and keeps all notifications refused until it is fixed.
 - Unknown keys survive a save. Unsupported connector types and multi-line `run` values can only be removed; edit a multi-line `run` in the file.

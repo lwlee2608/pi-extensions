@@ -4,14 +4,14 @@ import { TextInput, type TextInputOptions } from "./text-input.ts";
 
 export interface SetupResult { draft: Draft; valid: boolean }
 
-const ADD = "Add connector";
-const SAVE = "Save";
-const CANCEL = "Cancel";
+const ADD = "+ Add connector";
+const SAVE = "Save and close";
+const DISCARD = "Discard and close";
 const TELEGRAM = "Telegram";
 const COMMAND = "Shell command";
 const EDIT = "Edit";
 const REMOVE = "Remove";
-const OPTIONS = { onPrompt: "Notify when waiting for input", nerdFont: "Nerd Font status icon" };
+const OPTIONS = { onPrompt: "notify when waiting for input", nerdFont: "Nerd Font status icon" };
 
 interface Dialogs {
   select(title: string, options: string[]): Promise<string | undefined>;
@@ -42,14 +42,27 @@ function connectorValid(connector: unknown): boolean {
   catch { return false; }
 }
 
+function fields(connector: unknown): Record<string, unknown> {
+  return (connector ?? {}) as Record<string, unknown>;
+}
+
+function multiLineRun({ type, run }: Record<string, unknown>): boolean {
+  return type === "command" && typeof run === "string" && text(run) !== run;
+}
+
+function editable(stored: Record<string, unknown>): boolean {
+  return (stored.type === "telegram" || stored.type === "command") && !multiLineRun(stored);
+}
+
 function connectorLabel(connector: unknown, index: number): string {
-  const { type, chatId, run } = (connector ?? {}) as Record<string, unknown>;
-  const body = type === "telegram" ? `Telegram ${shownChatId(chatId) ?? "(invalid)"}` : type === "command" ? `Command ${text(run)}` : "Unsupported connector";
-  return `${index + 1}. ${body}${connectorValid(connector) ? "" : " (needs fixing)"}`;
+  const stored = fields(connector);
+  const { type, chatId, run } = stored;
+  const body = type === "telegram" ? `Telegram, chat ${shownChatId(chatId) ?? "(invalid)"}` : type === "command" ? `Command, ${text(run)}` : "Unsupported connector";
+  return `${editable(stored) ? EDIT : REMOVE} ${index + 1}: ${body}${connectorValid(connector) ? "" : " (needs fixing)"}`;
 }
 
 function optionLabel(draft: Draft, key: keyof typeof OPTIONS): string {
-  return `${OPTIONS[key]}: ${draft[key] === true ? "on" : "off"}`;
+  return `Option: ${OPTIONS[key]} [${draft[key] === true ? "on" : "off"}]`;
 }
 
 async function ask(ui: Dialogs, options: TextInputOptions, problem: (value: string) => string | undefined): Promise<string | undefined> {
@@ -100,10 +113,8 @@ async function addConnector(ui: Dialogs): Promise<object | undefined> {
 }
 
 async function changeConnector(ui: Dialogs, draft: Draft, index: number, label: string): Promise<void> {
-  const stored = (draft.connectors[index] ?? {}) as Record<string, unknown>;
-  const multiLine = stored.type === "command" && typeof stored.run === "string" && text(stored.run) !== stored.run;
-  const editable = (stored.type === "telegram" || stored.type === "command") && !multiLine;
-  const action = await ui.select(multiLine ? `${label} (multi-line: edit it in pi-notify/config.json)` : label, editable ? [EDIT, REMOVE] : [REMOVE]);
+  const stored = fields(draft.connectors[index]);
+  const action = await ui.select(multiLineRun(stored) ? `${label} (multi-line: edit it in pi-notify/config.json)` : label, editable(stored) ? [EDIT, REMOVE] : [REMOVE]);
   if (action === REMOVE) draft.connectors.splice(index, 1);
   if (action !== EDIT) return;
   const edited = await (stored.type === "telegram" ? askTelegram : askCommand)(ui, stored);
@@ -145,10 +156,10 @@ export async function runSetup(piUi: ExtensionUIContext, path: string, signal: A
   for (;;) {
     const labels = draft.connectors.map(connectorLabel);
     const choice = await ui.select("Notify setup", [
-      ...labels, ADD, ...keys.map(key => optionLabel(draft, key)), SAVE, CANCEL,
+      ...labels, ADD, ...keys.map(key => optionLabel(draft, key)), SAVE, DISCARD,
     ]);
     const option = keys.find(key => optionLabel(draft, key) === choice);
-    if (choice === undefined || choice === CANCEL) return undefined;
+    if (choice === undefined || choice === DISCARD) return undefined;
     if (choice === ADD) {
       const connector = await addConnector(ui);
       if (connector) draft.connectors.push(connector);
