@@ -80,12 +80,13 @@ export default function (pi: ExtensionAPI): void {
     }
     const current = openSetup = controller;
     try {
-      const result = await runSetup(ctx.ui, path);
-      if (!result) return;
+      const { signal } = current;
+      const result = await runSetup(ctx.ui, path, signal);
+      if (!result || signal.aborted) return;
       nerdFont = result.draft.nerdFont === true;
       status(ctx);
       ctx.ui.notify("Notify config saved.", "info");
-      if (result.valid && await ctx.ui.confirm("Send a test notification?", "This sends to every connector and runs any shell command connector.")) {
+      if (result.valid && await ctx.ui.confirm("Send a test notification?", "This sends to every connector and runs any shell command connector.", { signal })) {
         void send(ctx, formatMessage(ctx.sessionManager.getSessionName(), ctx.cwd, "test"));
       }
     } finally {
