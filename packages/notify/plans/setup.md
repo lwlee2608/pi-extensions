@@ -62,6 +62,7 @@ An existing user can edit or remove any connector from the menu, and the stored 
 - [x] Test edits against configs with literal tokens, `$VAR` values, and unknown keys (packages/notify/test/setup.test.ts)
 **Verify:** `npm test -w packages/notify` passes with new cases showing: from a config with a literal token, no dialog title, option, prefill, notification, or masked render contains it; changing only the chat ID leaves the token, `$VAR` values, and unknown keys unchanged in the saved file; a connector with an unset `$VAR` opens and can be fixed; removing the last connector blocks Save.
 **Note:** Paste prefill alters a multi-line `run`: `handlePaste` (`text-input.ts:19`) strips newlines and expands tabs, so a stored `printf a\nprintf\tb` becomes `printf aprintf    b` and Enter would silently save a different command, while `parseConfig` accepts multi-line `run`; the `run` edit must handle this, e.g. keep the stored value when input is unchanged, or treat a multi-line `run` as not editable.
+**Note:** How the code refines two decisions. Literal bot token on edit: a chat ID that fails `validChatIdEntry` is hidden from the label and prefill, shows `(invalid)`, and must be retyped, so a token hand-placed in `chatId` can't show. Command connector `run`: a `run` containing any control character is Remove-only, the option the Note above allows.
 
 ### Phase 3 — Keep setup safe during session changes and concurrent edits
 A user can use setup without lost edits or a half-open dialog, and the README explains it, including that setup is refused during a run.
