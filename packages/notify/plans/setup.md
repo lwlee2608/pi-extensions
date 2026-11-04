@@ -34,7 +34,7 @@
 - **Build mode** — Orchestrator; worker Opus 5.5 medium, reviewer Opus 5.5 high
 
 ## Progress
-Active: 1 · 7/21 tasks
+Active: 1 · 10/21 tasks
 
 ### Phase 1 — Create a working config from nothing
 A new user can run `/notify setup`, add a Telegram or command connector, set options, save, and send a test without touching JSON.
@@ -46,9 +46,9 @@ A new user can run `/notify setup`, add a Telegram or command connector, set opt
 - [x] Build the menu with connector rows, Add connector, option toggles, Save, and Cancel, opening on Add connector when the list is empty (packages/notify/src/setup.ts)
 - [x] Prompt for Telegram and command connector fields, with chat ID hint text and format checks (packages/notify/src/setup.ts)
 - [x] Block Save with zero connectors, and ask for confirmation on Save when the draft fails `parseConfig` (packages/notify/src/setup.ts)
-- [ ] Route `/notify setup` ahead of the config load and update the usage text and command description (packages/notify/src/index.ts)
-- [ ] Refuse `/notify setup` with a warning while a run is active (packages/notify/src/index.ts)
-- [ ] Refresh `nerdFont` and status from the draft after Save, then offer a test through `send()` only if the config validates (packages/notify/src/index.ts)
+- [x] Route `/notify setup` ahead of the config load and update the usage text and command description (packages/notify/src/index.ts)
+- [x] Refuse `/notify setup` with a warning while a run is active (packages/notify/src/index.ts)
+- [x] Refresh `nerdFont` and status from the draft after Save, then offer a test through `send()` only if the config validates (packages/notify/src/index.ts)
 - [ ] Test the flow with stubbed dialogs (packages/notify/test/setup.test.ts)
 **Verify:** `npm test -w packages/notify` passes with new cases showing: from no config, driving the dialogs writes a file that `loadConfig` accepts, with mode `0600`; `$VAR` values are stored unexpanded; Cancel writes nothing; malformed JSON and a non-array `connectors` stay byte-identical; rendering the masked input never contains a literal token; declining the test sends nothing and accepting sends once; during a run, `/notify setup` warns and opens no dialog; saving with an unset `$VAR` or a kept unsupported connector requires confirmation, offers no test, and leaves `/notify on` armed.
 
