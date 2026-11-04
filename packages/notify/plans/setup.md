@@ -34,7 +34,7 @@
 - **Build mode** — Orchestrator; worker Opus 5.5 medium, reviewer Opus 5.5 high
 
 ## Progress
-Active: 2 · 14/21 tasks
+Active: 2 · 15/21 tasks
 
 ### Phase 1 — Create a working config from nothing
 A new user can run `/notify setup`, add a Telegram or command connector, set options, save, and send a test without touching JSON.
@@ -58,7 +58,7 @@ An existing user can edit or remove any connector from the menu, and the stored 
 - [x] Edit Telegram connectors, where empty token input keeps the stored value, the literal is never prefilled, and chat IDs and `$VAR` values are prefilled (packages/notify/src/setup.ts)
 - [x] Edit command connectors with `run` prefilled (packages/notify/src/setup.ts)
 - [x] Remove connectors, and limit unsupported connector types to removal only (packages/notify/src/setup.ts)
-- [ ] Flag connectors that fail validation in the menu without showing their secrets (packages/notify/src/setup.ts)
+- [x] Flag connectors that fail validation in the menu without showing their secrets (packages/notify/src/setup.ts)
 - [ ] Test edits against configs with literal tokens, `$VAR` values, and unknown keys (packages/notify/test/setup.test.ts)
 **Verify:** `npm test -w packages/notify` passes with new cases showing: from a config with a literal token, no dialog title, option, prefill, notification, or masked render contains it; changing only the chat ID leaves the token, `$VAR` values, and unknown keys unchanged in the saved file; a connector with an unset `$VAR` opens and can be fixed; removing the last connector blocks Save.
 **Note:** Paste prefill alters a multi-line `run`: `handlePaste` (`text-input.ts:19`) strips newlines and expands tabs, so a stored `printf a\nprintf\tb` becomes `printf aprintf    b` and Enter would silently save a different command, while `parseConfig` accepts multi-line `run`; the `run` edit must handle this, e.g. keep the stored value when input is unchanged, or treat a multi-line `run` as not editable.

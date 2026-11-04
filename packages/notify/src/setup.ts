@@ -21,10 +21,15 @@ function shownChatId(value: unknown): string | undefined {
   return typeof value === "string" && validChatIdEntry(value) ? value : undefined;
 }
 
+function connectorValid(connector: unknown): boolean {
+  try { parseConfig({ connectors: [connector] }); return true; }
+  catch { return false; }
+}
+
 function connectorLabel(connector: unknown, index: number): string {
   const { type, chatId, run } = (connector ?? {}) as Record<string, unknown>;
   const body = type === "telegram" ? `Telegram ${shownChatId(chatId) ?? "(invalid)"}` : type === "command" ? `Command ${text(run)}` : "Unsupported connector";
-  return `${index + 1}. ${body}`;
+  return `${index + 1}. ${body}${connectorValid(connector) ? "" : " (needs fixing)"}`;
 }
 
 function optionLabel(draft: Draft, key: keyof typeof OPTIONS): string {

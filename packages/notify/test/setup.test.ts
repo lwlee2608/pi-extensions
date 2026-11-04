@@ -209,7 +209,7 @@ test("existing connectors are listed without tokens and preserved, not edited", 
   await h.write(JSON.stringify({ extra: true, connectors: existing }));
   await h.run("setup", "1. Telegram -1", undefined, "Save", true);
   const options = h.dialogs[0].options!;
-  assert.deepEqual(options.slice(0, 5), ["1. Telegram -1", "2. Command echo hi", "3. Unsupported connector", "4. Unsupported connector", "Add connector"]);
+  assert.deepEqual(options.slice(0, 5), ["1. Telegram -1", "2. Command echo hi", "3. Unsupported connector (needs fixing)", "4. Unsupported connector (needs fixing)", "Add connector"]);
   for (const dialog of h.dialogs) assert.ok(!JSON.stringify(dialog).includes(TOKEN));
   assert.deepEqual(JSON.parse(await readFile(h.path, "utf8")), { extra: true, connectors: existing });
   assert.equal(h.dialogs.filter(dialog => dialog.title === "Notify setup").length, 2);
