@@ -34,7 +34,7 @@
 - **Build mode** — Orchestrator; worker Opus 5.5 medium, reviewer Opus 5.5 high
 
 ## Progress
-Active: 1 · 4/21 tasks
+Active: 1 · 7/21 tasks
 
 ### Phase 1 — Create a working config from nothing
 A new user can run `/notify setup`, add a Telegram or command connector, set options, save, and send a test without touching JSON.
@@ -43,9 +43,9 @@ A new user can run `/notify setup`, add a Telegram or command connector, set opt
 - [x] Save the draft atomically with owner-only permissions, writing through a symlinked config (packages/notify/src/config.ts)
 - [x] Add a text input with an initial value and optional mask, masking literal tokens while `$VARIABLE` references stay readable (packages/notify/src/text-input.ts)
 - [x] Add the pi-tui peer dependency (packages/notify/package.json)
-- [ ] Build the menu with connector rows, Add connector, option toggles, Save, and Cancel, opening on Add connector when the list is empty (packages/notify/src/setup.ts)
-- [ ] Prompt for Telegram and command connector fields, with chat ID hint text and format checks (packages/notify/src/setup.ts)
-- [ ] Block Save with zero connectors, and ask for confirmation on Save when the draft fails `parseConfig` (packages/notify/src/setup.ts)
+- [x] Build the menu with connector rows, Add connector, option toggles, Save, and Cancel, opening on Add connector when the list is empty (packages/notify/src/setup.ts)
+- [x] Prompt for Telegram and command connector fields, with chat ID hint text and format checks (packages/notify/src/setup.ts)
+- [x] Block Save with zero connectors, and ask for confirmation on Save when the draft fails `parseConfig` (packages/notify/src/setup.ts)
 - [ ] Route `/notify setup` ahead of the config load and update the usage text and command description (packages/notify/src/index.ts)
 - [ ] Refuse `/notify setup` with a warning while a run is active (packages/notify/src/index.ts)
 - [ ] Refresh `nerdFont` and status from the draft after Save, then offer a test through `send()` only if the config validates (packages/notify/src/index.ts)
