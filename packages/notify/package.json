@@ -12,7 +12,7 @@
   },
   "homepage": "https://github.com/lwlee2608/pi-extensions/tree/main/packages/notify#readme",
   "bugs": "https://github.com/lwlee2608/pi-extensions/issues",
-  "keywords": ["pi-package", "pi-extension", "notifications"],
+  "keywords": ["pi-package", "pi-extension", "notify", "notifications", "telegram"],
   "files": ["src"],
   "pi": {
     "extensions": ["./src/index.ts"]
