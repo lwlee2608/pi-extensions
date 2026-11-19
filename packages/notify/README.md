@@ -53,6 +53,17 @@ Route to ntfy, Slack, apprise, or any service with a local command:
 }
 ```
 
+Example `run` values for common services (escape `"` as `\"` inside JSON):
+
+| Service | `run` |
+| --- | --- |
+| ntfy | `curl -fsS --data-binary "$PI_NOTIFY_TEXT" https://ntfy.sh/YOUR_PRIVATE_TOPIC` |
+| Gotify | `curl -fsS --form-string "message=$PI_NOTIFY_TEXT" "https://GOTIFY_HOST/message?token=$GOTIFY_TOKEN"` |
+| Pushover | `curl -fsS --form-string "token=$PUSHOVER_TOKEN" --form-string "user=$PUSHOVER_USER" --form-string "message=$PI_NOTIFY_TEXT" https://api.pushover.net/1/messages.json` |
+| Bark | `curl -fsS --data-urlencode "body=$PI_NOTIFY_TEXT" "https://api.day.app/$BARK_KEY"` |
+| Discord | `curl -fsS --form-string "content=$PI_NOTIFY_TEXT" "$DISCORD_WEBHOOK_URL"` |
+| Slack | `jq -n --arg text "$PI_NOTIFY_TEXT" '{text: $text}' \| curl -fsS -H 'Content-Type: application/json' --data-binary @- "$SLACK_WEBHOOK_URL"` |
+
 `run` executes in the session working directory using the platform shell and inherited environment. The notification is passed as `PI_NOTIFY_TEXT`, never interpolated into the command itself. Quote `"$PI_NOTIFY_TEXT"` in POSIX-shell commands. Telegram and command connectors can be mixed in the same array.
 
 Only configure commands you trust: they execute with your permissions and can access local files and environment secrets. The extension supplies no prompt, reply, or code content, but a command you configure can read that content itself. Keep commands in the foreground. Output is discarded; exit code zero means success. Each send has a 10-second timeout; timeout or session reset kills the process group on POSIX (the shell process on Windows). Do not use detached/background processes that escape this cleanup. Sends run in the background and do not hold up Pi's lifecycle events.
