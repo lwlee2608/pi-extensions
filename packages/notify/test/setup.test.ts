@@ -54,7 +54,8 @@ async function harness(t: TestContext) {
   let depth = 0;
   let stale = false;
   let failure: Error | undefined;
-  t.mock.method(globalThis, "fetch", async (_url: string, options: RequestInit) => {
+  t.mock.method(globalThis, "fetch", async (url: string, options: RequestInit) => {
+    if (url.endsWith("/getMe")) return new Response('{"ok":true,"result":{"username":"notify_test_bot"}}');
     sent.push(JSON.parse(options.body as string));
     return new Response('{"ok":true}');
   });
@@ -744,15 +745,20 @@ test("an empty chat ID finds chats from getUpdates, newest first, and falls back
     { update_id: 3, message: { chat: { id: 42, type: "private", first_name: "Ann" } } },
   ] }));
   const urls: string[] = [];
-  t.mock.method(globalThis, "fetch", async (url: string) => { urls.push(url); return reply(); });
+  t.mock.method(globalThis, "fetch", async (url: string) => {
+    if (url.endsWith("/getMe")) return new Response('{"ok":true,"result":{"username":"notify_test_bot"}}');
+    urls.push(url);
+    return reply();
+  });
   await h.run("setup", "+ Add destination", "Telegram", TOKEN, "", "Ops team · -100", ...SAVE_NO_TEST);
   assert.deepEqual(urls, [`https://api.telegram.org/bot${TOKEN}/getUpdates`]);
+  assert.ok(inputs(h)[1].includes("Open @notify_test_bot in Telegram"));
   assert.deepEqual(h.dialogs.find(dialog => dialog.kind === "select" && dialog.title === "Which chat should get notifications?")!.options, ["Ann · 42", "Ops team · -100"]);
   assert.equal((await saved(h)).connectors[0].chatId, "-100");
 
   const failures: [() => Response, RegExp][] = [
     [() => new Response('{"ok":true,"result":[]}'), /No messages found/],
-    [() => new Response('{"ok":false,"error_code":401}', { status: 401 }), /did not accept the bot token/],
+    [() => new Response('{"ok":false,"error_code":401}', { status: 401 }), /did not accept this bot token/],
     [() => new Response('{"ok":false,"error_code":409}', { status: 409 }), /another app receives them/],
     [() => { throw new Error(TOKEN); }, /Cannot reach Telegram/],
   ];
@@ -766,4 +772,22 @@ test("an empty chat ID finds chats from getUpdates, newest first, and falls back
   await h.run("setup", "+ Add destination", "Telegram", "$NOTIFY_SETUP_UNSET", "", undefined, "Discard and close");
   assert.match(h.warnings.pop()!, /Set \$NOTIFY_SETUP_UNSET before starting Pi/);
   assert.equal(urls.length, 5);
+});
+
+test("a token Telegram rejects re-opens the token step; no network still continues", async t => {
+  const h = await harness(t);
+  let me = () => new Response('{"ok":false,"error_code":401}', { status: 401 });
+  t.mock.method(globalThis, "fetch", async (url: string, options: RequestInit) => {
+    if (url.endsWith("/getMe")) return me();
+    h.sent.push(JSON.parse(options.body as string));
+    return new Response('{"ok":true}');
+  });
+  await h.run("setup", "+ Add destination", "Telegram", TOKEN, undefined, "Discard and close");
+  assert.match(h.warnings.pop()!, /did not accept this bot token/);
+  assert.deepEqual(h.dialogs.filter(dialog => dialog.kind === "input").map(dialog => dialog.title), ["Telegram bot token", "Telegram bot token"]);
+  me = () => { throw new Error(TOKEN); };
+  await h.run("setup", "+ Add destination", "Telegram", TOKEN, "-5", ...SAVE_NO_TEST);
+  assert.match(h.warnings.pop()!, /Cannot reach Telegram/);
+  assert.ok(inputs(h).at(-1)!.includes("Open your bot in Telegram"));
+  assert.equal((await saved(h)).connectors[0].chatId, "-5");
 });

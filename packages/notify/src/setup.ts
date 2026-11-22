@@ -1,5 +1,5 @@
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
-import { telegramChats } from "./connectors.ts";
+import { telegramBot, telegramChats, TelegramTokenRejected } from "./connectors.ts";
 import { loadDraft, parseConfig, readRaw, saveDraft, validBotTokenEntry, validChatIdEntry, variableEntry, type Draft } from "./config.ts";
 import { SetupMenu, type MenuRow, type MenuSection, type RowId, type SetupMenuOptions } from "./setup-menu.ts";
 import { TextInput, type TextInputOptions } from "./text-input.ts";
@@ -99,18 +99,24 @@ async function ask(ui: Dialogs, options: TextInputOptions, problem: (value: stri
 
 async function askTelegram(ui: Dialogs, stored: Record<string, unknown> = {}): Promise<object | undefined> {
   const kept = typeof stored.botToken === "string" && stored.botToken.trim() ? stored.botToken : undefined;
-  const botToken = await ask(ui, {
-    title: "Telegram bot token",
-    hint: `In Telegram, message @BotFather and send /newbot to make a bot. Paste the token it gives you, like 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11. It stays hidden.${kept ? " Leave empty to keep the saved token." : ""} Advanced: $NAME reads an environment variable.`,
-    mask: true,
-    initial: kept && variableEntry(kept) ? kept : undefined,
-  }, value => (kept && !value) || validBotTokenEntry(value) ? undefined : "That does not look like a bot token. Copy the whole token from BotFather.");
-  if (botToken === undefined) return undefined;
-  const token = botToken || kept!;
+  let token: string;
+  let bot: string | undefined;
+  for (;;) {
+    const botToken = await ask(ui, {
+      title: "Telegram bot token",
+      hint: `In Telegram, message @BotFather and send /newbot to make a bot. Paste the token it gives you, like 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11. It stays hidden.${kept ? " Leave empty to keep the saved token." : ""} Advanced: $NAME reads an environment variable.`,
+      mask: true,
+      initial: kept && variableEntry(kept) ? kept : undefined,
+    }, value => (kept && !value) || validBotTokenEntry(value) ? undefined : "That does not look like a bot token. Copy the whole token from BotFather.");
+    if (botToken === undefined) return undefined;
+    token = botToken || kept!;
+    const checked = await checkBot(ui, token);
+    if (checked !== false) { bot = checked; break; }
+  }
   for (;;) {
     const chatId = await ask(ui, {
       title: "Your Telegram chat",
-      hint: "Open your bot in Telegram, press Start and send it any message. Then press Enter here with this field empty. Advanced: type a chat ID, @channel or $NAME instead.",
+      hint: `Open ${bot ? `@${text(bot)}` : "your bot"} in Telegram, press Start and send it any message. Then press Enter here with this field empty. Advanced: type a chat ID, @channel or $NAME instead.`,
       initial: shownChatId(stored.chatId),
     }, value => !value || validChatIdEntry(value) ? undefined : "That does not look like a chat ID. Leave the field empty and press Enter to find your chat.");
     if (chatId === undefined) return undefined;
@@ -119,9 +125,24 @@ async function askTelegram(ui: Dialogs, stored: Record<string, unknown> = {}): P
   }
 }
 
-async function detectChat(ui: Dialogs, token: string): Promise<string | undefined> {
+function resolveToken(token: string): string | undefined {
   const resolved = variableEntry(token) ? process.env[token.slice(1)]?.trim() : token;
-  if (!resolved || !validBotTokenEntry(resolved)) {
+  return resolved && validBotTokenEntry(resolved) ? resolved : undefined;
+}
+
+async function checkBot(ui: Dialogs, token: string): Promise<string | undefined | false> {
+  const resolved = resolveToken(token);
+  if (!resolved) return undefined;
+  try { return await telegramBot(resolved, ui.signal); }
+  catch (error) {
+    ui.warn((error as Error).message);
+    return error instanceof TelegramTokenRejected ? false : undefined;
+  }
+}
+
+async function detectChat(ui: Dialogs, token: string): Promise<string | undefined> {
+  const resolved = resolveToken(token);
+  if (!resolved) {
     ui.warn(`Set ${token} before starting Pi, or type the chat ID.`);
     return undefined;
   }

@@ -63,26 +63,39 @@ function chatName(chat: Record<string, unknown>): string {
   return typeof chat.username === "string" ? `${name} (@${chat.username})` : name;
 }
 
-export async function telegramChats(botToken: string, signal?: AbortSignal): Promise<TelegramChat[]> {
+export class TelegramTokenRejected extends Error {
+  constructor() { super("Telegram did not accept this bot token. Copy the whole token from BotFather."); }
+}
+
+async function telegramApi(botToken: string, method: string, signal?: AbortSignal): Promise<unknown> {
   const timeout = AbortSignal.timeout(SEND_TIMEOUT_MS);
   let status: number;
   let body: unknown;
   try {
-    const response = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates`, {
+    const response = await fetch(`https://api.telegram.org/bot${botToken}/${method}`, {
       signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
       redirect: "error",
     });
     status = response.status;
     body = await response.json();
   } catch {
-    throw new Error("Cannot reach Telegram. Check your internet connection, then press Enter to try again.");
+    throw new Error("Cannot reach Telegram. Check your internet connection and try again.");
   }
-  const updates = (body as { ok?: unknown; result?: unknown } | null)?.ok === true ? (body as { result: unknown }).result : undefined;
-  if (!Array.isArray(updates)) {
-    if (status === 401 || status === 404) throw new Error("Telegram did not accept the bot token. Press Esc and add Telegram again with the full token from BotFather.");
-    if (status === 409) throw new Error("Setup cannot read this bot's messages because another app receives them. Type the chat ID instead.");
-    throw new Error("Telegram did not answer. Press Enter to try again.");
-  }
+  const reply = body as { ok?: unknown; result?: unknown } | null;
+  if (reply?.ok === true) return reply.result;
+  if (status === 401 || status === 404) throw new TelegramTokenRejected();
+  if (status === 409) throw new Error("Setup cannot read this bot's messages because another app receives them. Type the chat ID instead.");
+  throw new Error("Telegram did not answer. Try again.");
+}
+
+export async function telegramBot(botToken: string, signal?: AbortSignal): Promise<string | undefined> {
+  const bot = await telegramApi(botToken, "getMe", signal) as { username?: unknown } | null;
+  return typeof bot?.username === "string" ? bot.username : undefined;
+}
+
+export async function telegramChats(botToken: string, signal?: AbortSignal): Promise<TelegramChat[]> {
+  const updates = await telegramApi(botToken, "getUpdates", signal);
+  if (!Array.isArray(updates)) throw new Error("Telegram did not answer. Try again.");
   const chats = new Map<string, string>();
   for (const update of updates.reverse()) {
     for (const value of Object.values(update ?? {})) {
