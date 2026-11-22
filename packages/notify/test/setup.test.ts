@@ -735,3 +735,35 @@ test("saveDraft failure leaves the old file and no temp file", async t => {
   await assert.rejects(saveDraft(target, { connectors: [] }));
   assert.deepEqual(await readdir(root), ["config.json"]);
 });
+
+test("an empty chat ID finds chats from getUpdates, newest first, and falls back to manual entry", async t => {
+  const h = await harness(t);
+  let reply = () => new Response(JSON.stringify({ ok: true, result: [
+    { update_id: 1, message: { chat: { id: 42, type: "private", first_name: "Ann", last_name: "Lee", username: "ann" } } },
+    { update_id: 2, my_chat_member: { chat: { id: -100, type: "group", title: "Ops\nteam" } } },
+    { update_id: 3, message: { chat: { id: 42, type: "private", first_name: "Ann" } } },
+  ] }));
+  const urls: string[] = [];
+  t.mock.method(globalThis, "fetch", async (url: string) => { urls.push(url); return reply(); });
+  await h.run("setup", "+ Add connector", "Telegram", TOKEN, "", "Ops team · -100", ...SAVE_NO_TEST);
+  assert.deepEqual(urls, [`https://api.telegram.org/bot${TOKEN}/getUpdates`]);
+  assert.deepEqual(h.dialogs.find(dialog => dialog.kind === "select" && dialog.title === "Choose the Telegram chat")!.options, ["Ann · 42", "Ops team · -100"]);
+  assert.equal((await saved(h)).connectors[0].chatId, "-100");
+
+  const failures: [() => Response, RegExp][] = [
+    [() => new Response('{"ok":true,"result":[]}'), /No messages found/],
+    [() => new Response('{"ok":false,"error_code":401}', { status: 401 }), /rejected the bot token/],
+    [() => new Response('{"ok":false,"error_code":409}', { status: 409 }), /webhook/],
+    [() => { throw new Error(TOKEN); }, /Cannot reach Telegram/],
+  ];
+  for (const [response, warning] of failures) {
+    reply = response;
+    await h.run("setup", "+ Add connector", "Telegram", TOKEN, "", "-7", "Discard and close");
+    const shown = h.warnings.pop()!;
+    assert.match(shown, warning);
+    assert.ok(!shown.includes("fake"));
+  }
+  await h.run("setup", "+ Add connector", "Telegram", "$NOTIFY_SETUP_UNSET", "", undefined, "Discard and close");
+  assert.match(h.warnings.pop()!, /Set \$NOTIFY_SETUP_UNSET/);
+  assert.equal(urls.length, 5);
+});

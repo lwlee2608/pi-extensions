@@ -54,3 +54,41 @@ export async function sendTelegram(connector: TelegramConnector, text: string, s
     throw new Error("Telegram send failed (request rejected, network error, or timeout).");
   }
 }
+
+export interface TelegramChat { id: string; name: string }
+
+function chatName(chat: Record<string, unknown>): string {
+  const person = [chat.first_name, chat.last_name].filter(part => typeof part === "string").join(" ");
+  const name = typeof chat.title === "string" ? chat.title : person || "Chat";
+  return typeof chat.username === "string" ? `${name} (@${chat.username})` : name;
+}
+
+export async function telegramChats(botToken: string, signal?: AbortSignal): Promise<TelegramChat[]> {
+  const timeout = AbortSignal.timeout(SEND_TIMEOUT_MS);
+  let status: number;
+  let body: unknown;
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates`, {
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      redirect: "error",
+    });
+    status = response.status;
+    body = await response.json();
+  } catch {
+    throw new Error("Cannot reach Telegram; try again or enter the chat ID.");
+  }
+  const updates = (body as { ok?: unknown; result?: unknown } | null)?.ok === true ? (body as { result: unknown }).result : undefined;
+  if (!Array.isArray(updates)) {
+    if (status === 401 || status === 404) throw new Error("Telegram rejected the bot token.");
+    if (status === 409) throw new Error("This bot uses a webhook, so setup cannot read its messages; enter the chat ID.");
+    throw new Error("Telegram request failed; try again or enter the chat ID.");
+  }
+  const chats = new Map<string, string>();
+  for (const update of updates.reverse()) {
+    for (const value of Object.values(update ?? {})) {
+      const chat = (value as { chat?: Record<string, unknown> } | null)?.chat;
+      if (typeof chat?.id === "number" && !chats.has(String(chat.id))) chats.set(String(chat.id), chatName(chat));
+    }
+  }
+  return [...chats].map(([id, name]) => ({ id, name }));
+}

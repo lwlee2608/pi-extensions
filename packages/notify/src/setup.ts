@@ -1,4 +1,5 @@
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
+import { telegramChats } from "./connectors.ts";
 import { loadDraft, parseConfig, readRaw, saveDraft, validBotTokenEntry, validChatIdEntry, variableEntry, type Draft } from "./config.ts";
 import { SetupMenu, type MenuRow, type MenuSection, type RowId, type SetupMenuOptions } from "./setup-menu.ts";
 import { TextInput, type TextInputOptions } from "./text-input.ts";
@@ -22,6 +23,7 @@ interface Dialogs {
   confirm(title: string, message: string): Promise<boolean>;
   input(options: TextInputOptions): Promise<string | undefined>;
   warn(message: string): void;
+  signal: AbortSignal;
 }
 
 function dialogs(ui: ExtensionUIContext, signal: AbortSignal): Dialogs {
@@ -31,6 +33,7 @@ function dialogs(ui: ExtensionUIContext, signal: AbortSignal): Dialogs {
     confirm: async (title, message) => !signal.aborted && ui.confirm(title, message, { signal }),
     input: async options => signal.aborted ? undefined : ui.custom<string | undefined>((_tui, theme, _keys, done) => new TextInput({ ...options, signal }, theme, done)),
     warn: message => { if (!signal.aborted) ui.notify(message, "warning"); },
+    signal,
   };
 }
 
@@ -98,17 +101,43 @@ async function askTelegram(ui: Dialogs, stored: Record<string, unknown> = {}): P
   const kept = typeof stored.botToken === "string" && stored.botToken.trim() ? stored.botToken : undefined;
   const botToken = await ask(ui, {
     title: "Telegram bot token",
-    hint: `Get one from Telegram's BotFather, or enter a $VARIABLE from Pi's environment. A literal token stays hidden.${kept ? " Leave empty to keep the stored token." : ""}`,
+    hint: `Get one from Telegram's BotFather; it looks like 123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11. Or enter a $VARIABLE from Pi's environment. A literal token stays hidden.${kept ? " Leave empty to keep the stored token." : ""}`,
     mask: true,
     initial: kept && variableEntry(kept) ? kept : undefined,
   }, value => (kept && !value) || validBotTokenEntry(value) ? undefined : "That is not a bot token or $VARIABLE.");
   if (botToken === undefined) return undefined;
-  const chatId = await ask(ui, {
-    title: "Telegram chat ID",
-    hint: "Message your bot, then open https://api.telegram.org/bot<token>/getUpdates and copy chat.id. A @channel name or $VARIABLE also works.",
-    initial: shownChatId(stored.chatId),
-  }, value => validChatIdEntry(value) ? undefined : "That is not a chat ID, @channel, or $VARIABLE.");
-  return chatId === undefined ? undefined : { ...stored, type: "telegram", botToken: botToken || kept, chatId };
+  const token = botToken || kept!;
+  for (;;) {
+    const chatId = await ask(ui, {
+      title: "Telegram chat ID",
+      hint: "Open your bot in Telegram, press Start and send it any message. Then leave this empty and press Enter to find the chat. Or enter a chat ID, @channel, or $VARIABLE.",
+      initial: shownChatId(stored.chatId),
+    }, value => !value || validChatIdEntry(value) ? undefined : "That is not a chat ID, @channel, or $VARIABLE.");
+    if (chatId === undefined) return undefined;
+    const found = chatId || await detectChat(ui, token);
+    if (found) return { ...stored, type: "telegram", botToken: token, chatId: found };
+  }
+}
+
+async function detectChat(ui: Dialogs, token: string): Promise<string | undefined> {
+  const resolved = variableEntry(token) ? process.env[token.slice(1)]?.trim() : token;
+  if (!resolved || !validBotTokenEntry(resolved)) {
+    ui.warn(`Set ${token} in Pi's environment to find the chat, or enter the chat ID.`);
+    return undefined;
+  }
+  let chats;
+  try { chats = await telegramChats(resolved, ui.signal); }
+  catch (error) {
+    ui.warn((error as Error).message);
+    return undefined;
+  }
+  if (chats.length === 0) {
+    ui.warn("No messages found. Send your bot a message in Telegram, then press Enter again.");
+    return undefined;
+  }
+  const labels = chats.map(chat => `${text(chat.name)} · ${chat.id}`);
+  const choice = await ui.select("Choose the Telegram chat", labels);
+  return chats[labels.indexOf(choice!)]?.id;
 }
 
 async function askCommand(ui: Dialogs, stored: Record<string, unknown> = {}): Promise<object | undefined> {
