@@ -791,3 +791,12 @@ test("a token Telegram rejects re-opens the token step; no network still continu
   assert.ok(inputs(h).at(-1)!.includes("Open your bot in Telegram"));
   assert.equal((await saved(h)).connectors[0].chatId, "-5");
 });
+
+test("a malformed saved token re-opens the token step without showing it", async t => {
+  const h = await harness(t);
+  await h.write(JSON.stringify({ connectors: [{ type: "telegram", botToken: ` ${TOKEN} `, chatId: "-1" }] }));
+  await h.run("setup", "Telegram, chat -1 (needs fixing)", "Edit", "", TOKEN, "", ...SAVE_NO_TEST);
+  assert.match(h.warnings[0], /does not look right/);
+  assert.ok(!JSON.stringify([h.dialogs, h.screens, h.notices]).includes("fake"));
+  assert.equal((await saved(h)).connectors[0].botToken, TOKEN);
+});

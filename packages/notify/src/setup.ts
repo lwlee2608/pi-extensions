@@ -132,7 +132,11 @@ function resolveToken(token: string): string | undefined {
 
 async function checkBot(ui: Dialogs, token: string): Promise<string | undefined | false> {
   const resolved = resolveToken(token);
-  if (!resolved) return undefined;
+  if (!resolved && variableEntry(token)) return undefined;
+  if (!resolved) {
+    ui.warn("The saved bot token does not look right. Paste the token again.");
+    return false;
+  }
   try { return await telegramBot(resolved, ui.signal); }
   catch (error) {
     ui.warn((error as Error).message);
