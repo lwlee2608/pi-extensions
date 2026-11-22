@@ -147,6 +147,15 @@ export default function (pi: ExtensionAPI, onSetup: (setup: Promise<void>) => vo
   }
   pi.registerCommand("notify", {
     description: "Arm phone notifications: next run (no args), on, off, or test; setup edits the config",
+    getArgumentCompletions: prefix => {
+      const items = [
+        { value: "setup", label: "setup", description: "Create or edit notification config" },
+        { value: "on", label: "on", description: "Notify after every run in this session" },
+        { value: "off", label: "off", description: "Turn notifications off" },
+        { value: "test", label: "test", description: "Send a test notification now" },
+      ].filter(item => item.value.startsWith(prefix));
+      return items.length > 0 ? items : null;
+    },
     handler: (args, ctx) => act(args, ctx),
   });
   pi.registerTool({

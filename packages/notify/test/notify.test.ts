@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadConfig, parseConfig } from "../src/config.ts";
 import { sendCommand, sendTelegram, SEND_TIMEOUT_MS } from "../src/connectors.ts";
 import { formatMessage } from "../src/message.ts";
@@ -103,6 +104,31 @@ test("command passes text literally in env, redacts failures and cleans up on ab
     await assert.rejects(readFile(join(root, "leaked")), /ENOENT/);
     await assert.rejects(sendCommand({ type: "command", run: "touch leaked" }, text, controller.signal, root), /Command send failed/);
   } finally { await rm(root, { recursive: true, force: true }); }
+});
+
+test("notify suggests subcommands with descriptions and filters by prefix", async () => {
+  const { default: extension } = await import("../src/index.ts");
+  let command!: Parameters<ExtensionAPI["registerCommand"]>[1];
+  extension({
+    on: () => () => {},
+    registerTool: () => {},
+    registerCommand: (name: string, definition: typeof command) => {
+      assert.equal(name, "notify");
+      command = definition;
+    },
+  } as unknown as ExtensionAPI);
+  const complete = command.getArgumentCompletions!;
+  const items = await complete("");
+  assert.deepEqual(items?.map(item => item.value), ["setup", "on", "off", "test"]);
+  for (const item of items!) {
+    assert.equal(item.label, item.value);
+    assert.ok(item.description);
+    assert.deepEqual(await complete(item.value), [item]);
+  }
+  assert.deepEqual((await complete("o"))?.map(item => item.value), ["on", "off"]);
+  assert.deepEqual((await complete("se"))?.map(item => item.value), ["setup"]);
+  assert.equal(await complete("unknown"), null);
+  assert.equal(await complete("setup "), null);
 });
 
 test("TUI lifecycle sends once at final settle, never on abort/unarmed, reloads config and resets", async t => {
