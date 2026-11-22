@@ -54,3 +54,56 @@ export async function sendTelegram(connector: TelegramConnector, text: string, s
     throw new Error("Telegram send failed (request rejected, network error, or timeout).");
   }
 }
+
+export interface TelegramChat { id: string; name: string }
+
+const UPDATES_PAGE = 100;
+
+function chatName(chat: Record<string, unknown>): string {
+  const person = [chat.first_name, chat.last_name].filter(part => typeof part === "string").join(" ");
+  const name = typeof chat.title === "string" ? chat.title : person || "Chat";
+  return typeof chat.username === "string" ? `${name} (@${chat.username})` : name;
+}
+
+export class TelegramTokenRejected extends Error {
+  constructor() { super("Telegram did not accept this bot token. Copy the whole token from BotFather."); }
+}
+
+async function telegramApi(botToken: string, method: string, signal?: AbortSignal): Promise<unknown> {
+  const timeout = AbortSignal.timeout(SEND_TIMEOUT_MS);
+  let status: number;
+  let body: unknown;
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${botToken}/${method}`, {
+      signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      redirect: "error",
+    });
+    status = response.status;
+    body = await response.json();
+  } catch {
+    throw new Error("Cannot reach Telegram. Check your internet connection and try again.");
+  }
+  const reply = body as { ok?: unknown; result?: unknown } | null;
+  if (reply?.ok === true) return reply.result;
+  if (status === 401 || status === 404) throw new TelegramTokenRejected();
+  if (status === 409) throw new Error("Setup cannot read this bot's messages because another app receives them. Type the chat ID instead.");
+  throw new Error("Telegram did not answer. Try again.");
+}
+
+export async function telegramBot(botToken: string, signal?: AbortSignal): Promise<string | undefined> {
+  const bot = await telegramApi(botToken, "getMe", signal) as { username?: unknown } | null;
+  return typeof bot?.username === "string" ? bot.username : undefined;
+}
+
+export async function telegramChats(botToken: string, signal?: AbortSignal): Promise<{ chats: TelegramChat[]; partial: boolean }> {
+  const updates = await telegramApi(botToken, "getUpdates", signal);
+  if (!Array.isArray(updates)) throw new Error("Telegram did not answer. Try again.");
+  const chats = new Map<string, string>();
+  for (const update of updates.reverse()) {
+    for (const value of Object.values(update ?? {})) {
+      const chat = (value as { chat?: Record<string, unknown> } | null)?.chat;
+      if (typeof chat?.id === "number" && !chats.has(String(chat.id))) chats.set(String(chat.id), chatName(chat));
+    }
+  }
+  return { chats: [...chats].map(([id, name]) => ({ id, name })), partial: updates.length >= UPDATES_PAGE };
+}
