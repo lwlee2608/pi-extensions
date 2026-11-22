@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { Type } from "typebox";
 import { loadConfig } from "./config.ts";
 import { sendCommand, sendTelegram } from "./connectors.ts";
-import { formatMessage } from "./message.ts";
+import { formatMessage, type Kind } from "./message.ts";
 import { runSetup } from "./setup.ts";
 import { NotifyState } from "./state.ts";
 
@@ -29,21 +29,27 @@ export default function (pi: ExtensionAPI, onSetup: (setup: Promise<void>) => vo
     activeRun = false;
     if (ctx.mode === "tui") status(ctx);
   }
-  async function send(ctx: ExtensionContext, text: string, prompt = false): Promise<void> {
+  async function send(ctx: ExtensionContext, kind: Kind): Promise<void> {
     const current = generation;
+    const prompt = kind === "waiting for input";
+    const text = formatMessage(ctx.sessionManager.getSessionName(), ctx.cwd, kind);
     const signal = controller.signal;
     try {
       const config = await loadConfig(path);
       if (current !== generation || (prompt && (!config.onPrompt || !activeRun || state.armed === "off"))) return;
-      await Promise.all(config.connectors.map(async (connector, index) => {
+      const results = await Promise.all(config.connectors.map(async (connector, index) => {
         try {
           if (connector.type === "telegram") await sendTelegram(connector, text, signal);
           else await sendCommand(connector, text, signal, ctx.cwd);
+          return true;
         }
         catch {
-          if (current === generation) ctx.ui.notify(`Notify: ${connector.type} connector ${index + 1} failed (send error or timeout).`, "warning");
+          const name = connector.type === "telegram" ? "Telegram" : "custom command";
+          if (current === generation) ctx.ui.notify(`Could not send to ${name} (destination ${index + 1}). Check your internet connection and /notify setup.`, "warning");
+          return false;
         }
       }));
+      if (current === generation && kind === "test" && results.every(Boolean)) ctx.ui.notify("Test notification sent. Check your phone.", "info");
     } catch (error) {
       if (current === generation) ctx.ui.notify((error as Error).message, "warning");
     }
@@ -61,7 +67,7 @@ export default function (pi: ExtensionAPI, onSetup: (setup: Promise<void>) => vo
   pi.on("agent_start", (_event, ctx) => { if (ctx.mode === "tui") { activeRun = true; state.start(); } });
   pi.on("ui_prompt_start", (_event, ctx) => {
     if (ctx.mode === "tui" && activeRun && state.armed !== "off") {
-      void send(ctx, formatMessage(ctx.sessionManager.getSessionName(), ctx.cwd, "waiting for input"), true);
+      void send(ctx, "waiting for input");
     }
   });
   pi.on("agent_before_settle", (event, ctx) => { if (ctx.mode === "tui") state.beforeSettle(event.outcome); });
@@ -70,15 +76,15 @@ export default function (pi: ExtensionAPI, onSetup: (setup: Promise<void>) => vo
     activeRun = false;
     const outcome = state.settle();
     status(ctx);
-    if (outcome) void send(ctx, formatMessage(ctx.sessionManager.getSessionName(), ctx.cwd, outcome));
+    if (outcome) void send(ctx, outcome);
   });
   async function setup(ctx: ExtensionContext): Promise<void> {
     if (openSetup === controller) {
-      ctx.ui.notify("Notify setup is already open; if you cannot see it, /reload clears it.", "warning");
+      ctx.ui.notify("Notify setup is already open. If you cannot see it, run /reload.", "warning");
       return;
     }
     if (activeRun) {
-      ctx.ui.notify("Notify setup is unavailable during a run; try again when it finishes.", "warning");
+      ctx.ui.notify("Notify setup cannot open while Pi is working. Try again when it finishes.", "warning");
       return;
     }
     const current = openSetup = controller;
@@ -88,9 +94,9 @@ export default function (pi: ExtensionAPI, onSetup: (setup: Promise<void>) => vo
       if (!result || signal.aborted) return;
       nerdFont = result.draft.nerdFont === true;
       status(ctx);
-      ctx.ui.notify("Notify config saved.", "info");
-      if (result.valid && await ctx.ui.confirm("Send a test notification?", "This sends to every connector and runs any shell command connector.", { signal })) {
-        void send(ctx, formatMessage(ctx.sessionManager.getSessionName(), ctx.cwd, "test"));
+      ctx.ui.notify("Notifications are set up. Run /notify to get one when the next task finishes, or /notify on for every task.", "info");
+      if (result.valid && await ctx.ui.confirm("Send a test notification?", "Sends a test message to every destination now, including custom commands.", { signal })) {
+        void send(ctx, "test");
       }
     } finally {
       if (openSetup === current) openSetup = undefined;
@@ -131,7 +137,7 @@ export default function (pi: ExtensionAPI, onSetup: (setup: Promise<void>) => vo
     if (stale()) return;
     if (action === "off") return;
     if (action === "test") {
-      void send(ctx, formatMessage(ctx.sessionManager.getSessionName(), ctx.cwd, "test"));
+      void send(ctx, "test");
     } else if (action === "" || action === "on") {
       state.armed = action === "on" || (tool && state.armed === "on") ? "on" : "once";
       status(ctx);

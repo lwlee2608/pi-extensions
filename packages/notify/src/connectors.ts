@@ -75,13 +75,13 @@ export async function telegramChats(botToken: string, signal?: AbortSignal): Pro
     status = response.status;
     body = await response.json();
   } catch {
-    throw new Error("Cannot reach Telegram; try again or enter the chat ID.");
+    throw new Error("Cannot reach Telegram. Check your internet connection, then press Enter to try again.");
   }
   const updates = (body as { ok?: unknown; result?: unknown } | null)?.ok === true ? (body as { result: unknown }).result : undefined;
   if (!Array.isArray(updates)) {
-    if (status === 401 || status === 404) throw new Error("Telegram rejected the bot token.");
-    if (status === 409) throw new Error("This bot uses a webhook, so setup cannot read its messages; enter the chat ID.");
-    throw new Error("Telegram request failed; try again or enter the chat ID.");
+    if (status === 401 || status === 404) throw new Error("Telegram did not accept the bot token. Press Esc and add Telegram again with the full token from BotFather.");
+    if (status === 409) throw new Error("Setup cannot read this bot's messages because another app receives them. Type the chat ID instead.");
+    throw new Error("Telegram did not answer. Press Enter to try again.");
   }
   const chats = new Map<string, string>();
   for (const update of updates.reverse()) {

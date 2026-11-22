@@ -12,16 +12,24 @@ Requires Node.js 22.19+ and Pi 1.0.0. Run `/reload` after installing.
 
 ## Configure
 
-Run `/notify setup` in the TUI. Its menu has a section for connectors, a section for options, and Save and close or Discard and close below a divider. It adds, edits, and removes Telegram and shell command connectors, toggles `onPrompt` and `nerdFont`, and offers a test send after saving.
+Quick start with Telegram:
+
+1. Run `/notify setup`, choose **+ Add destination**, then **Telegram**.
+2. In Telegram, message @BotFather, send `/newbot`, and paste the token it gives you.
+3. Open your new bot, press **Start**, and send it any message.
+4. Back in Pi, press Enter on the empty chat field and pick your chat.
+5. Choose **Save and close**, send the test, then run `/notify` before a long task.
+
+The setup menu lists destinations (Telegram and custom commands) and options (`onPrompt` as "Notify when Pi needs an answer", `nerdFont` as "Nerd Font bell icon"), with Save and close or Discard and close below a divider. It offers a test send after saving.
 
 - Changes stay in a draft until Save and close. Discard and close or Esc at the menu writes nothing; Esc in a sub-dialog goes back.
-- For Telegram, send your bot any message, then leave the chat ID empty: setup reads the bot's recent messages and lists the chats to pick from.
+- For Telegram, an empty chat field reads the bot's recent messages and lists the chats to pick from. A chat ID, `@channel`, or `$VAR` can be typed instead.
 - Literal bot tokens are masked as you type and never shown again. On edit, empty input keeps the stored token. `$VAR` references stay readable and are saved unexpanded.
 - Setup is refused during a run; try again when it finishes. A second `/notify setup` while one is open shows a notice instead of a new dialog; if you cannot see the open one, `/reload` clears it. A session reset closes setup without writing.
 - If the file changed since setup opened, Save and close asks before overwriting it.
 - Malformed JSON, a non-object file, or a `connectors` value that is not an array is refused with a warning; fix those by hand. A bad connector opens normally so it can be fixed.
 - Saving a config that fails validation asks first, offers no test, and keeps all notifications refused until it is fixed.
-- Unknown keys survive a save. Unsupported connector types and multi-line `run` values show `(remove only)`; edit a multi-line `run` in the file.
+- Unknown keys survive a save. Unknown destination types and multi-line `run` values show `(remove only)`; edit a multi-line `run` in the file.
 - Setup never changes arming. The test send runs every connector, including shell commands, and only on an explicit yes.
 - The file is written atomically with mode `0600`, and a symlinked config is written through.
 

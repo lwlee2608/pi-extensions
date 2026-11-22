@@ -29,7 +29,7 @@ test("config validates shape, resolves env and never echoes secrets", async () =
   const root = await mkdtemp(join(tmpdir(), "notify-config-"));
   try {
     const path = join(root, "config.json");
-    await assert.rejects(loadConfig(path), /Cannot read/);
+    await assert.rejects(loadConfig(path), /not set up yet/);
     await writeFile(path, "{ secret invalid json");
     await assert.rejects(loadConfig(path), /not valid JSON/);
     await writeFile(path, JSON.stringify(config));
@@ -140,8 +140,8 @@ test("TUI lifecycle sends once at final settle, never on abort/unarmed, reloads 
   const flush = async () => { for (let i = 0; i < 30; i++) await new Promise(resolve => setTimeout(resolve, 2)); };
   try {
     emit("session_start"); settle(); await flush(); assert.equal(sent.length, 0);
-    await command("", ctx); assert.equal(status, undefined); assert.match(warnings.pop()!, /Cannot read/);
-    await assert.rejects(tool.execute("id", {}, undefined, undefined, ctx), /Cannot read/);
+    await command("", ctx); assert.equal(status, undefined); assert.match(warnings.pop()!, /not set up yet/);
+    await assert.rejects(tool.execute("id", {}, undefined, undefined, ctx), /not set up yet/);
     assert.equal(status, undefined);
     await mkdir(join(root, "pi-notify"));
     const path = join(root, "pi-notify", "config.json");
@@ -163,6 +163,7 @@ test("TUI lifecycle sends once at final settle, never on abort/unarmed, reloads 
     await tool.execute("id", {}, undefined, undefined, ctx); assert.equal(status, "🔔 on");
     await command("off", ctx); settle(); await flush(); assert.equal(sent.length, 2);
     await command("test", ctx); await flush(); assert.equal(sent.length, 3); assert.match(sent[2].text, /test$/); assert.equal(status, undefined);
+    assert.equal(warnings.pop(), "Test notification sent. Check your phone.");
     await command("on", ctx); emit("session_start"); assert.equal(status, undefined); settle(); await flush(); assert.equal(sent.length, 3);
     for (const mode of ["rpc", "json", "print"]) {
       activeTools = ["read", "notify_me"];
@@ -194,7 +195,7 @@ test("TUI lifecycle sends once at final settle, never on abort/unarmed, reloads 
     await writeFile(path, JSON.stringify({ connectors: [connector, connector] }));
     t.mock.method(globalThis, "fetch", async () => { throw new Error("sensitive"); });
     await command("test", ctx); await flush();
-    assert.equal(warnings.length, 2); assert.match(warnings[0], /connector 1 failed/); assert.match(warnings[1], /connector 2 failed/);
+    assert.equal(warnings.length, 2); assert.match(warnings[0], /Telegram \(destination 1\)/); assert.match(warnings[1], /Telegram \(destination 2\)/);
     await command("on", ctx); await writeFile(path, "{}"); await command("", ctx); assert.equal(status, undefined);
     emit("session_shutdown");
   } finally { await rm(root, { recursive: true, force: true }); }
