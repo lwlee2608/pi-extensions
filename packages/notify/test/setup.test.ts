@@ -321,7 +321,8 @@ test("clearing a prefilled $VAR token keeps it and a bad entry re-prompts with t
   await h.write(JSON.stringify({ connectors: [content] }));
   await h.run("setup", "Telegram, chat -1 (needs fixing)", "Edit", ":secret", CLEAR, "", "Save and close", true);
   assert.ok(inputs(h)[1].includes("> $NOTIFY_SETUP_UNSET") && !inputs(h)[1].includes("secret"));
-  assert.equal(h.warnings.length, 1);
+  assert.equal(h.warnings.length, 2);
+  assert.equal(h.warnings[1], "Saved. Notifications stay off until the problems are fixed.");
   assert.deepEqual(await saved(h), { connectors: [content] });
 });
 

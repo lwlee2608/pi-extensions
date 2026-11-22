@@ -94,7 +94,7 @@ export default function (pi: ExtensionAPI, onSetup: (setup: Promise<void>) => vo
       if (!result || signal.aborted) return;
       nerdFont = result.draft.nerdFont === true;
       status(ctx);
-      ctx.ui.notify("Notifications are set up. Run /notify to get one when the next task finishes, or /notify on for every task.", "info");
+      ctx.ui.notify(result.valid ? "Notifications are set up. Run /notify to get one when the next task finishes, or /notify on for every task." : "Saved. Notifications stay off until the problems are fixed.", result.valid ? "info" : "warning");
       if (result.valid && await ctx.ui.confirm("Send a test notification?", "Sends a test message to every destination now, including custom commands.", { signal })) {
         void send(ctx, "test");
       }
