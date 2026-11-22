@@ -57,6 +57,8 @@ export async function sendTelegram(connector: TelegramConnector, text: string, s
 
 export interface TelegramChat { id: string; name: string }
 
+const UPDATES_PAGE = 100;
+
 function chatName(chat: Record<string, unknown>): string {
   const person = [chat.first_name, chat.last_name].filter(part => typeof part === "string").join(" ");
   const name = typeof chat.title === "string" ? chat.title : person || "Chat";
@@ -93,7 +95,7 @@ export async function telegramBot(botToken: string, signal?: AbortSignal): Promi
   return typeof bot?.username === "string" ? bot.username : undefined;
 }
 
-export async function telegramChats(botToken: string, signal?: AbortSignal): Promise<TelegramChat[]> {
+export async function telegramChats(botToken: string, signal?: AbortSignal): Promise<{ chats: TelegramChat[]; partial: boolean }> {
   const updates = await telegramApi(botToken, "getUpdates", signal);
   if (!Array.isArray(updates)) throw new Error("Telegram did not answer. Try again.");
   const chats = new Map<string, string>();
@@ -103,5 +105,5 @@ export async function telegramChats(botToken: string, signal?: AbortSignal): Pro
       if (typeof chat?.id === "number" && !chats.has(String(chat.id))) chats.set(String(chat.id), chatName(chat));
     }
   }
-  return [...chats].map(([id, name]) => ({ id, name }));
+  return { chats: [...chats].map(([id, name]) => ({ id, name })), partial: updates.length >= UPDATES_PAGE };
 }

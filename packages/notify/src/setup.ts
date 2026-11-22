@@ -150,8 +150,8 @@ async function detectChat(ui: Dialogs, token: string): Promise<string | undefine
     ui.warn(`Set ${token} before starting Pi, or type the chat ID.`);
     return undefined;
   }
-  let chats;
-  try { chats = await telegramChats(resolved, ui.signal); }
+  let chats, partial;
+  try { ({ chats, partial } = await telegramChats(resolved, ui.signal)); }
   catch (error) {
     ui.warn((error as Error).message);
     return undefined;
@@ -160,6 +160,7 @@ async function detectChat(ui: Dialogs, token: string): Promise<string | undefine
     ui.warn("No messages found. Send your bot a message in Telegram, then press Enter again.");
     return undefined;
   }
+  if (partial) ui.warn("This bot has many old messages, so your chat may be missing. If it is not in the list, press Esc and type the chat ID.");
   const labels = chats.map(chat => `${text(chat.name)} · ${chat.id}`);
   const choice = await ui.select("Which chat should get notifications?", labels);
   return chats[labels.indexOf(choice!)]?.id;

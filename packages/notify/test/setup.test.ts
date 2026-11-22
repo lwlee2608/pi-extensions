@@ -770,9 +770,12 @@ test("an empty chat ID finds chats from getUpdates, newest first, and falls back
     assert.match(shown, warning);
     assert.ok(!shown.includes("fake"));
   }
+  reply = () => new Response(JSON.stringify({ ok: true, result: Array.from({ length: 100 }, (_, i) => ({ update_id: i, message: { chat: { id: 7, first_name: "Old" } } })) }));
+  await h.run("setup", "+ Add destination", "Telegram", TOKEN, "", "Old · 7", "Discard and close");
+  assert.match(h.warnings.pop()!, /many old messages/);
   await h.run("setup", "+ Add destination", "Telegram", "$NOTIFY_SETUP_UNSET", "", undefined, "Discard and close");
   assert.match(h.warnings.pop()!, /Set \$NOTIFY_SETUP_UNSET before starting Pi/);
-  assert.equal(urls.length, 5);
+  assert.equal(urls.length, 6);
 });
 
 test("a token Telegram rejects re-opens the token step; no network still continues", async t => {
