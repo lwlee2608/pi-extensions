@@ -163,7 +163,7 @@ test("TUI lifecycle sends once at final settle, never on abort/unarmed, reloads 
     await tool.execute("id", {}, undefined, undefined, ctx); assert.equal(status, "🔔 on");
     await command("off", ctx); settle(); await flush(); assert.equal(sent.length, 2);
     await command("test", ctx); await flush(); assert.equal(sent.length, 3); assert.match(sent[2].text, /test$/); assert.equal(status, undefined);
-    assert.equal(warnings.pop(), "Test notification sent. Check your phone.");
+    assert.equal(warnings.pop(), "Test notification sent.");
     await command("on", ctx); emit("session_start"); assert.equal(status, undefined); settle(); await flush(); assert.equal(sent.length, 3);
     for (const mode of ["rpc", "json", "print"]) {
       activeTools = ["read", "notify_me"];

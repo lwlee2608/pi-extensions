@@ -44,12 +44,12 @@ export default function (pi: ExtensionAPI, onSetup: (setup: Promise<void>) => vo
           return true;
         }
         catch {
-          const name = connector.type === "telegram" ? "Telegram" : "custom command";
-          if (current === generation) ctx.ui.notify(`Could not send to ${name} (destination ${index + 1}). Check your internet connection and /notify setup.`, "warning");
+          const [name, hint] = connector.type === "telegram" ? ["Telegram", "Check your internet connection and /notify setup."] : ["the custom command", "Check it in /notify setup."];
+          if (current === generation) ctx.ui.notify(`Could not send to ${name} (destination ${index + 1}). ${hint}`, "warning");
           return false;
         }
       }));
-      if (current === generation && kind === "test" && results.every(Boolean)) ctx.ui.notify("Test notification sent. Check your phone.", "info");
+      if (current === generation && kind === "test" && results.every(Boolean)) ctx.ui.notify("Test notification sent.", "info");
     } catch (error) {
       if (current === generation) ctx.ui.notify((error as Error).message, "warning");
     }
