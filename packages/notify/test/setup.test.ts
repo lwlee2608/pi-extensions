@@ -169,7 +169,9 @@ const onRename = (t: TestContext, fn: (from: string, to: string) => Promise<void
   t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
 };
 
-const TELEGRAM = ["+ Add destination", "Telegram", TOKEN, "-123"];
+const TYPE_CHAT = "Type a chat ID (advanced)";
+const FIND = "Find my chat";
+const TELEGRAM = ["+ Add destination", "Telegram", TOKEN, TYPE_CHAT, "-123"];
 const SAVE_NO_TEST = ["Save and close", false];
 const COMMAND_CONFIG = JSON.stringify({ connectors: [{ type: "command", run: "true" }] });
 const INVALID_CONFIG = JSON.stringify({ connectors: [{ type: "slack" }] });
@@ -192,7 +194,7 @@ test("from no config, the dialogs write a config loadConfig accepts with owner-o
 
 test("$VAR values are stored unexpanded", async t => {
   const h = await harness(t);
-  await h.run("setup", "+ Add destination", "Telegram", "$NOTIFY_SETUP_TOKEN", "$NOTIFY_SETUP_CHAT", "Save and close", true);
+  await h.run("setup", "+ Add destination", "Telegram", "$NOTIFY_SETUP_TOKEN", TYPE_CHAT, "$NOTIFY_SETUP_CHAT", "Save and close", true);
   assert.deepEqual((await saved(h)).connectors, [{ type: "telegram", botToken: "$NOTIFY_SETUP_TOKEN", chatId: "$NOTIFY_SETUP_CHAT" }]);
 });
 
@@ -253,7 +255,7 @@ test("no dialog, prefill or notice shows a literal token, including one hand-pla
     { type: TOKEN, botToken: TOKEN },
     TOKEN,
   ] }));
-  await h.run("setup", "Telegram, chat -1", "Edit", "bad/value", "", "", "Telegram, chat (invalid) (needs fixing)", "Edit", "", "not-a-chat", undefined, "Save and close", true);
+  await h.run("setup", "Telegram, chat -1", "Edit", "bad/value", "", "Keep chat -1", "Telegram, chat (invalid) (needs fixing)", "Edit", "", TYPE_CHAT, "not-a-chat", undefined, undefined, "Save and close", true);
   assert.deepEqual(h.dialogs[0].options!.slice(1, 4), ["Telegram, chat (invalid) (needs fixing)", "Unknown destination (needs fixing) (remove only)", "Unknown entry (needs fixing) (remove only)"]);
   assert.ok(inputs(h)[0].includes("Leave empty to keep the saved token"));
   assert.ok(h.notices.length > 0 && h.screens.length > 0);
@@ -264,7 +266,7 @@ test("no dialog, prefill or notice shows a literal token, including one hand-pla
 
 test("entry checks reject bad values without echoing them and re-prompt", async t => {
   const h = await harness(t);
-  await h.run("setup", "+ Add destination", "Telegram", "secret/token", " ", TOKEN, "not-a-chat", `${CLEAR}@ok`, ...SAVE_NO_TEST);
+  await h.run("setup", "+ Add destination", "Telegram", "secret/token", " ", TOKEN, TYPE_CHAT, "not-a-chat", `${CLEAR}@ok`, ...SAVE_NO_TEST);
   assert.equal(h.warnings.length, 3);
   for (const warning of h.warnings) assert.ok(!warning.includes("secret") && !warning.includes("not-a-chat"));
   h.warnings.length = 0;
@@ -306,20 +308,19 @@ test("changing only the chat ID leaves the token, $VAR values and unknown keys u
   process.env.NOTIFY_SETUP_CHAT = "-5";
   t.after(() => { delete process.env.NOTIFY_SETUP_TOKEN; delete process.env.NOTIFY_SETUP_CHAT; });
   await h.write(JSON.stringify({ custom: true, connectors: [literal, variable] }));
-  await h.run("setup", "Telegram, chat -1", "Edit", "", `${CLEAR}-999`, "Telegram, chat $NOTIFY_SETUP_CHAT", "Edit", "", "", ...SAVE_NO_TEST);
+  await h.run("setup", "Telegram, chat -1", "Edit", "", TYPE_CHAT, `${CLEAR}-999`, "Telegram, chat $NOTIFY_SETUP_CHAT", "Edit", "", "Keep chat $NOTIFY_SETUP_CHAT", ...SAVE_NO_TEST);
   assert.equal(JSON.stringify(await saved(h)), JSON.stringify({ custom: true, connectors: [{ ...literal, chatId: "-999" }, variable] }));
-  const [literalToken, literalChat, variableToken, variableChat] = inputs(h);
+  const [literalToken, literalChat, variableToken] = inputs(h);
   assert.ok(!literalToken.includes("•") && !literalToken.includes(TOKEN), "literal token input is not prefilled");
   assert.ok(literalChat.includes("> -1"));
   assert.ok(variableToken.includes("> $NOTIFY_SETUP_TOKEN"));
-  assert.ok(variableChat.includes("> $NOTIFY_SETUP_CHAT"));
 });
 
 test("clearing a prefilled $VAR token keeps it and a bad entry re-prompts with the prefill only", async t => {
   const h = await harness(t);
   const content = { type: "telegram", botToken: "$NOTIFY_SETUP_UNSET", chatId: "-1" };
   await h.write(JSON.stringify({ connectors: [content] }));
-  await h.run("setup", "Telegram, chat -1 (needs fixing)", "Edit", ":secret", CLEAR, "", "Save and close", true);
+  await h.run("setup", "Telegram, chat -1 (needs fixing)", "Edit", ":secret", CLEAR, "Keep chat -1", "Save and close", true);
   assert.ok(inputs(h)[1].includes("> $NOTIFY_SETUP_UNSET") && !inputs(h)[1].includes("secret"));
   assert.equal(h.warnings.length, 2);
   assert.equal(h.warnings[1], "Saved. Notifications stay off until the problems are fixed.");
@@ -379,7 +380,7 @@ test("identical Telegram rows act on the chosen connector", async t => {
   const h = await harness(t);
   const same = { type: "telegram", botToken: TOKEN, chatId: "-1" };
   await h.write(JSON.stringify({ connectors: [same, same] }));
-  await h.run("setup", { row: "Telegram, chat -1", nth: 1 }, "Edit", "", `${CLEAR}-2`, ...SAVE_NO_TEST);
+  await h.run("setup", { row: "Telegram, chat -1", nth: 1 }, "Edit", "", TYPE_CHAT, `${CLEAR}-2`, ...SAVE_NO_TEST);
   assert.deepEqual((await saved(h)).connectors, [same, { ...same, chatId: "-2" }]);
 
   const [a, b] = [{ ...same, tag: "a" }, { ...same, tag: "b" }];
@@ -738,7 +739,7 @@ test("saveDraft failure leaves the old file and no temp file", async t => {
   assert.deepEqual(await readdir(root), ["config.json"]);
 });
 
-test("an empty chat ID finds chats from getUpdates, newest first, and falls back to manual entry", async t => {
+test("Find my chat lists chats from getUpdates, newest first, and falls back to typing an ID", async t => {
   const h = await harness(t);
   let reply = () => new Response(JSON.stringify({ ok: true, result: [
     { update_id: 1, message: { chat: { id: 42, type: "private", first_name: "Ann", last_name: "Lee", username: "ann" } } },
@@ -751,9 +752,9 @@ test("an empty chat ID finds chats from getUpdates, newest first, and falls back
     urls.push(url);
     return reply();
   });
-  await h.run("setup", "+ Add destination", "Telegram", TOKEN, "", "Ops team · -100", ...SAVE_NO_TEST);
+  await h.run("setup", "+ Add destination", "Telegram", TOKEN, FIND, "Ops team · -100", ...SAVE_NO_TEST);
   assert.deepEqual(urls, [`https://api.telegram.org/bot${TOKEN}/getUpdates`]);
-  assert.ok(inputs(h)[1].includes("Open @notify_test_bot in Telegram"));
+  assert.ok(h.dialogs.some(dialog => dialog.kind === "select" && dialog.title.includes("open @notify_test_bot and send it any message")));
   assert.deepEqual(h.dialogs.find(dialog => dialog.kind === "select" && dialog.title === "Which chat should get notifications?")!.options, ["Ann · 42", "Ops team · -100"]);
   assert.equal((await saved(h)).connectors[0].chatId, "-100");
 
@@ -765,15 +766,15 @@ test("an empty chat ID finds chats from getUpdates, newest first, and falls back
   ];
   for (const [response, warning] of failures) {
     reply = response;
-    await h.run("setup", "+ Add destination", "Telegram", TOKEN, "", "-7", "Discard and close");
+    await h.run("setup", "+ Add destination", "Telegram", TOKEN, FIND, TYPE_CHAT, "-7", "Discard and close");
     const shown = h.warnings.pop()!;
     assert.match(shown, warning);
     assert.ok(!shown.includes("fake"));
   }
   reply = () => new Response(JSON.stringify({ ok: true, result: Array.from({ length: 100 }, (_, i) => ({ update_id: i, message: { chat: { id: 7, first_name: "Old" } } })) }));
-  await h.run("setup", "+ Add destination", "Telegram", TOKEN, "", "Old · 7", "Discard and close");
+  await h.run("setup", "+ Add destination", "Telegram", TOKEN, FIND, "Old · 7", "Discard and close");
   assert.match(h.warnings.pop()!, /many old messages/);
-  await h.run("setup", "+ Add destination", "Telegram", "$NOTIFY_SETUP_UNSET", "", undefined, "Discard and close");
+  await h.run("setup", "+ Add destination", "Telegram", "$NOTIFY_SETUP_UNSET", FIND, undefined, "Discard and close");
   assert.match(h.warnings.pop()!, /Set \$NOTIFY_SETUP_UNSET before starting Pi/);
   assert.equal(urls.length, 6);
 });
@@ -790,16 +791,16 @@ test("a token Telegram rejects re-opens the token step; no network still continu
   assert.match(h.warnings.pop()!, /did not accept this bot token/);
   assert.deepEqual(h.dialogs.filter(dialog => dialog.kind === "input").map(dialog => dialog.title), ["Telegram bot token", "Telegram bot token"]);
   me = () => { throw new Error(TOKEN); };
-  await h.run("setup", "+ Add destination", "Telegram", TOKEN, "-5", ...SAVE_NO_TEST);
+  await h.run("setup", "+ Add destination", "Telegram", TOKEN, TYPE_CHAT, "-5", ...SAVE_NO_TEST);
   assert.match(h.warnings.pop()!, /Cannot reach Telegram/);
-  assert.ok(inputs(h).at(-1)!.includes("Open your bot in Telegram"));
+  assert.ok(h.dialogs.some(dialog => dialog.kind === "select" && dialog.title.includes("open your bot and send it any message")));
   assert.equal((await saved(h)).connectors[0].chatId, "-5");
 });
 
 test("a malformed saved token re-opens the token step without showing it", async t => {
   const h = await harness(t);
   await h.write(JSON.stringify({ connectors: [{ type: "telegram", botToken: ` ${TOKEN} `, chatId: "-1" }] }));
-  await h.run("setup", "Telegram, chat -1 (needs fixing)", "Edit", "", TOKEN, "", ...SAVE_NO_TEST);
+  await h.run("setup", "Telegram, chat -1 (needs fixing)", "Edit", "", TOKEN, "Keep chat -1", ...SAVE_NO_TEST);
   assert.match(h.warnings[0], /does not look right/);
   assert.ok(!JSON.stringify([h.dialogs, h.screens, h.notices]).includes("fake"));
   assert.equal((await saved(h)).connectors[0].botToken, TOKEN);
