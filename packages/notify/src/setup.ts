@@ -12,6 +12,8 @@ const DISCARD = "Discard and close";
 const TELEGRAM = "Telegram";
 const COMMAND = "Custom command (advanced)";
 const EDIT = "Edit";
+const FIND = "Find my chat";
+const TYPE_CHAT = "Type a chat ID (advanced)";
 const REMOVE = "Remove";
 const OPTIONS = { onPrompt: "Notify when Pi needs an answer", nerdFont: "Nerd Font bell icon" };
 const VALUE_COLUMN = 33;
@@ -113,15 +115,23 @@ async function askTelegram(ui: Dialogs, stored: Record<string, unknown> = {}): P
     const checked = await checkBot(ui, token);
     if (checked !== false) { bot = checked; break; }
   }
+  const chatId = await askChat(ui, token, bot, shownChatId(stored.chatId));
+  return chatId === undefined ? undefined : { ...stored, type: "telegram", botToken: token, chatId };
+}
+
+async function askChat(ui: Dialogs, token: string, bot: string | undefined, current: string | undefined): Promise<string | undefined> {
+  const keep = current && `Keep chat ${current}`;
+  const title = `Connect your Telegram chat\n\n1. In Telegram, open ${bot ? `@${text(bot)}` : "your bot"} and send it any message, like "hi".\n2. Then choose ${FIND}.`;
   for (;;) {
-    const chatId = await ask(ui, {
-      title: "Your Telegram chat",
-      hint: `Open ${bot ? `@${text(bot)}` : "your bot"} in Telegram, press Start and send it any message. Then press Enter here with this field empty. Advanced: type a chat ID, @channel or $NAME instead.`,
-      initial: shownChatId(stored.chatId),
-    }, value => !value || validChatIdEntry(value) ? undefined : "That does not look like a chat ID. Leave the field empty and press Enter to find your chat.");
-    if (chatId === undefined) return undefined;
-    const found = chatId || await detectChat(ui, token);
-    if (found) return { ...stored, type: "telegram", botToken: token, chatId: found };
+    const choice = await ui.select(title, keep ? [keep, FIND, TYPE_CHAT] : [FIND, TYPE_CHAT]);
+    if (choice === undefined) return undefined;
+    if (choice === keep) return current;
+    const chatId = choice === FIND ? await detectChat(ui, token) : await ask(ui, {
+      title: "Telegram chat ID",
+      hint: "A number like 123456789, a @channel name, or $NAME for an environment variable.",
+      initial: current,
+    }, value => validChatIdEntry(value) ? undefined : "That does not look like a chat ID.");
+    if (chatId) return chatId;
   }
 }
 
@@ -157,10 +167,10 @@ async function detectChat(ui: Dialogs, token: string): Promise<string | undefine
     return undefined;
   }
   if (chats.length === 0) {
-    ui.warn("No messages found. Send your bot a message in Telegram, then press Enter again.");
+    ui.warn(`No messages found. Send your bot a message in Telegram, then choose ${FIND} again.`);
     return undefined;
   }
-  if (partial) ui.warn("This bot has many old messages, so your chat may be missing. If it is not in the list, press Esc and type the chat ID.");
+  if (partial) ui.warn("This bot has many old messages, so your chat may be missing. If it is not in the list, press Esc and choose Type a chat ID.");
   const labels = chats.map(chat => `${text(chat.name)} · ${chat.id}`);
   const choice = await ui.select("Which chat should get notifications?", labels);
   return chats[labels.indexOf(choice!)]?.id;
