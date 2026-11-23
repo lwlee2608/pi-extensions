@@ -872,6 +872,16 @@ test("a reason send that finishes late does not use up a one-shot armed while it
   assert.equal(h.status(), "🔔 next reply");
 });
 
+test("an explicit choice in the menu applies even if it matches the state when the menu opened", async t => {
+  const h = await harness(t);
+  await h.write(COMMAND_CONFIG);
+  await h.run("once");
+  h.emit("agent_start");
+  const settle = () => { h.emit("agent_before_settle", "completed"); h.emit("agent_settled"); };
+  await h.run("", () => { settle(); return "After the next reply only ✓"; }, "Save and close");
+  assert.equal(h.status(), "🔔 next reply");
+});
+
 test("/notify specific condition reaches the agent, sends once and clears with the one-shot", async t => {
   const h = await harness(t);
   await h.write(JSON.stringify({ connectors: [{ type: "telegram", botToken: TOKEN, chatId: "-1" }] }));
