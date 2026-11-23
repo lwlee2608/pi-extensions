@@ -143,4 +143,4 @@ Normal aborts send nothing and keep one-shot armed. **Accepted Pi limitation:** 
 
 While the `/notify` dialog is open, mid-task question pings are paused, because opening it fires the same prompt event. If an agent dialog hides it during a run, pings stay paused until `/reload` or a session reset.
 
-`/notify off` prevents future end-of-run and prompt pings and clears a menu condition; it does not recall a send already in flight, and it does not stop the agent from sending a reason the user asked for in a prompt. Session reset/shutdown aborts outstanding sends, but cannot recall a message already delivered.
+`/notify off` prevents future end-of-run and prompt pings and clears a menu condition; until the next prompt, `notify_me` also neither sends nor re-arms, even for a condition the user asked for in a prompt. It does not recall a send already in flight. Session reset/shutdown aborts outstanding sends, but cannot recall a message already delivered.

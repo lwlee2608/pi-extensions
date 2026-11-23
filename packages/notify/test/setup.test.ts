@@ -882,6 +882,22 @@ test("an explicit choice in the menu applies even if it matches the state when t
   assert.equal(h.status(), "🔔 next reply");
 });
 
+test("after /notify off, notify_me neither sends nor re-arms until the next prompt", async t => {
+  const h = await harness(t);
+  await h.write(JSON.stringify({ connectors: [{ type: "telegram", botToken: TOKEN, chatId: "-1" }] }));
+  h.event("before_agent_start", { systemPrompt: "base" });
+  h.emit("agent_start");
+  await h.notifyMe({});
+  assert.equal(h.status(), "🔔 next reply");
+  await h.run("off");
+  assert.match((await h.notifyMe({ reason: "tests pass" })).content[0].text, /^Not sent/);
+  assert.match((await h.notifyMe({})).content[0].text, /^Not sent/);
+  assert.equal(h.status(), undefined);
+  assert.deepEqual(h.sent, []);
+  h.event("before_agent_start", { systemPrompt: "base" });
+  assert.equal((await h.notifyMe({ reason: "tests pass" })).content[0].text, "Notification sent.");
+});
+
 test("/notify specific condition reaches the agent, sends once and clears with the one-shot", async t => {
   const h = await harness(t);
   await h.write(JSON.stringify({ connectors: [{ type: "telegram", botToken: TOKEN, chatId: "-1" }] }));

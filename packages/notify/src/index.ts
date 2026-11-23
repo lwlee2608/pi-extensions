@@ -26,6 +26,7 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
   let controller = new AbortController();
   let openPanel: AbortController | undefined;
   let injected: string | undefined;
+  let muted = false;
 
   function status(ctx: ExtensionContext): void {
     const when = state.condition ? ` · when ${short(state.condition)}` : "";
@@ -38,6 +39,7 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
     controller = new AbortController();
     state.reset();
     injected = undefined;
+    muted = false;
     activeRun = false;
     if (ctx.mode === "tui") status(ctx);
   }
@@ -79,6 +81,7 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
   pi.on("session_start", (event, ctx) => { reset(ctx); excludeOutsideTerminal(event, ctx); });
   pi.on("before_agent_start", (event, ctx) => {
     excludeOutsideTerminal(event, ctx);
+    muted = false;
     injected = ctx.mode === "tui" && state.armed !== "off" ? state.condition : undefined;
     if (injected) return { systemPrompt: `${event.systemPrompt}\n\n${instruction(injected)}` };
   });
@@ -225,7 +228,7 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
       return true;
     };
     const pending = loadConfig(path);
-    if (action === "off") { state.disarm(); status(ctx); }
+    if (action === "off") { state.disarm(); muted = true; status(ctx); }
     let config: Config;
     try { config = await pending; nerdFont = config.nerdFont; }
     catch (error) {
@@ -242,6 +245,7 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
     } else if (action === "test") {
       void send(ctx, "test");
     } else if (action === "once" || action === "on") {
+      muted = false;
       state.armed = action === "on" || (tool && state.armed === "on") ? "on" : "once";
       status(ctx);
       if (!tool) ctx.ui.notify(armed(config.onPrompt), "info");
@@ -283,6 +287,7 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
     exposure: "model-only", executionMode: "sequential",
     async execute(_id, params, _signal, _update, ctx) {
       const reason = clean(params.reason ?? "");
+      if (muted && ctx.mode === "tui") return { content: [{ type: "text", text: "Not sent: the user turned notifications off during this run." }], details: undefined };
       if (reason) {
         return { content: [{ type: "text", text: await alert(ctx, reason) }], details: undefined };
       }
