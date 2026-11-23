@@ -4,7 +4,7 @@ import { Input, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi, typ
 export type RowId = number | string;
 export interface MenuRow { id: RowId; label: string; note?: string; toggle?: () => string; edit?: { value: string; placeholder?: string; set: (value: string) => void } }
 export interface MenuSection { header?: string; description?: string; rows: MenuRow[] }
-export interface SetupMenuOptions { title: string; tabs?: { labels: string[]; active: number }; hint: string; sections: MenuSection[]; initial?: RowId; signal?: AbortSignal; rows?: () => number }
+export interface SetupMenuOptions { title: string; tabs?: { labels: string[]; active: number; all?: MenuSection[][] }; hint: string; sections: MenuSection[]; initial?: RowId; signal?: AbortSignal; rows?: () => number }
 
 export const SWITCH_TAB = "switch tab";
 const TAB_KEYS = ["tab", "left", "right"] as const;
@@ -61,10 +61,26 @@ export class SetupMenu implements Component, Focusable {
     const { tabs } = this.options;
     if (tabs) {
       const bar = tabs.labels.map((label, i) => i === tabs.active ? theme.fg("accent", theme.bold(`[ ${label} ]`)) : theme.fg("muted", label));
-      lines.push("", `${bar.join("   ")}${theme.fg("dim", "   tab ⇄")}`);
+      lines.push("", `${bar.join("   ")}${theme.fg("dim", "   tab ⇄")}`, theme.fg("border", "━".repeat(Math.max(0, width - 2))));
     }
-    let at = 0;
-    for (const { header, description, rows } of this.options.sections) {
+    const { sections } = this.options;
+    const head = this.body(sections.slice(0, -1), width);
+    const tail = this.body(sections.slice(-1), width);
+    const tallest = Math.max(0, ...(tabs?.all ?? []).map(other => this.body(other, width).lines.length));
+    const pad = Math.max(0, tallest - head.lines.length - tail.lines.length);
+    const at = head.at >= 0 ? lines.length + head.at : tail.at >= 0 ? lines.length + head.lines.length + pad + tail.at : 0;
+    lines.push(...head.lines, ...Array<string>(pad).fill(""), ...tail.lines);
+    lines.push("", ...(this.input ? "enter confirm   esc back" : this.options.hint).split("\n").flatMap(line => wrapTextWithAnsi(theme.fg("dim", line), Math.max(1, width - 2))));
+    const max = this.options.rows ? Math.max(MIN_LINES, this.options.rows() - RESERVED_ROWS) : lines.length;
+    const start = Math.max(0, Math.min(at - (max >> 1), lines.length - max));
+    return lines.slice(start, start + max).map(line => truncateToWidth(` ${line}`, width, ""));
+  }
+
+  private body(sections: MenuSection[], width: number): { lines: string[]; at: number } {
+    const { theme } = this;
+    const lines: string[] = [];
+    let at = -1;
+    for (const { header, description, rows } of sections) {
       lines.push("", header ? theme.fg("muted", header) : theme.fg("border", "─".repeat(Math.max(0, width - 2))));
       if (description) lines.push(...wrapTextWithAnsi(theme.fg("dim", description), Math.max(1, width - 2)));
       for (const row of rows) {
@@ -72,10 +88,7 @@ export class SetupMenu implements Component, Focusable {
         lines.push(this.row(row, width));
       }
     }
-    lines.push("", ...(this.input ? "enter confirm   esc back" : this.options.hint).split("\n").flatMap(line => wrapTextWithAnsi(theme.fg("dim", line), Math.max(1, width - 2))));
-    const max = this.options.rows ? Math.max(MIN_LINES, this.options.rows() - RESERVED_ROWS) : lines.length;
-    const start = Math.max(0, Math.min(at - (max >> 1), lines.length - max));
-    return lines.slice(start, start + max).map(line => truncateToWidth(` ${line}`, width, ""));
+    return { lines, at };
   }
 
   private confirm(row: MenuRow): void {

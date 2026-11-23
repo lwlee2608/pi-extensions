@@ -902,6 +902,9 @@ test("/notify tabs keep pending edits until one Save, and Esc while typing keeps
   assert.equal((await saved(h)).nerdFont, true);
   const tabs = h.dialogs.filter(dialog => dialog.kind === "menu").map(dialog => dialog.screen!.split("\n")[2].trim());
   assert.deepEqual([...new Set(tabs)], ["[ Notify ]   Setup   tab ⇄", "Notify   [ Setup ]   tab ⇄"]);
+  const menus = h.dialogs.filter(dialog => dialog.kind === "menu").map(dialog => dialog.screen!.split("\n"));
+  assert.equal(new Set(menus.map(lines => lines.length)).size, 1);
+  assert.equal(new Set(menus.map(lines => lines.findIndex(line => line.includes("Save and close")))).size, 1);
   await h.run("", 'Specific condition ✓ "tests pass"', undefined, "Discard and close");
   assert.equal(h.status(), " every reply · when tests pass");
   await h.run("", 'Specific condition ✓ "tests pass"', "\x15", "Save and close");

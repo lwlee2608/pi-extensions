@@ -85,6 +85,7 @@ Only configure commands you trust: they execute with your permissions and can ac
 Notify me
 
 [ Notify ]   Setup   tab ⇄
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 When Pi finishes and waits for you
 Sent once Pi is done and it is your turn to reply.

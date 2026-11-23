@@ -164,10 +164,11 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
       let initial: RowId | undefined = tab === 1 ? undefined : arm.armed === "off" ? "once" : arm.armed;
       for (;;) {
         const unsaved = armChanged() || configChanged();
+        const footer: MenuSection = { rows: [{ id: "save", label: "Save and close" }, { id: "discard", label: "Discard and close" }] };
+        const all = [notifyTab(), setupTab()].map(sections => [...sections, footer]);
         const choice = await ui.menu({
-          title: `${tab === 0 ? "Notify me" : "Notify setup"}${unsaved ? " (unsaved changes)" : ""}`, tabs: { labels: ["Notify", "Setup"], active: tab },
-          hint: "↑↓ move   enter choose   tab switch   esc discard", initial,
-          sections: [...tab === 0 ? notifyTab() : setupTab(), { rows: [{ id: "save", label: "Save and close" }, { id: "discard", label: "Discard and close" }] }],
+          title: `${tab === 0 ? "Notify me" : "Notify setup"}${unsaved ? " (unsaved changes)" : ""}`, tabs: { labels: ["Notify", "Setup"], active: tab, all },
+          hint: "↑↓ move   enter choose   tab switch   esc discard", initial, sections: all[tab],
         });
         if (choice === undefined || choice === "discard" || signal.aborted) return;
         initial = choice;
