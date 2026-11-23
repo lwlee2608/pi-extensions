@@ -1,12 +1,11 @@
 import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { join } from "node:path";
 import { Type } from "typebox";
-import { loadConfig, loadDraft, saveDraft, type Config } from "./config.ts";
+import { loadConfig, loadDraft, readRaw, type Config } from "./config.ts";
 import { sendCommand, sendTelegram } from "./connectors.ts";
 import { formatMessage, type Kind } from "./message.ts";
-import { SetupMenu, type RowId } from "./setup-menu.ts";
-import { TextInput } from "./text-input.ts";
-import { PROMPT_EXAMPLE, runSetup } from "./setup.ts";
+import { SWITCH_TAB, type MenuRow, type MenuSection, type RowId } from "./setup-menu.ts";
+import { ADD, dialogs, PROMPT_EXAMPLE, saveSetup, setupChoice, setupSections, toggleRow, VALUE_COLUMN, type SetupResult } from "./setup.ts";
 import { NotifyState } from "./state.ts";
 
 const LABELS = { once: "next reply", on: "every reply" };
@@ -25,8 +24,7 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
   let activeRun = false;
   let nerdFont = false;
   let controller = new AbortController();
-  let openSetup: AbortController | undefined;
-  let menuOpen = false;
+  let openPanel: AbortController | undefined;
   let injected: string | undefined;
 
   function status(ctx: ExtensionContext): void {
@@ -87,7 +85,7 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
   pi.on("session_shutdown", (_event, ctx) => reset(ctx));
   pi.on("agent_start", (_event, ctx) => { if (ctx.mode === "tui") { activeRun = true; state.start(); } });
   pi.on("ui_prompt_start", (_event, ctx) => {
-    if (ctx.mode === "tui" && activeRun && state.armed !== "off" && !menuOpen) {
+    if (ctx.mode === "tui" && activeRun && state.armed !== "off" && openPanel !== controller) {
       void send(ctx, "waiting for input");
     }
   });
@@ -99,96 +97,93 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
     status(ctx);
     if (outcome) void send(ctx, outcome);
   });
-  async function setup(ctx: ExtensionContext): Promise<void> {
-    if (openSetup === controller) {
-      ctx.ui.notify("Notify setup is already open. If you cannot see it, run /reload.", "warning");
+  async function panel(ctx: ExtensionContext, tab: number): Promise<void> {
+    if (openPanel === controller) {
+      ctx.ui.notify("Notify settings are already open. If you cannot see them, run /reload.", "warning");
       return;
     }
-    if (activeRun) {
+    if (tab === 1 && activeRun) {
       ctx.ui.notify("Notify setup cannot open while Pi is working. Try again when it finishes.", "warning");
       return;
     }
-    const current = openSetup = controller;
+    const current = openPanel = controller;
+    const { signal } = current;
+    const ui = dialogs(ctx.ui, signal);
     try {
-      const { signal } = current;
-      const result = await runSetup(ctx.ui, path, signal);
-      if (!result || signal.aborted) return;
-      nerdFont = result.draft.nerdFont === true;
-      status(ctx);
-      ctx.ui.notify(result.valid ? `Notifications are set up. Run /notify to choose when to get one. ${TIP}` : "Saved. Notifications stay off until the problems are fixed.", result.valid ? "info" : "warning");
-      if (result.valid && await ctx.ui.confirm("Send a test notification?", "Sends a test message to every destination now, including custom commands.", { signal })) {
-        void send(ctx, "test");
-      }
-    } finally {
-      if (openSetup === current) openSetup = undefined;
-    }
-  }
-  async function menu(ctx: ExtensionContext): Promise<void> {
-    if (menuOpen) {
-      ctx.ui.notify("The notify menu is already open. If you cannot see it, run /reload.", "warning");
-      return;
-    }
-    menuOpen = true;
-    const { signal } = controller;
-    try {
+      const opened = await readRaw(path);
+      const draft = await loadDraft(path).catch((error: Error) => error);
+      const config = draft instanceof Error ? undefined : draft;
+      const original = JSON.stringify(config);
+      const connectors = JSON.stringify(config?.connectors);
       const loaded = await loadConfig(path).catch((error: Error) => error);
-      const config = loaded instanceof Error ? undefined : loaded;
-      const draft = { armed: state.armed, condition: state.condition, onPrompt: config?.onPrompt ?? false };
-      const changed = () => draft.armed !== state.armed || draft.condition !== state.condition || (config !== undefined && draft.onPrompt !== config.onPrompt);
-      const apply = async () => {
-        if (config && draft.onPrompt !== config.onPrompt) {
-          const raw = await loadDraft(path);
-          raw.onPrompt = draft.onPrompt;
-          await saveDraft(path, raw);
+      if (loaded instanceof Error && !activeRun) tab = 1;
+      if (tab === 1 && !config) {
+        ui.warn((draft as Error).message);
+        return;
+      }
+      const start = { armed: state.armed, condition: state.condition };
+      const arm = { ...start };
+      const armChanged = () => arm.armed !== start.armed || arm.condition !== start.condition;
+      const configChanged = () => JSON.stringify(config) !== original;
+      const setupMode = tab === 1;
+      const row = (id: RowId, label: string, on = arm.armed === id): MenuRow => ({ id, label: label.padEnd(VALUE_COLUMN), note: on ? " ✓" : "" });
+      const notifyTab = (): MenuSection[] => [
+        { header: "When Pi finishes and waits for you", description: "Sent once Pi is done and it is your turn to reply.",
+          rows: [row("on", "After every reply"), row("once", "After the next reply only"), row("off", "Off")] },
+        { header: "Also when something specific happens", description: "The agent judges when it happens. You can also say it in your prompt.",
+          rows: [row("nocondition", "No condition", !arm.condition), { ...row("condition", "Specific condition"), note: arm.condition ? ` ✓ "${arm.condition}"` : "",
+            edit: { value: arm.condition ?? "", placeholder: "e.g. the tests pass", set: value => {
+              arm.condition = clean(value) || undefined;
+              if (arm.condition && arm.armed === "off") arm.armed = "once";
+            } } }] },
+        ...config ? [{ header: "Also, while notifications are on (saved for all sessions)", description: PROMPT_EXAMPLE,
+          rows: [toggleRow(config, "onPrompt", "Notify on mid-task questions")] }] : [],
+      ];
+      const setupTab = (): MenuSection[] => activeRun ? [{ header: "Pi is working. Setup opens when it finishes.", rows: [] }]
+        : !config ? [{ header: (draft as Error).message, rows: [] }]
+        : [...setupSections(config), { rows: [{ id: "test", label: "Send a test" }] }];
+      const save = async (): Promise<boolean> => {
+        let result: SetupResult | undefined;
+        if (config && (configChanged() || setupMode)) {
+          result = await saveSetup(ui, path, config, opened, signal);
+          if (!result) return false;
+          nerdFont = config.nerdFont === true;
         }
-        if (signal.aborted) return;
-        if (draft.armed !== "off") state.condition = draft.condition;
-        await act(draft.armed, ctx);
+        if (signal.aborted) return true;
+        if (armChanged()) {
+          if (arm.armed !== "off") state.condition = arm.condition;
+          await act(arm.armed, ctx);
+        } else {
+          status(ctx);
+        }
+        if (!result || !(setupMode || JSON.stringify(config?.connectors) !== connectors)) return true;
+        ctx.ui.notify(result.valid ? `Settings saved.${state.armed === "off" ? " Run /notify to choose when to get a notification." : ""}` : "Saved. Notifications stay off until the problems are fixed.", result.valid ? "info" : "warning");
+        if (result.valid && await ui.confirm("Send a test notification?", "Sends a test message to every destination now, including custom commands.")) void send(ctx, "test");
+        return true;
       };
-      let initial: RowId = !config ? "setup" : draft.armed === "off" ? "once" : draft.armed;
+      let initial: RowId | undefined = tab === 1 ? undefined : arm.armed === "off" ? "once" : arm.armed;
       for (;;) {
-        const row = (id: RowId, label: string, on = draft.armed === id) => ({ id, label: label.padEnd(32), note: on ? " ✓" : "" });
-        const title = loaded instanceof Error ? `Notify me (${loaded.message})` : changed() ? "Notify me (unsaved changes)" : "Notify me";
-        const choice = signal.aborted ? undefined : await ctx.ui.custom<RowId | undefined>((tui, theme, keys, done) => new SetupMenu({
-          title, hint: "↑↓ move   enter choose   esc discard", initial, signal, rows: () => tui.terminal.rows,
-          sections: [
-            { header: "When Pi finishes and waits for you", description: "Sent once Pi is done and it is your turn to reply.",
-              rows: [row("on", "After every reply"), row("once", "After the next reply only"), row("off", "Off")] },
-            { header: "Also when something specific happens", description: "The agent judges when it happens. You can also say it in your prompt.",
-              rows: [row("nocondition", "No condition", !draft.condition),
-                { ...row("condition", "Specific condition…", false), note: draft.condition ? ` ✓ "${draft.condition}"` : "" }] },
-            ...config ? [{ header: "Also, while notifications are on (saved for all sessions)", description: PROMPT_EXAMPLE,
-              rows: [{ ...row("prompt", "Notify on mid-task questions", false), note: draft.onPrompt ? " on" : " off" }] }] : [],
-            { rows: [{ id: "test", label: "Send a test" }, { id: "setup", label: "Setup" }] },
-            { rows: [{ id: "save", label: "Save and close" }, { id: "discard", label: "Discard and close" }] },
-          ],
-        }, theme, keys, done));
+        const unsaved = armChanged() || configChanged();
+        const choice = await ui.menu({
+          title: `${tab === 0 ? "Notify me" : "Notify setup"}${unsaved ? " (unsaved changes)" : ""}`, tabs: { labels: ["Notify", "Setup"], active: tab },
+          hint: "↑↓ move   enter choose   tab switch   esc discard", initial,
+          sections: [...tab === 0 ? notifyTab() : setupTab(), { rows: [{ id: "save", label: "Save and close" }, { id: "discard", label: "Discard and close" }] }],
+        });
         if (choice === undefined || choice === "discard" || signal.aborted) return;
-        if (choice === "save") return await apply();
-        if (choice === "setup") {
-          if (changed()) await apply();
-          return await act("setup", ctx);
-        }
-        if (choice === "test") await act("test", ctx);
-        else if (choice === "prompt") draft.onPrompt = !draft.onPrompt;
-        else if (choice === "nocondition") draft.condition = undefined;
-        else if (choice === "off") { draft.armed = "off"; draft.condition = undefined; }
-        else if (choice === "on" || choice === "once") draft.armed = choice;
-        else if (choice === "condition") {
-          const text = await ctx.ui.custom<string | undefined>((_tui, theme, _keys, done) => new TextInput({
-            title: "Notify me when…", hint: "For example: the tests pass. The agent judges when it happens.",
-            initial: draft.condition, signal,
-          }, theme, done));
-          const condition = clean(text ?? "");
-          if (condition) {
-            draft.condition = condition;
-            if (draft.armed === "off") draft.armed = "once";
-          }
-        }
         initial = choice;
+        if (choice === SWITCH_TAB) { tab = 1 - tab; initial = undefined; }
+        else if (choice === "save") { if (await save()) return; }
+        else if (choice === "test") {
+          if (configChanged()) ui.warn("Save first, then send a test.");
+          else void send(ctx, "test");
+        }
+        else if (choice === "nocondition") arm.condition = undefined;
+        else if (choice === "off") { arm.armed = "off"; arm.condition = undefined; }
+        else if (choice === "on" || choice === "once") arm.armed = choice;
+        else if (config && (typeof choice === "number" || choice === ADD)) await setupChoice(ui, config, choice);
       }
     } finally {
-      menuOpen = false;
+      if (openPanel === current) openPanel = undefined;
     }
   }
   function detach(ctx: ExtensionContext, name: string, dialog: (ctx: ExtensionContext) => Promise<void>): void {
@@ -217,8 +212,7 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
       return;
     }
     const action = args.trim();
-    if (action === "") return detach(ctx, "menu", menu);
-    if (action === "setup") return detach(ctx, "setup", setup);
+    if (action === "" || action === "setup") return detach(ctx, action || "menu", ctx => panel(ctx, action === "setup" ? 1 : 0));
     const current = generation;
     const request = ++command;
     const stale = () => {

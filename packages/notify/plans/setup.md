@@ -84,3 +84,5 @@ User runs, with a real Telegram bot and phone:
 3. `Save and close` and accept the test; the message arrives on the phone
 4. Rerun `/notify setup`, toggle `Notify when waiting for input`, and `Save and close`; the token is never shown and the next test still arrives
 5. `+ Add connector` for a command connector, then `Discard and close`; `config.json` is unchanged
+
+Amended later: setup is now the Setup tab of the `/notify` dialog, sharing one Save with the Notify tab; the `onPrompt` toggle moved to the Notify tab and Send a test to the Setup tab. See plans/notify.md.

@@ -18,19 +18,19 @@ Quick start with Telegram:
 2. In Telegram, message @BotFather, send `/newbot`, and paste the token it gives you.
 3. Open your new bot in Telegram and send it any message, like "hi".
 4. Back in Pi, choose **Find my chat** and pick your chat.
-5. Choose **Save and close**, send the test, then run `/notify` and pick when to get notified.
+5. Choose **Save and close** and send the test. Next time, run `/notify` and pick when to get notified on the **Notify** tab.
 
-The setup menu lists destinations (Telegram and custom commands) and options (`onPrompt` as "Notify on mid-task questions", `nerdFont` as "Nerd Font bell icon"), with Save and close or Discard and close below a divider. It offers a test send after saving.
+`/notify` opens one dialog with two tabs; Tab or ←/→ switches them. `/notify setup` opens it on the **Setup** tab, which lists destinations (Telegram and custom commands), the `nerdFont` option as "Nerd Font bell icon", and **Send a test**. `onPrompt` is on the **Notify** tab as "Notify on mid-task questions". Save and close and Discard and close sit below a divider on both tabs. After a save that included the Setup tab, it offers a test send.
 
-- Changes stay in a draft until Save and close. Discard and close or Esc at the menu writes nothing; Esc in a sub-dialog goes back.
+- Changes on both tabs stay in one draft until Save and close, so switching tabs loses nothing. Discard and close or Esc at the menu writes nothing; Esc in a sub-dialog goes back. **Send a test** uses the saved settings, so it asks to save first when any setting changed.
 - For Telegram, **Find my chat** reads the bot's recent messages and lists the chats to pick from. **Type a chat ID (advanced)** accepts a chat ID, `@channel`, or `$VAR`.
 - Literal bot tokens are masked as you type and never shown again. On edit, empty input keeps the stored token. `$VAR` references stay readable and are saved unexpanded.
-- Setup is refused during a run; try again when it finishes. A second `/notify setup` while one is open shows a notice instead of a new dialog; if you cannot see the open one, `/reload` clears it. A session reset closes setup without writing.
+- `/notify setup` is refused during a run; try again when it finishes. Opened with `/notify` during a run, the Setup tab says that Pi is working and shows no destinations. A second `/notify` or `/notify setup` while one is open shows a notice instead of a new dialog; if you cannot see the open one, `/reload` clears it. A session reset closes setup without writing.
 - If the file changed since setup opened, Save and close asks before overwriting it.
 - Malformed JSON, a non-object file, or a `connectors` value that is not an array is refused with a warning; fix those by hand. A bad connector opens normally so it can be fixed.
 - Saving a config that fails validation asks first, offers no test, and keeps all notifications refused until it is fixed.
 - Unknown keys survive a save. Unknown destination types and multi-line `run` values show `(remove only)`; edit a multi-line `run` in the file.
-- Setup never changes arming. The test send runs every connector, including shell commands, and only on an explicit yes.
+- The Setup tab never changes arming. The test send runs every connector, including shell commands, and only on an explicit yes.
 - The file is written atomically with mode `0600`, and a symlinked config is written through.
 
 ### Manual config
@@ -84,30 +84,29 @@ Only configure commands you trust: they execute with your permissions and can ac
 ```text
 Notify me
 
+[ Notify ]   Setup   tab ⇄
+
 When Pi finishes and waits for you
 Sent once Pi is done and it is your turn to reply.
   After every reply
 → After the next reply only
-  Off                              ✓
+  Off                               ✓
 
 Also when something specific happens
 The agent judges when it happens. You can also say it in your prompt.
-  No condition                     ✓
-  Specific condition…
+  No condition                      ✓
+  Specific condition
 
 Also, while notifications are on (saved for all sessions)
 Mid-task question: Pi asks you to pick an option or approve an action.
-  Notify on mid-task questions     off
+  Notify on mid-task questions      off
 
-────────────
-  Send a test
-  Setup
 ────────────
   Save and close
   Discard and close
 ```
 
-Choices stay in the menu until **Save and close**: ✓ moves, and the title shows `(unsaved changes)`. **Discard and close** or Esc changes nothing. **Send a test** sends at once and keeps the menu open. **Setup** saves pending changes first, then opens setup. The cursor starts on **After the next reply only**. **Notify on mid-task questions** sets `onPrompt` in the config file on save, so it applies to all sessions. It covers dialogs such as the ask-user question picker or an approval prompt. A question the agent writes in its reply ends the run, so it already counts as a finish. **Specific condition…** asks for text such as `the tests pass`; if notifications are Off, it also selects **After the next reply only**. Choosing **Off** clears the condition. While armed, the extension adds one line to the agent's system prompt with the condition, from the next prompt on. When the agent judges that the condition happened, it calls `notify_me` with a reason, and the notification goes out at once. With **After the next reply only**, that notification uses up the one-shot and clears the condition; if the condition never happens, the end of the reply still sends. With **After every reply**, the condition stays and every reply still sends. **No condition**, Off, and a session reset clear it. After each choice, Pi says in plain words when the notification fires. If the config is missing or invalid, the title shows why and the cursor starts on **Setup**.
+Choices stay in the menu until **Save and close**: ✓ moves, and the title shows `(unsaved changes)`. **Discard and close** or Esc changes nothing. The cursor starts on **After the next reply only**. If notifications are not set up, `/notify` opens on the Setup tab. **Notify on mid-task questions** sets `onPrompt` in the config file on save, so it applies to all sessions. It covers dialogs such as the ask-user question picker or an approval prompt. A question the agent writes in its reply ends the run, so it already counts as a finish. **Specific condition**: press Enter and type the condition in the row itself, such as `the tests pass`; Enter keeps it, Esc goes back, and an empty entry clears it. If notifications are Off, it also selects **After the next reply only**. Choosing **Off** clears the condition. While armed, the extension adds one line to the agent's system prompt with the condition, from the next prompt on. When the agent judges that the condition happened, it calls `notify_me` with a reason, and the notification goes out at once. With **After the next reply only**, that notification uses up the one-shot and clears the condition; if the condition never happens, the end of the reply still sends. With **After every reply**, the condition stays and every reply still sends. **No condition**, Off, and a session reset clear it. After a save, Pi says in plain words when the notification fires. A config file that cannot be read at all (for example malformed JSON) gets a warning instead of the dialog.
 
 | Command or prompt | Result |
 | --- | --- |
@@ -140,5 +139,7 @@ With `onPrompt: true`, a blocking extension UI prompt during an active run also 
 A run that settles to ask a question consumes one-shot, even if you expected more work afterward. Automatic continuations do not send until the final settlement.
 
 Normal aborts send nothing and keep one-shot armed. **Accepted Pi limitation:** Escape during a pending asynchronous `agent_before_settle` handler does not update the previously recorded completion/error outcome, and Pi exposes no final cancellation state at settlement. That narrow case can still send a notification and consume one-shot.
+
+While the `/notify` dialog is open, mid-task question pings are paused, because opening it fires the same prompt event. If an agent dialog hides it during a run, pings stay paused until `/reload` or a session reset.
 
 `/notify off` prevents future end-of-run and prompt pings and clears a menu condition; it does not recall a send already in flight, and it does not stop the agent from sending a reason the user asked for in a prompt. Session reset/shutdown aborts outstanding sends, but cannot recall a message already delivered.
