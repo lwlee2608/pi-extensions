@@ -20,7 +20,7 @@ Quick start with Telegram:
 4. Back in Pi, choose **Find my chat** and pick your chat.
 5. Choose **Save and close**, send the test, then run `/notify` and pick when to get notified.
 
-The setup menu lists destinations (Telegram and custom commands) and options (`onPrompt` as "Notify when Pi needs an answer", `nerdFont` as "Nerd Font bell icon"), with Save and close or Discard and close below a divider. It offers a test send after saving.
+The setup menu lists destinations (Telegram and custom commands) and options (`onPrompt` as "Notify on mid-task questions", `nerdFont` as "Nerd Font bell icon"), with Save and close or Discard and close below a divider. It offers a test send after saving.
 
 - Changes stay in a draft until Save and close. Discard and close or Esc at the menu writes nothing; Esc in a sub-dialog goes back.
 - For Telegram, **Find my chat** reads the bot's recent messages and lists the chats to pick from. **Type a chat ID (advanced)** accepts a chat ID, `@channel`, or `$VAR`.
@@ -84,22 +84,27 @@ Only configure commands you trust: they execute with your permissions and can ac
 ```text
 Notify me
 
-When Pi finishes
-  Every time
-→ Next time only
+When Pi finishes and waits for you
+Sent once Pi is done and it is your turn to reply.
+  After every reply
+→ After the next reply only
   Off                              ✓
 
-Saved setting, used while notifications are on
-  Notify when Pi needs an answer   off
+Also when something specific happens
+The agent judges when it happens. You can also say it in your prompt.
+  No condition                     ✓
+  Specific condition…
+
+Also, while notifications are on (saved for all sessions)
+Mid-task question: Pi asks you to pick an option or approve an action.
+  Notify on mid-task questions     off
 
 ────────────
   Send a test
   Setup
-
-Tip: say "notify me when <something>" in your prompt.
 ```
 
-The cursor starts on **Next time only**, so `/notify` then Enter arms one notification. ✓ marks the current choice. **Notify when Pi needs an answer** flips `onPrompt` in the config file, so it applies to all sessions, and keeps the menu open. After each choice, Pi says in one sentence when the notification fires. If the config is missing or invalid, the title shows why and the cursor starts on **Setup**.
+The cursor starts on **After the next reply only**, so `/notify` then Enter arms one notification. ✓ marks the current choice. **Notify on mid-task questions** flips `onPrompt` in the config file, so it applies to all sessions, and keeps the menu open. It covers dialogs such as the ask-user question picker or an approval prompt. A question the agent writes in its reply ends the run, so it already counts as a finish. **Specific condition…** asks for text such as `the tests pass`, then arms: it keeps **After every reply**, otherwise it arms **After the next reply only**. While armed, the extension adds one line to the agent's system prompt with the condition, from the next prompt on. When the agent judges that the condition happened, it calls `notify_me` with a reason, and the notification goes out at once. With **After the next reply only**, that notification uses up the one-shot and clears the condition; if the condition never happens, the end of the reply still sends. With **After every reply**, the condition stays and every reply still sends. **No condition**, Off, and a session reset clear it. After each choice, Pi says in plain words when the notification fires. If the config is missing or invalid, the title shows why and the cursor starts on **Setup**.
 
 | Command or prompt | Result |
 | --- | --- |
@@ -112,7 +117,7 @@ The cursor starts on **Next time only**, so `/notify` then Enter arms one notifi
 | “Notify me when you finish” | The agent calls `notify_me` to arm one-shot; `/notify on` stays on. |
 | “Notify me when the tests pass” | The agent arms one-shot as a fallback, then calls `notify_me` with a reason such as `tests pass` when it happens. That sends at once and uses up the one-shot, so the end of the run does not send again (with `/notify on`, it still does). If it never happens, the end of the run still sends. |
 
-The agent's tool description restricts `notify_me` to explicit user requests; it must not notify proactively. Whether a condition happened is the agent's judgment. The tool is removed from active tools outside TUI, and calls outside TUI fail. Arming shows `🔔 next finish` or `🔔 every finish` in extension status (including Pi Footer). New, resumed, and forked sessions reset to off; arming is never persisted.
+The agent's tool description restricts `notify_me` to explicit user requests; it must not notify proactively. Whether a condition happened is the agent's judgment. The tool is removed from active tools outside TUI, and calls outside TUI fail. Arming shows `🔔 next reply` or `🔔 every reply`, plus `· when <condition>` when one is set, in extension status (including Pi Footer). New, resumed, and forked sessions reset to off; arming is never persisted.
 
 Notifications contain only the optional session name, working directory, and outcome, or the agent's short reason (at most 120 characters, on one line):
 
@@ -133,4 +138,4 @@ A run that settles to ask a question consumes one-shot, even if you expected mor
 
 Normal aborts send nothing and keep one-shot armed. **Accepted Pi limitation:** Escape during a pending asynchronous `agent_before_settle` handler does not update the previously recorded completion/error outcome, and Pi exposes no final cancellation state at settlement. That narrow case can still send a notification and consume one-shot.
 
-`/notify off` prevents future end-of-run and prompt pings; it does not recall a send already in flight, and it does not stop the agent from sending a reason the user asked for. Session reset/shutdown aborts outstanding sends, but cannot recall a message already delivered.
+`/notify off` prevents future end-of-run and prompt pings and clears a menu condition; it does not recall a send already in flight, and it does not stop the agent from sending a reason the user asked for in a prompt. Session reset/shutdown aborts outstanding sends, but cannot recall a message already delivered.

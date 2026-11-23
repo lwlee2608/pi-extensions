@@ -15,8 +15,9 @@ const EDIT = "Edit";
 const FIND = "Find my chat";
 const TYPE_CHAT = "Type a chat ID (advanced)";
 const REMOVE = "Remove";
-const OPTIONS = { onPrompt: "Notify when Pi needs an answer", nerdFont: "Nerd Font bell icon" };
+const OPTIONS = { onPrompt: "Notify on mid-task questions", nerdFont: "Nerd Font bell icon" };
 const VALUE_COLUMN = 33;
+export const PROMPT_EXAMPLE = "Mid-task question: Pi asks you to pick an option or approve an action.";
 const HINT = "↑↓ move   enter choose   esc cancel";
 
 interface Dialogs {
@@ -81,7 +82,7 @@ function menuSections(draft: Draft): MenuSection[] {
   const keys = Object.keys(OPTIONS) as (keyof typeof OPTIONS)[];
   return [
     { header: "Send notifications to", rows: [...draft.connectors.map(connectorRow), { id: ADD, label: ADD }] },
-    { header: "Options", rows: keys.map(key => optionRow(draft, key)) },
+    { header: "Options", description: PROMPT_EXAMPLE, rows: keys.map(key => optionRow(draft, key)) },
     { rows: [{ id: SAVE, label: SAVE }, { id: DISCARD, label: DISCARD }] },
   ];
 }

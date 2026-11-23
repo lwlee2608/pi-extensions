@@ -3,7 +3,7 @@ import { writeFileSync } from "node:fs";
 import fsPromises from "node:fs/promises";
 import { lstat, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { syncBuiltinESMExports } from "node:module";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
 import test, { type TestContext } from "node:test";
 import { getKeybindings, visibleWidth } from "@earendil-works/pi-tui";
@@ -40,9 +40,10 @@ async function harness(t: TestContext) {
   const handlers = new Map<string, (event: any, ctx: any) => unknown>();
   let command!: (args: string, ctx: any) => Promise<void>;
   let detached: Promise<void> | undefined;
+  let tool: any;
   extension({ on: (name: string, fn: any) => handlers.set(name, fn),
     registerCommand: (_name: string, def: any) => { command = def.handler; },
-    registerTool: () => {}, getActiveTools: () => [], setActiveTools: () => {},
+    registerTool: (def: any) => { tool = def; }, getActiveTools: () => [], setActiveTools: () => {},
   } as any, setup => { detached = setup; });
   const script: Answer[] = [];
   const dialogs: { kind: string; title: string; options?: string[]; message?: string; screen?: string; cursor?: number }[] = [];
@@ -144,6 +145,8 @@ async function harness(t: TestContext) {
       if (name === "session_shutdown") stale = true;
       return result;
     },
+    event: (name: string, event: object) => handlers.get(name)!(event, ctx),
+    notifyMe: (params: object) => tool.execute("id", params, undefined, undefined, ctx),
     run: async (args: string, ...answers: Answer[]) => {
       await start(args, ...answers);
       assert.deepEqual(script, [], "unused answers");
@@ -181,8 +184,8 @@ const ALREADY_OPEN = "Notify setup is already open. If you cannot see it, run /r
 
 test("from no config, the dialogs write a config loadConfig accepts with owner-only permissions", async t => {
   const h = await harness(t);
-  await h.run("setup", ...TELEGRAM, "Notify when Pi needs an answer off", "Nerd Font bell icon off", ...SAVE_NO_TEST);
-  assert.deepEqual(h.dialogs[0].options, ["+ Add destination", "Notify when Pi needs an answer off", "Nerd Font bell icon off", "Save and close", "Discard and close"]);
+  await h.run("setup", ...TELEGRAM, "Notify on mid-task questions off", "Nerd Font bell icon off", ...SAVE_NO_TEST);
+  assert.deepEqual(h.dialogs[0].options, ["+ Add destination", "Notify on mid-task questions off", "Nerd Font bell icon off", "Save and close", "Discard and close"]);
   assert.deepEqual(await loadConfig(h.path), {
     onPrompt: true, nerdFont: true, connectors: [{ type: "telegram", botToken: TOKEN, chatId: "-123" }],
   });
@@ -455,7 +458,7 @@ test("a toggle stays in the open menu without resolving, and only a save writes 
   await h.run("setup", "Nerd Font bell icon off", "Nerd Font bell icon on", "Nerd Font bell icon off", undefined);
   assert.equal(await readFile(h.path, "utf8"), content);
 
-  await h.run("setup", "Notify when Pi needs an answer off", ...SAVE_NO_TEST);
+  await h.run("setup", "Notify on mid-task questions off", ...SAVE_NO_TEST);
   assert.equal((await saved(h)).onPrompt, true);
 });
 
@@ -515,7 +518,7 @@ test("saving an invalid config requires confirmation, offers no test and leaves 
   const h = await harness(t);
   await h.write(JSON.stringify({ connectors: [{ type: "telegram", botToken: TOKEN, chatId: "-123" }] }));
   await h.run("on");
-  assert.equal(h.status(), "🔔 every finish");
+  assert.equal(h.status(), "🔔 every reply");
   const content = JSON.stringify({ connectors: [{ type: "telegram", botToken: "$NOTIFY_SETUP_UNSET", chatId: "-123" }] });
   await h.write(content);
 
@@ -528,7 +531,7 @@ test("saving an invalid config requires confirmation, offers no test and leaves 
   assert.deepEqual(h.dialogs.filter(dialog => dialog.kind === "confirm").map(dialog => dialog.title), ["Save with problems?"]);
   assert.equal((await saved(h)).nerdFont, true);
   await assert.rejects(loadConfig(h.path));
-  assert.equal(h.status(), "\uf0f3 every finish");
+  assert.equal(h.status(), "\uf0f3 every reply");
   await flush();
   assert.deepEqual(h.sent, []);
 });
@@ -683,9 +686,9 @@ test("setup leaves a one-shot /notify armed", async t => {
   await h.write(JSON.stringify({ connectors: [{ type: "telegram", botToken: TOKEN, chatId: "-1" }] }));
   await h.run("once");
   await h.run("setup", "Discard and close");
-  assert.equal(h.status(), "🔔 next finish");
+  assert.equal(h.status(), "🔔 next reply");
   await h.run("setup", ...SAVE_NO_TEST);
-  assert.equal(h.status(), "🔔 next finish");
+  assert.equal(h.status(), "🔔 next reply");
   h.emit("agent_start");
   h.emit("agent_before_settle", "completed");
   h.emit("agent_settled");
@@ -809,13 +812,13 @@ test("a malformed saved token re-opens the token step without showing it", async
 test("/notify menu arms, toggles the answer ping in config and explains when it fires", async t => {
   const h = await harness(t);
   await h.write(COMMAND_CONFIG);
-  await h.run("", "Every time");
-  assert.equal(h.status(), "🔔 every finish");
-  assert.match(h.notices.pop()!, /each time Pi finishes .*until \/notify off\.$/);
-  await h.run("", "Notify when Pi needs an answer off", "Next time only");
+  await h.run("", "After every reply");
+  assert.equal(h.status(), "🔔 every reply");
+  assert.match(h.notices.pop()!, /after every reply.*until \/notify off\.$/);
+  await h.run("", "Notify on mid-task questions off", "After the next reply only");
   assert.equal((await saved(h)).onPrompt, true);
-  assert.equal(h.status(), "🔔 next finish");
-  assert.match(h.notices.pop()!, /next finishes .*You also get one when Pi needs your answer\.$/);
+  assert.equal(h.status(), "🔔 next reply");
+  assert.match(h.notices.pop()!, /after the next reply.*You also get one when Pi asks you mid-task to pick an option or approve an action\. Then notifications turn off\.$/);
   await h.run("", "Off");
   assert.equal(h.status(), undefined);
   assert.equal(h.notices.pop(), "Notifications are off.");
@@ -836,6 +839,42 @@ test("/notify menu points to Setup when not set up, stays quiet during a run and
   assert.deepEqual(h.sent, []);
   h.emit("session_start");
   await open;
-  await h.run("", () => { h.emit("session_start"); return "Every time"; });
+  await h.run("", () => { h.emit("session_start"); return "After every reply"; });
+  assert.equal(h.status(), undefined);
+});
+
+test("/notify specific condition reaches the agent, sends once and clears with the one-shot", async t => {
+  const h = await harness(t);
+  await h.write(JSON.stringify({ connectors: [{ type: "telegram", botToken: TOKEN, chatId: "-1" }] }));
+  const prompt = () => h.event("before_agent_start", { systemPrompt: "base" }) as { systemPrompt: string } | undefined;
+  assert.equal(prompt(), undefined);
+  await h.run("", "Specific condition…", " the tests pass ");
+  assert.equal(h.status(), "🔔 next reply · when the tests pass");
+  assert.match(h.notices.pop()!, /If "the tests pass" happens first, as judged by the agent, you get it then instead\. Then notifications turn off\.$/);
+  h.emit("agent_start");
+  assert.match(prompt()!.systemPrompt, /^base\n\nThe user set a phone notification in \/notify for when this happens: "the tests pass"\./);
+  assert.equal((await h.notifyMe({ reason: "tests pass" })).content[0].text, "Notification sent.");
+  assert.equal(h.status(), undefined);
+  assert.match((await h.notifyMe({ reason: "tests pass" })).content[0].text, /^Not sent/);
+  h.emit("agent_before_settle", "completed");
+  h.emit("agent_settled");
+  await flush();
+  assert.deepEqual(h.sent.map(message => message.text), ["🔔 session · " + h.root.replace(homedir(), "~") + " · tests pass"]);
+  assert.equal(prompt(), undefined);
+
+  await h.run("", "After every reply");
+  await h.run("", "Specific condition…", "deploy is green");
+  assert.equal(h.status(), "🔔 every reply · when deploy is green");
+  assert.match(h.notices.pop()!, /each time "deploy is green" happens/);
+  await h.run("", "No condition", undefined);
+  assert.equal(h.status(), "🔔 every reply");
+  await h.run("", "Specific condition…", "deploy is green");
+  await h.run("off");
+  assert.equal(prompt(), undefined);
+  await h.run("once");
+  assert.equal(h.status(), "🔔 next reply");
+  await h.run("", "Specific condition…", "x");
+  h.emit("session_start");
+  assert.equal(prompt(), undefined);
   assert.equal(h.status(), undefined);
 });

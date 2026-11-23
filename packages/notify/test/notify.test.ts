@@ -173,10 +173,10 @@ test("TUI lifecycle sends once at final settle, never on abort/unarmed, reloads 
     await mkdir(join(root, "pi-notify"));
     const path = join(root, "pi-notify", "config.json");
     await writeFile(path, JSON.stringify(config));
-    await command("once", ctx); assert.equal(status, "🔔 next finish");
+    await command("once", ctx); assert.equal(status, "🔔 next reply");
     emit("agent_start"); emit("agent_before_settle", "completed"); emit("agent_start");
     assert.equal(sent.length, 0); emit("agent_settled"); await flush();
-    assert.equal(sent.length, 0); assert.equal(status, "🔔 next finish");
+    assert.equal(sent.length, 0); assert.equal(status, "🔔 next reply");
     emit("agent_start"); emit("agent_before_settle", "completed"); emit("agent_start");
     emit("agent_before_settle", "error"); assert.equal(emit("agent_settled"), undefined);
     assert.equal(status, undefined); await flush();
@@ -186,8 +186,8 @@ test("TUI lifecycle sends once at final settle, never on abort/unarmed, reloads 
     await writeFile(path, JSON.stringify({ connectors: [{ ...connector, chatId: "456" }] }));
     release = () => {};
     assert.equal(settle(), undefined); await flush(); assert.equal(sent[1].chat_id, "456");
-    assert.equal(status, "🔔 every finish"); release!(); release = undefined;
-    await tool.execute("id", {}, undefined, undefined, ctx); assert.equal(status, "🔔 every finish");
+    assert.equal(status, "🔔 every reply"); release!(); release = undefined;
+    await tool.execute("id", {}, undefined, undefined, ctx); assert.equal(status, "🔔 every reply");
     await command("off", ctx); settle(); await flush(); assert.equal(sent.length, 2);
     await command("test", ctx); await flush(); assert.equal(sent.length, 3); assert.match(sent[2].text, /test$/); assert.equal(status, undefined);
     assert.equal(warnings.pop(), "Test notification sent.");
@@ -205,13 +205,13 @@ test("TUI lifecycle sends once at final settle, never on abort/unarmed, reloads 
     await writeFile(path, JSON.stringify({ ...config, onPrompt: true, nerdFont: true }));
     const result = await tool.execute("id", {}, undefined, undefined, ctx);
     assert.match(result.content[0].text, /armed/); assert.match(tool.description, /explicitly asks/);
-    assert.equal(status, "\uf0f3 next finish");
+    assert.equal(status, "\uf0f3 next reply");
     emit("ui_prompt_start"); await flush(); assert.equal(sent.length, 3);
     emit("agent_start");
     handlers.get("ui_prompt_start")!({ title: "PRIVATE PROMPT", type: "select" }, ctx);
     await flush(); assert.equal(sent.length, 4);
     assert.equal(sent[3].text, "🔔 session · /project · waiting for input");
-    assert.equal(status, "\uf0f3 next finish");
+    assert.equal(status, "\uf0f3 next reply");
     settle(); await flush(); assert.equal(sent.length, 5); assert.match(sent[4].text, /done$/);
     assert.equal(status, undefined);
     emit("agent_start"); emit("ui_prompt_start"); await flush(); assert.equal(sent.length, 5);
@@ -255,7 +255,7 @@ test("notify_me with a reason sends now, consumes one-shot and is capped and cle
   const emit = (name: string, outcome?: string) => handlers.get(name)!({ outcome }, ctx);
   emit("session_start"); emit("agent_start");
   await tool.execute("id", {}, undefined, undefined, ctx);
-  assert.equal(status, "🔔 next finish");
+  assert.equal(status, "🔔 next reply");
   const result = await tool.execute("id", { reason: ` tests\npass${"!".repeat(200)}` }, undefined, undefined, ctx);
   assert.equal(result.content[0].text, "Notification sent.");
   assert.equal(sent[0], `🔔 session · /project · tests pass${"!".repeat(110)}`);

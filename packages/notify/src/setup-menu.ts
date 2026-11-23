@@ -3,7 +3,7 @@ import { truncateToWidth, visibleWidth, wrapTextWithAnsi, type Component, type K
 
 export type RowId = number | string;
 export interface MenuRow { id: RowId; label: string; note?: string; toggle?: () => string }
-export interface MenuSection { header?: string; rows: MenuRow[] }
+export interface MenuSection { header?: string; description?: string; rows: MenuRow[] }
 export interface SetupMenuOptions { title: string; hint: string; sections: MenuSection[]; initial?: RowId; signal?: AbortSignal; rows?: () => number }
 
 const MIN_LABEL = 8;
@@ -45,8 +45,9 @@ export class SetupMenu implements Component {
     const { theme } = this;
     const lines = [theme.fg("accent", theme.bold(this.options.title))];
     let at = 0;
-    for (const { header, rows } of this.options.sections) {
+    for (const { header, description, rows } of this.options.sections) {
       lines.push("", header ? theme.fg("muted", header) : theme.fg("border", "─".repeat(Math.max(0, width - 2))));
+      if (description) lines.push(...wrapTextWithAnsi(theme.fg("dim", description), Math.max(1, width - 2)));
       for (const row of rows) {
         if (row === this.rows[this.cursor]) at = lines.length;
         lines.push(this.row(row, width));
