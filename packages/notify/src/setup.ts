@@ -1,25 +1,22 @@
 import type { ExtensionUIContext } from "@earendil-works/pi-coding-agent";
 import { telegramBot, telegramChats, TelegramTokenRejected } from "./connectors.ts";
-import { loadDraft, parseConfig, readRaw, saveDraft, validBotTokenEntry, validChatIdEntry, variableEntry, type Draft } from "./config.ts";
+import { parseConfig, readRaw, saveDraft, validBotTokenEntry, validChatIdEntry, variableEntry, type Draft } from "./config.ts";
 import { SetupMenu, type MenuRow, type MenuSection, type RowId, type SetupMenuOptions } from "./setup-menu.ts";
 import { TextInput, type TextInputOptions } from "./text-input.ts";
 
 export interface SetupResult { draft: Draft; valid: boolean }
 
-const ADD = "+ Add destination";
-const SAVE = "Save and close";
-const DISCARD = "Discard and close";
+export const ADD = "+ Add destination";
 const TELEGRAM = "Telegram";
 const COMMAND = "Custom command (advanced)";
 const EDIT = "Edit";
 const FIND = "Find my chat";
 const TYPE_CHAT = "Type a chat ID (advanced)";
 const REMOVE = "Remove";
-const OPTIONS = { onPrompt: "Notify when Pi needs an answer", nerdFont: "Nerd Font bell icon" };
-const VALUE_COLUMN = 33;
-const HINT = "↑↓ move   enter choose   esc cancel";
+export const VALUE_COLUMN = 33;
+export const PROMPT_EXAMPLE = "Mid-task question: Pi asks you to pick an option or approve an action.";
 
-interface Dialogs {
+export interface Dialogs {
   menu(options: SetupMenuOptions): Promise<RowId | undefined>;
   select(title: string, options: string[]): Promise<string | undefined>;
   confirm(title: string, message: string): Promise<boolean>;
@@ -28,7 +25,7 @@ interface Dialogs {
   signal: AbortSignal;
 }
 
-function dialogs(ui: ExtensionUIContext, signal: AbortSignal): Dialogs {
+export function dialogs(ui: ExtensionUIContext, signal: AbortSignal): Dialogs {
   return {
     menu: async options => signal.aborted ? undefined : ui.custom<RowId | undefined>((tui, theme, keys, done) => new SetupMenu({ ...options, signal, rows: () => tui.terminal.rows }, theme, keys, done)),
     select: async (title, options) => signal.aborted ? undefined : ui.select(title, options, { signal }),
@@ -72,18 +69,24 @@ function connectorRow(connector: unknown, id: number): MenuRow {
   return { id, label, note: `${connectorValid(connector) ? "" : " (needs fixing)"}${editable(stored) ? "" : " (remove only)"}` };
 }
 
-function optionRow(draft: Draft, key: keyof typeof OPTIONS): MenuRow {
+export function toggleRow(draft: Draft, key: string, label: string): MenuRow {
   const value = () => draft[key] === true ? " on " : " off";
-  return { id: key, label: OPTIONS[key].padEnd(VALUE_COLUMN), note: value(), toggle: () => { draft[key] = draft[key] !== true; return value(); } };
+  return { id: key, label: label.padEnd(VALUE_COLUMN), note: value(), toggle: () => { draft[key] = draft[key] !== true; return value(); } };
 }
 
-function menuSections(draft: Draft): MenuSection[] {
-  const keys = Object.keys(OPTIONS) as (keyof typeof OPTIONS)[];
+export function setupSections(draft: Draft): MenuSection[] {
   return [
     { header: "Send notifications to", rows: [...draft.connectors.map(connectorRow), { id: ADD, label: ADD }] },
-    { header: "Options", rows: keys.map(key => optionRow(draft, key)) },
-    { rows: [{ id: SAVE, label: SAVE }, { id: DISCARD, label: DISCARD }] },
+    { header: "Options", rows: [toggleRow(draft, "nerdFont", "Nerd Font bell icon")] },
   ];
+}
+
+export async function setupChoice(ui: Dialogs, draft: Draft, choice: RowId): Promise<void> {
+  if (typeof choice === "number") await changeConnector(ui, draft, choice);
+  else if (choice === ADD) {
+    const connector = await addConnector(ui);
+    if (connector) draft.connectors.push(connector);
+  }
 }
 
 async function ask(ui: Dialogs, options: TextInputOptions, problem: (value: string) => string | undefined): Promise<string | undefined> {
@@ -203,7 +206,7 @@ async function changeConnector(ui: Dialogs, draft: Draft, index: number): Promis
   if (edited) draft.connectors[index] = edited;
 }
 
-async function save(ui: Dialogs, path: string, draft: Draft, opened: string | undefined, signal: AbortSignal): Promise<SetupResult | undefined> {
+export async function saveSetup(ui: Dialogs, path: string, draft: Draft, opened: string | undefined, signal: AbortSignal): Promise<SetupResult | undefined> {
   if (draft.connectors.length === 0) {
     ui.warn("Add a destination before saving.");
     return undefined;
@@ -223,32 +226,4 @@ async function save(ui: Dialogs, path: string, draft: Draft, opened: string | un
     return undefined;
   }
   return { draft, valid };
-}
-
-export async function runSetup(piUi: ExtensionUIContext, path: string, signal: AbortSignal): Promise<SetupResult | undefined> {
-  const ui = dialogs(piUi, signal);
-  const opened = await readRaw(path);
-  let draft: Draft;
-  try { draft = await loadDraft(path); }
-  catch (error) {
-    ui.warn((error as Error).message);
-    return undefined;
-  }
-  let last: RowId = 0;
-  for (;;) {
-    const { length } = draft.connectors;
-    const initial = typeof last !== "number" ? last : length ? Math.min(last, length - 1) : ADD;
-    const choice = await ui.menu({ title: "Notify setup", hint: HINT, sections: menuSections(draft), initial });
-    if (choice === undefined || choice === DISCARD) return undefined;
-    last = choice;
-    if (typeof choice === "number") {
-      await changeConnector(ui, draft, choice);
-    } else if (choice === ADD) {
-      const connector = await addConnector(ui);
-      if (connector) draft.connectors.push(connector);
-    } else if (choice === SAVE) {
-      const result = await save(ui, path, draft, opened, signal);
-      if (result) return result;
-    }
-  }
 }

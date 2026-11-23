@@ -3,9 +3,12 @@ export type Outcome = "completed" | "error";
 
 export class NotifyState {
   armed: Armed = "off";
+  condition: string | undefined;
   private outcome: Outcome | undefined;
 
-  reset(): void { this.armed = "off"; this.outcome = undefined; }
+  reset(): void { this.disarm(); this.outcome = undefined; }
+  disarm(): void { this.armed = "off"; this.condition = undefined; }
+  fired(): void { if (this.armed === "once") this.disarm(); }
   start(): void { this.outcome = undefined; }
   beforeSettle(outcome: string): void {
     this.outcome = outcome === "completed" || outcome === "error" ? outcome : undefined;
@@ -14,7 +17,7 @@ export class NotifyState {
     const outcome = this.outcome;
     this.outcome = undefined;
     if (this.armed === "off" || !outcome) return undefined;
-    if (this.armed === "once") this.armed = "off";
+    this.fired();
     return outcome;
   }
 }
