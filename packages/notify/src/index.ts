@@ -126,9 +126,8 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
       }
       const start = { armed: state.armed, condition: state.condition };
       const arm = { ...start };
-      let touched = false;
-      const differs = (from: { armed: string; condition?: string }) => arm.armed !== from.armed || arm.condition !== from.condition;
-      const armChanged = () => differs(start);
+      const touched = { armed: false, condition: false };
+      const armChanged = () => arm.armed !== start.armed || arm.condition !== start.condition;
       const configChanged = () => JSON.stringify(config) !== original;
       const setupMode = tab === 1;
       const row = (id: RowId, label: string, on = arm.armed === id): MenuRow => ({ id, label: label.padEnd(VALUE_COLUMN), note: on ? " ✓" : "" });
@@ -138,7 +137,7 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
         { header: "Also when something specific happens", description: "The agent judges when it happens. You can also say it in your prompt.",
           rows: [row("nocondition", "No condition", !arm.condition), { ...row("condition", "Specific condition"), note: arm.condition ? ` ✓ "${arm.condition}"` : "",
             edit: { value: arm.condition ?? "", placeholder: "e.g. the tests pass", set: value => {
-              touched = true;
+              touched.condition = true;
               arm.condition = clean(value) || undefined;
               if (arm.condition && arm.armed === "off") arm.armed = "once";
             } } }] },
@@ -156,9 +155,11 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
           nerdFont = config.nerdFont === true;
         }
         if (signal.aborted) return true;
-        if (armChanged() || (touched && differs(state))) {
-          if (arm.armed !== "off") state.condition = arm.condition;
-          await act(arm.armed, ctx);
+        const condition = touched.condition ? arm.condition : state.condition;
+        const armed = touched.armed ? arm.armed : condition && state.armed === "off" ? "once" : state.armed;
+        if (armed !== state.armed || condition !== state.condition) {
+          if (armed !== "off") state.condition = condition;
+          await act(armed, ctx);
         } else {
           status(ctx);
         }
@@ -184,9 +185,9 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
           if (configChanged()) ui.warn("Save first, then send a test.");
           else void send(ctx, "test");
         }
-        else if (choice === "nocondition") { touched = true; arm.condition = undefined; }
-        else if (choice === "off") { touched = true; arm.armed = "off"; arm.condition = undefined; }
-        else if (choice === "on" || choice === "once") { touched = true; arm.armed = choice; }
+        else if (choice === "nocondition") { touched.condition = true; arm.condition = undefined; }
+        else if (choice === "off") { touched.armed = touched.condition = true; arm.armed = "off"; arm.condition = undefined; }
+        else if (choice === "on" || choice === "once") { touched.armed = true; arm.armed = choice; }
         else if (config && (typeof choice === "number" || choice === ADD)) await setupChoice(ui, config, choice);
       }
     } finally {

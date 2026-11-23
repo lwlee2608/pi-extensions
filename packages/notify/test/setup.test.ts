@@ -880,6 +880,9 @@ test("an explicit choice in the menu applies even if it matches the state when t
   const settle = () => { h.emit("agent_before_settle", "completed"); h.emit("agent_settled"); };
   await h.run("", () => { settle(); return "After the next reply only ✓"; }, "Save and close");
   assert.equal(h.status(), "🔔 next reply");
+  h.emit("agent_start");
+  await h.run("", () => { settle(); return "No condition ✓"; }, "Save and close");
+  assert.equal(h.status(), undefined);
 });
 
 test("after /notify off, notify_me neither sends nor re-arms until the next prompt", async t => {
