@@ -858,6 +858,20 @@ test("/notify opens the Setup tab when not set up, stays quiet during a run and 
   assert.equal(h.status(), undefined);
 });
 
+test("a reason send that finishes late does not use up a one-shot armed while it was sending", async t => {
+  const h = await harness(t);
+  await h.write(JSON.stringify({ connectors: [{ type: "telegram", botToken: TOKEN, chatId: "-1" }] }));
+  let release: (() => void) | undefined;
+  t.mock.method(globalThis, "fetch", () => new Promise(resolve => { release = () => resolve(new Response('{"ok":true}')); }));
+  const pending = h.notifyMe({ reason: "tests pass" });
+  await until(() => release !== undefined);
+  await h.run("off");
+  await h.run("once");
+  release!();
+  assert.equal((await pending).content[0].text, "Notification sent.");
+  assert.equal(h.status(), "🔔 next reply");
+});
+
 test("/notify specific condition reaches the agent, sends once and clears with the one-shot", async t => {
   const h = await harness(t);
   await h.write(JSON.stringify({ connectors: [{ type: "telegram", botToken: TOKEN, chatId: "-1" }] }));

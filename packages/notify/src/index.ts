@@ -249,8 +249,9 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
   async function alert(ctx: ExtensionContext, reason: string): Promise<string> {
     if (ctx.mode !== "tui") throw new Error("notify_me is only available in TUI mode.");
     if (injected && state.condition !== injected) return "Not sent: the /notify condition already sent its notification, or the user changed it.";
+    const request = command;
     if (!await send(ctx, { reason })) throw new Error("The notification was not sent; Pi shows the user why.");
-    state.fired();
+    if (request === command) state.fired();
     status(ctx);
     return "Notification sent.";
   }
