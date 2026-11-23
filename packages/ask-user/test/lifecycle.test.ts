@@ -13,12 +13,14 @@ import { core } from "./fixtures/demo.ts";
 const { InteractiveMode } = await import(new URL("modes/interactive/interactive-mode.js", import.meta.resolve("@earendil-works/pi-coding-agent")).href);
 initTheme("dark", false);
 
-function host() {
+function host(rpc = false) {
   let tool!: ToolDefinition;
   let active = ["read", "ask_user_question"];
   const handlers = new Map<string, Function>();
   extension({
     registerTool: (definition: ToolDefinition) => { tool = definition; },
+    registerFlag: (name: string, options: { default: boolean }) => { assert.equal(name, "ask-user-rpc"); assert.equal(options.default, false); },
+    getFlag: () => rpc,
     on: (name: string, handler: Function) => { handlers.set(name, handler); },
     getActiveTools: () => active,
     setActiveTools: (names: string[]) => { active = names; },
@@ -78,6 +80,27 @@ test("actual registration is lean, sequential, model-only, excludes non-TUI with
   h.handlers.get("session_start")!({}, { mode: "tui" });
   h.handlers.get("before_agent_start")!({}, { mode: "tui" });
   assert.deepEqual(h.active(), ["read"]);
+});
+
+test("RPC opt-in preserves tool selection and shutdown rejects pending questionnaires", async () => {
+  const h = host(true);
+  const ctx = { mode: "rpc", ui: { editor: () => new Promise(() => {}) } } as unknown as ExtensionToolContext;
+  for (const event of ["session_start", "before_agent_start"]) {
+    h.handlers.get(event)!({}, ctx);
+    assert.deepEqual(h.active(), ["read", "ask_user_question"]);
+  }
+  h.setActive(["read"]);
+  h.handlers.get("before_agent_start")!({}, ctx);
+  assert.deepEqual(h.active(), ["read"]);
+  const pending = h.tool.execute("id", core, undefined, undefined, ctx);
+  h.handlers.get("session_shutdown")!({});
+  h.handlers.get("session_shutdown")!({});
+  await assert.rejects(pending, /aborted/);
+  for (const mode of ["json", "print"]) {
+    h.setActive(["read", "ask_user_question"]);
+    h.handlers.get("before_agent_start")!({}, { mode });
+    assert.deepEqual(h.active(), ["read"]);
+  }
 });
 
 test("result rendering pairs each answer with its question, like Claude Code", () => {

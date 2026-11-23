@@ -55,4 +55,26 @@ Pi's own selection and editor bindings apply. You can also remap these actions i
 
 These aren't checked for conflicts, so avoid keys Pi already uses for editing or navigation.
 
-The tool works only in Pi's interactive terminal mode. It's hidden in print, JSON, and RPC runs.
+The terminal experience is unchanged. The tool is hidden in print and JSON runs, and in RPC runs unless explicitly enabled.
+
+## Opt-in RPC clients (proposal)
+
+Clients implementing the contract below can start Pi with `pi --mode rpc --ask-user-rpc`. Do not enable this flag for a generic editor-only client. There are no client-specific dependencies or additional network services.
+
+The adapter calls Pi's documented `ctx.ui.editor(title, prefill)` transport. Handle an `extension_ui_request` only when `method` is `"editor"` and `title` is exactly `"pi-ask-user:questionnaire:v1"`. Parse `prefill` as JSON:
+
+```json
+{"protocol":"pi-ask-user","version":1,"timeoutMs":600000,"questions":[{"question":"Pick one","options":[{"label":"A"},{"label":"B"}]}]}
+```
+
+`questions` is a validated, detached snapshot of the tool arguments, including optional `header`, `multiSelect`, option `description`, and Markdown `preview`. Render these as untrusted content. Collect and review answers, then send an `extension_ui_response` with the request's **Pi-generated `id`** and a **JSON string** in `value`:
+
+```json
+{"type":"extension_ui_response","id":"<request id>","value":"{\"protocol\":\"pi-ask-user\",\"version\":1,\"answers\":[{\"questionIndex\":1,\"selected\":[\"A\"]}]}"}
+```
+
+Answer indices are one-based. `selected` contains exact option labels (no duplicates). Each answer may include a nonblank `custom` string and a `notes` string; the envelope may include `globalNote`. Single-select requires exactly one option **or** a custom answer; multi-select permits both. Normal submission must answer every question exactly once. With `chat: true`, partial or empty answers are allowed so the user can discuss first. Unknown fields, versions, questions, labels, and invalid selection counts are rejected as tool errors, without retrying the dialog. Explanations are not accepted from the client.
+
+To cancel explicitly, send `{"type":"extension_ui_response","id":"<request id>","cancelled":true}`. This returns `{cancelled:true,answers:[]}`. Abort, session shutdown, transport failure, and the fixed ten-minute deadline instead fail the tool without claiming the user cancelled. The first observed settlement wins; later replies cannot change its result.
+
+**Limitations:** this is a one-shot questionnaire contract, not a custom Pi RPC method or a capability-negotiation protocol. Clients own review, draft handling, safe cancellation, and preview rendering. Model-powered explanations and reconnect/resume are not supported. Pi's editor API has no abort/timeout parameter or remote dismiss event: the adapter stops waiting locally, but Pi may retain the outstanding editor request until a reply or runtime teardown. Clients should dismiss stale questionnaires on tool completion/abort and send a cancellation response to release the outstanding request. The deadline is included in the envelope for client UI cleanup; process exit/disconnection must also close the client UI.
