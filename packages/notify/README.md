@@ -18,7 +18,7 @@ Quick start with Telegram:
 2. In Telegram, message @BotFather, send `/newbot`, and paste the token it gives you.
 3. Open your new bot in Telegram and send it any message, like "hi".
 4. Back in Pi, choose **Find my chat** and pick your chat.
-5. Choose **Save and close**, send the test, then run `/notify` before a long task.
+5. Choose **Save and close**, send the test, then run `/notify` and pick when to get notified.
 
 The setup menu lists destinations (Telegram and custom commands) and options (`onPrompt` as "Notify when Pi needs an answer", `nerdFont` as "Nerd Font bell icon"), with Save and close or Discard and close below a divider. It offers a test send after saving.
 
@@ -75,30 +75,55 @@ Example `run` values for common services (escape `"` as `\"` inside JSON):
 
 `run` executes in the session working directory using the platform shell and inherited environment. The notification is passed as `PI_NOTIFY_TEXT`, never interpolated into the command itself. Quote `"$PI_NOTIFY_TEXT"` in POSIX-shell commands. Telegram and command connectors can be mixed in the same array.
 
-Only configure commands you trust: they execute with your permissions and can access local files and environment secrets. The extension supplies no prompt, reply, or code content, but a command you configure can read that content itself. Keep commands in the foreground. Output is discarded; exit code zero means success. Each send has a 10-second timeout; timeout or session reset kills the process group on POSIX (the shell process on Windows). Do not use detached/background processes that escape this cleanup. Sends run in the background and do not hold up Pi's lifecycle events.
+Only configure commands you trust: they execute with your permissions and can access local files and environment secrets. The extension supplies no prompt, reply, or code content (only the agent's short reason, when the user asked for one), but a command you configure can read that content itself. Keep commands in the foreground. Output is discarded; exit code zero means success. Each send has a 10-second timeout; timeout or session reset kills the process group on POSIX (the shell process on Windows). Do not use detached/background processes that escape this cleanup. Sends run in the background and do not hold up Pi's lifecycle events.
 
 ## Use
 
-| Action | Result |
+`/notify` opens a menu:
+
+```text
+Notify me
+
+When Pi finishes
+  Every time
+→ Next time only
+  Off                              ✓
+
+Saved setting, used while notifications are on
+  Notify when Pi needs an answer   off
+
+────────────
+  Send a test
+  Setup
+
+Tip: say "notify me when <something>" in your prompt.
+```
+
+The cursor starts on **Next time only**, so `/notify` then Enter arms one notification. ✓ marks the current choice. **Notify when Pi needs an answer** flips `onPrompt` in the config file, so it applies to all sessions, and keeps the menu open. After each choice, Pi says in one sentence when the notification fires. If the config is missing or invalid, the title shows why and the cursor starts on **Setup**.
+
+| Command or prompt | Result |
 | --- | --- |
-| `/notify` | Arm the next completed or errored run only. |
-| `/notify on` | Notify on every completed or errored run in this session. |
-| `/notify off` | Disarm. |
-| `/notify test` | Send a test immediately without changing arming. |
+| `/notify` | Open the menu. |
+| `/notify once` | Notify when the next run completes or errors, then turn off. |
+| `/notify on` | Notify each time a run completes or errors in this session. |
+| `/notify off` | Turn notifications off. |
+| `/notify test` | Send a test now without changing arming. |
 | `/notify setup` | Create or edit the config in the TUI. Refused during a run. |
-| “Notify me when you finish” | The agent can call `notify_me` to arm one-shot; `/notify on` stays on. |
+| “Notify me when you finish” | The agent calls `notify_me` to arm one-shot; `/notify on` stays on. |
+| “Notify me when the tests pass” | The agent arms one-shot as a fallback, then calls `notify_me` with a reason such as `tests pass` when it happens. That sends at once and uses up the one-shot, so the end of the run does not send again (with `/notify on`, it still does). If it never happens, the end of the run still sends. |
 
-The agent's tool description restricts `notify_me` to explicit user requests; it must not arm proactively. The tool is removed from active tools outside TUI, and calls outside TUI fail. Arming shows `🔔 once` or `🔔 on` in extension status (including Pi Footer). New, resumed, and forked sessions reset to off; arming is never persisted.
+The agent's tool description restricts `notify_me` to explicit user requests; it must not notify proactively. Whether a condition happened is the agent's judgment. The tool is removed from active tools outside TUI, and calls outside TUI fail. Arming shows `🔔 next finish` or `🔔 every finish` in extension status (including Pi Footer). New, resumed, and forked sessions reset to off; arming is never persisted.
 
-Notifications contain only the optional session name, working directory, and outcome:
+Notifications contain only the optional session name, working directory, and outcome, or the agent's short reason (at most 120 characters, on one line):
 
 ```text
 ✅ fix-login · ~/src/app · done
 ❌ fix-login · ~/src/app · error
 🔔 fix-login · ~/src/app · waiting for input
+🔔 fix-login · ~/src/app · tests pass
 ```
 
-Session names and directory paths are sent to your configured destinations; avoid sensitive names if that matters to you.
+Session names, directory paths, and agent reasons are sent to your configured destinations; avoid sensitive names if that matters to you.
 
 With `onPrompt: true`, a blocking extension UI prompt during an active run also sends “waiting for input.” Its title and content are never included. Idle prompts do not send, and prompt pings do not consume one-shot: the eventual completed/error settle still sends. Commands such as `/sessions`, `/subagents`, or `/model-plus` opened during a run can also trigger this ping because Pi's prompt event does not identify its source.
 
@@ -108,4 +133,4 @@ A run that settles to ask a question consumes one-shot, even if you expected mor
 
 Normal aborts send nothing and keep one-shot armed. **Accepted Pi limitation:** Escape during a pending asynchronous `agent_before_settle` handler does not update the previously recorded completion/error outcome, and Pi exposes no final cancellation state at settlement. That narrow case can still send a notification and consume one-shot.
 
-`/notify off` prevents future pings; it does not recall a send already in flight. Session reset/shutdown aborts outstanding sends, but cannot recall a message already delivered.
+`/notify off` prevents future end-of-run and prompt pings; it does not recall a send already in flight, and it does not stop the agent from sending a reason the user asked for. Session reset/shutdown aborts outstanding sends, but cannot recall a message already delivered.

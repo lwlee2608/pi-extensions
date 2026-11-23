@@ -515,7 +515,7 @@ test("saving an invalid config requires confirmation, offers no test and leaves 
   const h = await harness(t);
   await h.write(JSON.stringify({ connectors: [{ type: "telegram", botToken: TOKEN, chatId: "-123" }] }));
   await h.run("on");
-  assert.equal(h.status(), "🔔 on");
+  assert.equal(h.status(), "🔔 every finish");
   const content = JSON.stringify({ connectors: [{ type: "telegram", botToken: "$NOTIFY_SETUP_UNSET", chatId: "-123" }] });
   await h.write(content);
 
@@ -528,7 +528,7 @@ test("saving an invalid config requires confirmation, offers no test and leaves 
   assert.deepEqual(h.dialogs.filter(dialog => dialog.kind === "confirm").map(dialog => dialog.title), ["Save with problems?"]);
   assert.equal((await saved(h)).nerdFont, true);
   await assert.rejects(loadConfig(h.path));
-  assert.equal(h.status(), "\uf0f3 on");
+  assert.equal(h.status(), "\uf0f3 every finish");
   await flush();
   assert.deepEqual(h.sent, []);
 });
@@ -681,11 +681,11 @@ test("changing the file after opening asks first, and declining leaves the outsi
 test("setup leaves a one-shot /notify armed", async t => {
   const h = await harness(t);
   await h.write(JSON.stringify({ connectors: [{ type: "telegram", botToken: TOKEN, chatId: "-1" }] }));
-  await h.run("");
+  await h.run("once");
   await h.run("setup", "Discard and close");
-  assert.equal(h.status(), "🔔 once");
+  assert.equal(h.status(), "🔔 next finish");
   await h.run("setup", ...SAVE_NO_TEST);
-  assert.equal(h.status(), "🔔 once");
+  assert.equal(h.status(), "🔔 next finish");
   h.emit("agent_start");
   h.emit("agent_before_settle", "completed");
   h.emit("agent_settled");
@@ -701,7 +701,7 @@ test("non-TUI modes open no dialog and bad subcommands show setup in usage", asy
   h.ctx.mode = "tui";
   await h.write(COMMAND_CONFIG);
   await h.run("bogus");
-  assert.match(h.warnings.pop()!, /\[on\|off\|test\|setup\]/);
+  assert.match(h.warnings.pop()!, /\[once\|on\|off\|test\|setup\]\. .*"notify me when <something>"/);
 });
 
 test("saveDraft replaces atomically, tightens mode and writes through symlinks", async t => {
@@ -804,4 +804,38 @@ test("a malformed saved token re-opens the token step without showing it", async
   assert.match(h.warnings[0], /does not look right/);
   assert.ok(!JSON.stringify([h.dialogs, h.screens, h.notices]).includes("fake"));
   assert.equal((await saved(h)).connectors[0].botToken, TOKEN);
+});
+
+test("/notify menu arms, toggles the answer ping in config and explains when it fires", async t => {
+  const h = await harness(t);
+  await h.write(COMMAND_CONFIG);
+  await h.run("", "Every time");
+  assert.equal(h.status(), "🔔 every finish");
+  assert.match(h.notices.pop()!, /each time Pi finishes .*until \/notify off\.$/);
+  await h.run("", "Notify when Pi needs an answer off", "Next time only");
+  assert.equal((await saved(h)).onPrompt, true);
+  assert.equal(h.status(), "🔔 next finish");
+  assert.match(h.notices.pop()!, /next finishes .*You also get one when Pi needs your answer\.$/);
+  await h.run("", "Off");
+  assert.equal(h.status(), undefined);
+  assert.equal(h.notices.pop(), "Notifications are off.");
+});
+
+test("/notify menu points to Setup when not set up, stays quiet during a run and never arms after a reset", async t => {
+  const h = await harness(t);
+  await h.run("", undefined);
+  assert.equal(h.dialogs[0].title, "Notify me (Notifications are not set up yet. Run /notify setup.)");
+  assert.equal(h.dialogs[0].options![h.dialogs[0].cursor!], "Setup");
+  await h.write(JSON.stringify({ onPrompt: true, connectors: [{ type: "telegram", botToken: TOKEN, chatId: "-1" }] }));
+  await h.run("on");
+  h.emit("agent_start");
+  const open = h.start("", OPEN);
+  await until(() => h.depth() === 1);
+  h.emit("ui_prompt_start");
+  await flush();
+  assert.deepEqual(h.sent, []);
+  h.emit("session_start");
+  await open;
+  await h.run("", () => { h.emit("session_start"); return "Every time"; });
+  assert.equal(h.status(), undefined);
 });

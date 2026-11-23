@@ -52,7 +52,7 @@ export class SetupMenu implements Component {
         lines.push(this.row(row, width));
       }
     }
-    lines.push("", ...wrapTextWithAnsi(theme.fg("dim", this.options.hint), Math.max(1, width - 2)));
+    lines.push("", ...this.options.hint.split("\n").flatMap(line => wrapTextWithAnsi(theme.fg("dim", line), Math.max(1, width - 2))));
     const max = this.options.rows ? Math.max(MIN_LINES, this.options.rows() - RESERVED_ROWS) : lines.length;
     const start = Math.max(0, Math.min(at - (max >> 1), lines.length - max));
     return lines.slice(start, start + max).map(line => truncateToWidth(` ${line}`, width, ""));
