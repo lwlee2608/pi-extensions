@@ -89,7 +89,7 @@ async function harness(t: TestContext) {
       return;
     }
     const screen = menu.render(80);
-    const rows = screen.filter(line => line.startsWith(" → ") || line.startsWith("   "));
+    const rows = screen.filter(line => (line.startsWith(" → ") || line.startsWith("   ")) && !line.includes("tab ⇄"));
     const options = rows.map(line => tidy(line.slice(3)));
     const cursor = rows.findIndex(line => line.startsWith(" → "));
     dialogs.push({ kind: "menu", title: tidy(screen[0]), options, cursor, screen: screen.join("\n") });
@@ -900,8 +900,10 @@ test("/notify tabs keep pending edits until one Save, and Esc while typing keeps
   await h.run("", "After every reply", TAB, "Nerd Font bell icon off", TAB, "Specific condition", "tests pass", "Save and close");
   assert.equal(h.status(), " every reply · when tests pass");
   assert.equal((await saved(h)).nerdFont, true);
-  const tabs = h.dialogs.filter(dialog => dialog.kind === "menu").map(dialog => dialog.screen!.split("\n")[2].trim());
-  assert.deepEqual([...new Set(tabs)], ["[ Notify ]   Setup   tab ⇄", "Notify   [ Setup ]   tab ⇄"]);
+  const tabs = h.dialogs.filter(dialog => dialog.kind === "menu").map(dialog => dialog.screen!.split("\n")[2].trimEnd());
+  assert.deepEqual([...new Set(tabs)].map(line => line.trim()), ["[ Notify ]     Setup     tab ⇄", "Notify     [ Setup ]   tab ⇄"]);
+  assert.equal(new Set(tabs.map(line => line.indexOf("Setup"))).size, 1);
+  assert.equal(new Set(tabs.map(line => line.indexOf("tab ⇄"))).size, 1);
   const menus = h.dialogs.filter(dialog => dialog.kind === "menu").map(dialog => dialog.screen!.split("\n"));
   assert.equal(new Set(menus.map(lines => lines.length)).size, 1);
   assert.equal(new Set(menus.map(lines => lines.findIndex(line => line.includes("Save and close")))).size, 1);

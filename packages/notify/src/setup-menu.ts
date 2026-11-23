@@ -60,7 +60,7 @@ export class SetupMenu implements Component, Focusable {
     const lines = [theme.fg("accent", theme.bold(this.options.title))];
     const { tabs } = this.options;
     if (tabs) {
-      const bar = tabs.labels.map((label, i) => i === tabs.active ? theme.fg("accent", theme.bold(`[ ${label} ]`)) : theme.fg("muted", label));
+      const bar = tabs.labels.map((label, i) => i === tabs.active ? theme.fg("accent", theme.bold(`[ ${label} ]`)) : theme.fg("muted", `  ${label}  `));
       lines.push("", `${bar.join("   ")}${theme.fg("dim", "   tab ⇄")}`, theme.fg("border", "━".repeat(Math.max(0, width - 2))));
     }
     const { sections } = this.options;

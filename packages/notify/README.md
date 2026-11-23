@@ -84,7 +84,7 @@ Only configure commands you trust: they execute with your permissions and can ac
 ```text
 Notify me
 
-[ Notify ]   Setup   tab ⇄
+[ Notify ]     Setup     tab ⇄
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 When Pi finishes and waits for you
