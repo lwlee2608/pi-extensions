@@ -2,17 +2,20 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Text } from "@earendil-works/pi-tui";
 import { display } from "./display.ts";
 import { runQuestionnaire } from "./questionnaire.ts";
+import { runRpcQuestionnaire } from "./rpc.ts";
 import { description, parameters } from "./schema.ts";
 import type { Result } from "./result.ts";
 import type { Usage } from "@earendil-works/pi-ai";
 import { addUsage, type Request } from "./explain.ts";
 
 export default function (pi: ExtensionAPI): void {
+  pi.registerFlag("ask-user-rpc", { type: "boolean", default: false, description: "Enable questionnaires for RPC clients implementing the pi-ask-user v1 contract." });
+  const rpcEnabled = (ctx: ExtensionContext) => ctx.mode === "rpc" && pi.getFlag("ask-user-rpc") === true;
   const pending = new Set<AbortController>();
   let lastRequest: Request | undefined;
   pi.on("context_with_system", event => { lastRequest = event.messages; });
   const excludeOutsideTerminal = (_event: unknown, ctx: ExtensionContext) => {
-    if (ctx.mode !== "tui") {
+    if (ctx.mode !== "tui" && !rpcEnabled(ctx)) {
       const active = pi.getActiveTools();
       if (active.includes("ask_user_question")) pi.setActiveTools(active.filter(name => name !== "ask_user_question"));
     }
@@ -31,7 +34,8 @@ export default function (pi: ExtensionAPI): void {
       pending.add(controller);
       try {
         let usage: Usage | undefined;
-        const result = await runQuestionnaire(ctx, params, signal ? AbortSignal.any([signal, controller.signal]) : controller.signal, {
+        const combined = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+        const result = rpcEnabled(ctx) ? await runRpcQuestionnaire(ctx, params, combined) : await runQuestionnaire(ctx, params, combined, {
           lastRequest: () => lastRequest,
           onUsage: next => { usage = addUsage(usage, next); },
         });
