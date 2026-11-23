@@ -131,47 +131,59 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
     menuOpen = true;
     const { signal } = controller;
     try {
-      let initial: RowId | undefined;
+      const loaded = await loadConfig(path).catch((error: Error) => error);
+      const config = loaded instanceof Error ? undefined : loaded;
+      const draft = { armed: state.armed, condition: state.condition, onPrompt: config?.onPrompt ?? false };
+      const changed = () => draft.armed !== state.armed || draft.condition !== state.condition || (config !== undefined && draft.onPrompt !== config.onPrompt);
+      const apply = async () => {
+        if (config && draft.onPrompt !== config.onPrompt) {
+          const raw = await loadDraft(path);
+          raw.onPrompt = draft.onPrompt;
+          await saveDraft(path, raw);
+        }
+        if (signal.aborted) return;
+        if (draft.armed !== "off") state.condition = draft.condition;
+        await act(draft.armed, ctx);
+      };
+      let initial: RowId = !config ? "setup" : draft.armed === "off" ? "once" : draft.armed;
       for (;;) {
-        const loaded = await loadConfig(path).catch((error: Error) => error);
-        const config = loaded instanceof Error ? undefined : loaded;
-        initial ??= !config ? "setup" : state.armed === "off" ? "once" : state.armed;
-        const row = (id: RowId, label: string, note = state.armed === id ? " ✓" : "") => ({ id, label: label.padEnd(32), note });
+        const row = (id: RowId, label: string, on = draft.armed === id) => ({ id, label: label.padEnd(32), note: on ? " ✓" : "" });
+        const title = loaded instanceof Error ? `Notify me (${loaded.message})` : changed() ? "Notify me (unsaved changes)" : "Notify me";
         const choice = signal.aborted ? undefined : await ctx.ui.custom<RowId | undefined>((tui, theme, keys, done) => new SetupMenu({
-          title: loaded instanceof Error ? `Notify me (${loaded.message})` : "Notify me",
-          hint: "↑↓ move   enter choose   esc close",
-          initial, signal, rows: () => tui.terminal.rows,
+          title, hint: "↑↓ move   enter choose   esc discard", initial, signal, rows: () => tui.terminal.rows,
           sections: [
             { header: "When Pi finishes and waits for you", description: "Sent once Pi is done and it is your turn to reply.",
               rows: [row("on", "After every reply"), row("once", "After the next reply only"), row("off", "Off")] },
             { header: "Also when something specific happens", description: "The agent judges when it happens. You can also say it in your prompt.",
-              rows: [row("nocondition", "No condition", state.condition ? "" : " ✓"), row("condition", "Specific condition…", state.condition ? ` ✓ "${state.condition}"` : "")] },
+              rows: [row("nocondition", "No condition", !draft.condition),
+                { ...row("condition", "Specific condition…", false), note: draft.condition ? ` ✓ "${draft.condition}"` : "" }] },
             ...config ? [{ header: "Also, while notifications are on (saved for all sessions)", description: PROMPT_EXAMPLE,
-              rows: [row("prompt", "Notify on mid-task questions", config.onPrompt ? " on" : " off")] }] : [],
+              rows: [{ ...row("prompt", "Notify on mid-task questions", false), note: draft.onPrompt ? " on" : " off" }] }] : [],
             { rows: [{ id: "test", label: "Send a test" }, { id: "setup", label: "Setup" }] },
+            { rows: [{ id: "save", label: "Save and close" }, { id: "discard", label: "Discard and close" }] },
           ],
         }, theme, keys, done));
-        if (choice === undefined || signal.aborted) return;
-        if (choice === "prompt") {
-          const draft = await loadDraft(path);
-          draft.onPrompt = draft.onPrompt !== true;
-          await saveDraft(path, draft);
-        } else if (choice === "nocondition") {
-          state.condition = undefined;
-          status(ctx);
-        } else if (choice === "condition") {
+        if (choice === undefined || choice === "discard" || signal.aborted) return;
+        if (choice === "save") return await apply();
+        if (choice === "setup") {
+          if (changed()) await apply();
+          return await act("setup", ctx);
+        }
+        if (choice === "test") await act("test", ctx);
+        else if (choice === "prompt") draft.onPrompt = !draft.onPrompt;
+        else if (choice === "nocondition") draft.condition = undefined;
+        else if (choice === "off") { draft.armed = "off"; draft.condition = undefined; }
+        else if (choice === "on" || choice === "once") draft.armed = choice;
+        else if (choice === "condition") {
           const text = await ctx.ui.custom<string | undefined>((_tui, theme, _keys, done) => new TextInput({
             title: "Notify me when…", hint: "For example: the tests pass. The agent judges when it happens.",
-            initial: state.condition, signal,
+            initial: draft.condition, signal,
           }, theme, done));
-          if (signal.aborted) return;
           const condition = clean(text ?? "");
           if (condition) {
-            state.condition = condition;
-            return await act(state.armed === "on" ? "on" : "once", ctx);
+            draft.condition = condition;
+            if (draft.armed === "off") draft.armed = "once";
           }
-        } else {
-          return await act(String(choice), ctx);
         }
         initial = choice;
       }

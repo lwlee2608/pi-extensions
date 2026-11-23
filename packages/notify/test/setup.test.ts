@@ -812,14 +812,20 @@ test("a malformed saved token re-opens the token step without showing it", async
 test("/notify menu arms, toggles the answer ping in config and explains when it fires", async t => {
   const h = await harness(t);
   await h.write(COMMAND_CONFIG);
-  await h.run("", "After every reply");
+  await h.run("", "After every reply", "Save and close");
   assert.equal(h.status(), "🔔 every reply");
   assert.match(h.notices.pop()!, /after every reply.*until \/notify off\.$/);
-  await h.run("", "Notify on mid-task questions off", "After the next reply only");
+  await h.run("", "Notify on mid-task questions off", "After the next reply only", "Off", undefined);
+  assert.equal(h.dialogs.at(-1)!.title, "Notify me (unsaved changes)");
+  assert.equal(h.status(), "🔔 every reply");
+  assert.notEqual((await saved(h)).onPrompt, true);
+  await h.run("", "Notify on mid-task questions off", "After the next reply only", "Save and close");
   assert.equal((await saved(h)).onPrompt, true);
   assert.equal(h.status(), "🔔 next reply");
   assert.match(h.notices.pop()!, /after the next reply.*You also get one when Pi asks you mid-task to pick an option or approve an action\. Then notifications turn off\.$/);
-  await h.run("", "Off");
+  await h.run("", "Off", "Discard and close");
+  assert.equal(h.status(), "🔔 next reply");
+  await h.run("", "Off", "Save and close");
   assert.equal(h.status(), undefined);
   assert.equal(h.notices.pop(), "Notifications are off.");
 });
@@ -848,7 +854,7 @@ test("/notify specific condition reaches the agent, sends once and clears with t
   await h.write(JSON.stringify({ connectors: [{ type: "telegram", botToken: TOKEN, chatId: "-1" }] }));
   const prompt = () => h.event("before_agent_start", { systemPrompt: "base" }) as { systemPrompt: string } | undefined;
   assert.equal(prompt(), undefined);
-  await h.run("", "Specific condition…", " the tests pass ");
+  await h.run("", "Specific condition…", " the tests pass ", "Save and close");
   assert.equal(h.status(), "🔔 next reply · when the tests pass");
   assert.match(h.notices.pop()!, /If "the tests pass" happens first, as judged by the agent, you get it then instead\. Then notifications turn off\.$/);
   h.emit("agent_start");
@@ -862,18 +868,18 @@ test("/notify specific condition reaches the agent, sends once and clears with t
   assert.deepEqual(h.sent.map(message => message.text), ["🔔 session · " + h.root.replace(homedir(), "~") + " · tests pass"]);
   assert.equal(prompt(), undefined);
 
-  await h.run("", "After every reply");
-  await h.run("", "Specific condition…", "deploy is green");
+  await h.run("", "After every reply", "Save and close");
+  await h.run("", "Specific condition…", "deploy is green", "Save and close");
   assert.equal(h.status(), "🔔 every reply · when deploy is green");
   assert.match(h.notices.pop()!, /each time "deploy is green" happens/);
-  await h.run("", "No condition", undefined);
+  await h.run("", "No condition", "Save and close");
   assert.equal(h.status(), "🔔 every reply");
-  await h.run("", "Specific condition…", "deploy is green");
+  await h.run("", "Specific condition…", "deploy is green", "Save and close");
   await h.run("off");
   assert.equal(prompt(), undefined);
   await h.run("once");
   assert.equal(h.status(), "🔔 next reply");
-  await h.run("", "Specific condition…", "x");
+  await h.run("", "Specific condition…", "x", "Save and close");
   h.emit("session_start");
   assert.equal(prompt(), undefined);
   assert.equal(h.status(), undefined);
