@@ -139,7 +139,7 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
             edit: { value: arm.condition ?? "", placeholder: "e.g. the tests pass", set: value => {
               touched.condition = true;
               arm.condition = clean(value) || undefined;
-              if (arm.condition && arm.armed === "off") arm.armed = "once";
+              if (arm.condition && arm.armed === "off") { arm.armed = "once"; touched.armed = true; }
             } } }] },
         ...config ? [{ header: "Also, while notifications are on (saved for all sessions)", description: PROMPT_EXAMPLE,
           rows: [toggleRow(config, "onPrompt", "Notify on mid-task questions")] }] : [],
