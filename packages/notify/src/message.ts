@@ -5,11 +5,15 @@ import type { Outcome } from "./state.ts";
 export type Kind = Outcome | "test" | "waiting for input" | { reason: string } | { outcome: Outcome; summary: string };
 
 const MAX_SUMMARY = 120;
-const TAGGED = /^[\s>*_#-]*summary[*_\s]*:[*_\s]*(.*\S)/i;
+const TAGGED = /^[\s>#-]*(\*\*|__|\*|_)?summary(\1)?\s*:\s*(\1)?\s*(.*\S)/i;
 
 export function summaryLine(text: string): string | undefined {
-  const line = text.split("\n").reverse().map(line => TAGGED.exec(line)?.[1]).find(Boolean);
-  return line && oneLine(line.replace(/^(\*\*|__)|(\*\*|__)$/g, ""));
+  for (const line of text.split("\n").reverse()) {
+    const match = TAGGED.exec(line);
+    if (!match) continue;
+    const [, mark, before, after, body] = match;
+    return oneLine(mark && !before && !after && body.endsWith(mark) ? body.slice(0, -mark.length) : body);
+  }
 }
 
 export function oneLine(text: string): string | undefined {

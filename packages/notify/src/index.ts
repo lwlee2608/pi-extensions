@@ -91,7 +91,7 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
     const on = ctx.mode === "tui" && state.armed !== "off";
     injected = on ? state.condition : undefined;
     const summaries = on && (await loadConfig(path).catch(() => undefined))?.summaries;
-    if (summaries) run.asked = true;
+    run.asked = Boolean(summaries);
     const lines = [injected && instruction(injected), summaries && SUMMARY_PROMPT].filter(Boolean);
     if (lines.length) return { systemPrompt: [event.systemPrompt, ...lines].join("\n\n") };
   });

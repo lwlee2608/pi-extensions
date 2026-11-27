@@ -269,8 +269,13 @@ test("notify_me with a reason sends now, consumes one-shot and is capped and cle
 });
 
 test("summary lines keep file names and globs and are cut on whole characters", () => {
-  assert.equal(summaryLine("Done.\n**Summary:** Fixed __init__.py and src/**/*.ts globs**"), "Fixed __init__.py and src/**/*.ts globs");
+  assert.equal(summaryLine("Done.\n**Summary:** Fixed __init__.py and src/**/*.ts globs"), "Fixed __init__.py and src/**/*.ts globs");
   assert.equal(summaryLine("- Summary: first\nSummary: last"), "last");
+  for (const [line, summary] of [["Summary: __init__.py now exports X", "__init__.py now exports X"], ["Summary: Fixed the bug in __init__", "Fixed the bug in __init__"],
+    ["Summary: *args now forwarded", "*args now forwarded"], ["Summary: Updated globs to src/**", "Updated globs to src/**"], ["**Summary**: Fixed it", "Fixed it"],
+    ["__Summary: wrapped in bold__", "wrapped in bold"], ["_Summary:_ italic tag", "italic tag"], ["> Summary: quoted", "quoted"]]) {
+    assert.equal(summaryLine(line), summary);
+  }
   assert.equal(summaryLine("Summary of changes: none"), undefined);
   const cut = oneLine(`${"a".repeat(118)}😀😀😀`)!;
   assert.equal(cut, `${"a".repeat(118)}😀…`);

@@ -53,6 +53,7 @@ Also, while notifications are on (saved for all sessions)
 | "Notify me when the tests pass" | The agent notifies when the tests pass, or at the end of the run if they never pass. |
 
 - **Specific condition:** type a condition such as `the tests pass`. The agent decides when it happens and sends a notification at once.
+- A reply that ends with a question to you counts as finished, so it sends and uses up a one-shot.
 - **Notify on mid-task questions:** also notify when Pi waits for you in a dialog, such as a question picker or an approval prompt. This does not use up a one-shot. Other dialogs opened during a run, such as `/sessions` or `/model-plus`, can also trigger it.
 - **Add a task summary** (on by default): while notifications are on, the agent ends its final reply with a `Summary:` line, and that line replaces `done` or `error` in the message. A failed run without one sends the provider's error text. See [Privacy](#privacy).
 - The status bar shows `🔔 next reply` or `🔔 every reply` while armed. New, resumed, and forked sessions start with notifications off.
@@ -107,7 +108,7 @@ you answer, run ends ───────────▶ ✅ … · done
 
 **No notification when:**
 
-- You abort the run with Esc. A one-shot stays armed.
+- You abort the run with Esc. A one-shot stays armed. Rarely, an Esc right as the run ends still sends.
 - Notifications are off. After `/notify off`, the agent cannot send until your next prompt.
 - Pi runs in print, JSON, or RPC mode.
 - The config is invalid. Pi shows a warning.
