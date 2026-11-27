@@ -196,7 +196,7 @@ test("from no config, the dialogs write a config loadConfig accepts with owner-o
   await h.run("setup", ...TELEGRAM, TAB, "Notify on mid-task questions off", TAB, "Nerd Font bell icon off", ...SAVE_NO_TEST);
   assert.deepEqual(h.dialogs[0].options, ["+ Add destination", "Nerd Font bell icon off", "Send a test", "Save and close", "Discard and close"]);
   assert.deepEqual(await loadConfig(h.path), {
-    onPrompt: true, nerdFont: true, connectors: [{ type: "telegram", botToken: TOKEN, chatId: "-123" }],
+    onPrompt: true, nerdFont: true, summaries: true, connectors: [{ type: "telegram", botToken: TOKEN, chatId: "-123" }],
   });
   assert.equal((await stat(h.path)).mode & 0o777, 0o600);
   assert.equal((await stat(join(h.root, "pi-notify"))).mode & 0o777, 0o700);
@@ -906,13 +906,13 @@ test("after /notify off, notify_me neither sends nor re-arms until the next prom
 test("/notify specific condition reaches the agent, sends once and clears with the one-shot", async t => {
   const h = await harness(t);
   await h.write(JSON.stringify({ connectors: [{ type: "telegram", botToken: TOKEN, chatId: "-1" }] }));
-  const prompt = () => h.event("before_agent_start", { systemPrompt: "base" }) as { systemPrompt: string } | undefined;
-  assert.equal(prompt(), undefined);
+  const prompt = async () => await h.event("before_agent_start", { systemPrompt: "base" }) as { systemPrompt: string } | undefined;
+  assert.equal(await prompt(), undefined);
   await h.run("", "Specific condition", " the tests pass ", "Save and close");
   assert.equal(h.status(), "🔔 next reply · when the tests pass");
   assert.match(h.notices.pop()!, /If "the tests pass" happens first, as judged by the agent, you get it then instead\. Then notifications turn off\.$/);
   h.emit("agent_start");
-  assert.match(prompt()!.systemPrompt, /^base\n\nThe user set a phone notification in \/notify for when this happens: "the tests pass"\./);
+  assert.match((await prompt())!.systemPrompt, /^base\n\nThe user set a phone notification in \/notify for when this happens: "the tests pass"\./);
   assert.equal((await h.notifyMe({ reason: "tests pass" })).content[0].text, "Notification sent.");
   assert.equal(h.status(), undefined);
   assert.match((await h.notifyMe({ reason: "tests pass" })).content[0].text, /^Not sent/);
@@ -920,7 +920,7 @@ test("/notify specific condition reaches the agent, sends once and clears with t
   h.emit("agent_settled");
   await flush();
   assert.deepEqual(h.sent.map(message => message.text), ["🔔 session · " + h.root.replace(homedir(), "~") + " · tests pass"]);
-  assert.equal(prompt(), undefined);
+  assert.equal(await prompt(), undefined);
 
   await h.run("", "After every reply", "Save and close");
   await h.run("", "Specific condition", "deploy is green", "Save and close");
@@ -930,12 +930,12 @@ test("/notify specific condition reaches the agent, sends once and clears with t
   assert.equal(h.status(), "🔔 every reply");
   await h.run("", "Specific condition", "deploy is green", "Save and close");
   await h.run("off");
-  assert.equal(prompt(), undefined);
+  assert.equal(await prompt(), undefined);
   await h.run("once");
   assert.equal(h.status(), "🔔 next reply");
   await h.run("", "Specific condition", "x", "Save and close");
   h.emit("session_start");
-  assert.equal(prompt(), undefined);
+  assert.equal(await prompt(), undefined);
   assert.equal(h.status(), undefined);
 });
 
@@ -972,4 +972,105 @@ test("/notify Save after only looking at Setup leaves the file alone, and never 
     return "Save and close";
   });
   assert.equal(h.status(), undefined);
+});
+
+const TELEGRAM_CONFIG = (extra: object = {}) => JSON.stringify({ ...extra, connectors: [{ type: "telegram", botToken: TOKEN, chatId: "-1" }] });
+const reply = (text: string, extra: object = {}) => ({ message: { role: "assistant", content: [{ type: "thinking", thinking: "Summary: hidden" }, { type: "text", text }], stopReason: "stop", ...extra } });
+const SUMMARY_PROMPT = 'The user gets a phone notification when this run ends. End your final reply with one line "Summary: <one sentence: what you did and whether it worked, or what blocked you>".';
+
+test("summaries: a completed run sends the final reply's summary line to every connector", async t => {
+  const h = await harness(t);
+  const out = join(h.root, "out.txt");
+  await h.write(JSON.stringify({ connectors: [{ type: "telegram", botToken: TOKEN, chatId: "-1" }, { type: "command", run: `printf '%s\\n' "$PI_NOTIFY_TEXT" >> '${out}'` }] }));
+  const dir = h.root.replace(homedir(), "~");
+  const prompt = async () => await h.event("before_agent_start", { systemPrompt: "base" }) as { systemPrompt: string } | undefined;
+  assert.equal(await prompt(), undefined);
+  await h.run("once");
+  assert.equal((await prompt())!.systemPrompt, `base\n\n${SUMMARY_PROMPT}`);
+  h.emit("agent_start");
+  h.event("message_end", reply("Summary: an earlier step"));
+  h.event("message_end", { message: { role: "user", content: "Summary: from the user" } });
+  h.event("message_end", reply("All good.\n\n**Summary:** Fixed login redirect; all 12 tests pass.  "));
+  h.emit("agent_before_settle", "completed");
+  h.emit("agent_settled");
+  await until(() => h.sent.length === 1);
+  await flush();
+  assert.equal(h.sent[0].text, `✅ session · ${dir} · Fixed login redirect; all 12 tests pass.`);
+  assert.equal(await readFile(out, "utf8"), `✅ session · ${dir} · Fixed login redirect; all 12 tests pass.\n`);
+});
+
+test("summaries: only the current run's final reply counts, an abort discards its summary, and a run armed mid-run by /notify stays plain", async t => {
+  const h = await harness(t);
+  await h.write(TELEGRAM_CONFIG());
+  const run = async (outcome: string, ...messages: object[]) => {
+    await h.event("before_agent_start", { systemPrompt: "base" });
+    h.emit("agent_start");
+    for (const message of messages) h.event("message_end", message);
+    h.emit("agent_before_settle", outcome);
+    h.emit("agent_settled");
+  };
+  h.emit("agent_start");
+  await h.run("once");
+  h.event("message_end", reply("Summary: not asked for"));
+  h.emit("agent_before_settle", "completed");
+  h.emit("agent_settled");
+  await h.run("on");
+  await run("aborted", reply("Summary: aborted work"));
+  await run("completed", reply("Summary: done halfway"), reply("Finished without a tag."));
+  await run("completed");
+  await flush();
+  assert.deepEqual(h.sent.map(message => message.text.split(" · ").at(-1)), ["done", "done", "done"]);
+});
+
+test("summaries: an error run sends this run's summary line, else the provider error, on one capped line", async t => {
+  const h = await harness(t);
+  await h.write(TELEGRAM_CONFIG());
+  await h.run("on");
+  const run = async (...messages: object[]) => {
+    await h.event("before_agent_start", { systemPrompt: "base" });
+    h.emit("agent_start");
+    for (const message of messages) h.event("message_end", message);
+    h.emit("agent_before_settle", "error");
+    h.emit("agent_settled");
+  };
+  await run(reply("Summary: Tests pass; push was rejected."), reply("", { stopReason: "error", errorMessage: "overloaded" }));
+  await run(reply("", { stopReason: "error", errorMessage: `rate limit\nhit${"!".repeat(200)}` }));
+  await run(reply("", { stopReason: "error" }));
+  await flush();
+  const labels = h.sent.map(message => message.text.split(" · ").at(-1)!);
+  assert.deepEqual(labels, ["Tests pass; push was rejected.", `rate limit hit${"!".repeat(105)}…`, "error"]);
+  assert.equal(labels[1].length, 120);
+  assert.ok(h.sent.every(message => message.text.startsWith("❌ ")));
+});
+
+test("summaries: notify_me asks for the line when on; off keeps plain messages, the system prompt and notify_me result", async t => {
+  const h = await harness(t);
+  await h.write(TELEGRAM_CONFIG());
+  h.emit("agent_start");
+  assert.equal((await h.notifyMe({})).content[0].text, `Notification armed for the next completed or errored run. ${SUMMARY_PROMPT.replace(/^.*ends\. /, "")}`);
+  h.emit("agent_before_settle", "completed");
+  h.emit("agent_settled");
+  await h.write(TELEGRAM_CONFIG({ summaries: false }));
+  await h.run("on");
+  assert.equal(await h.event("before_agent_start", { systemPrompt: "base" }), undefined);
+  await h.run("", "Specific condition", "x", "Save and close");
+  assert.deepEqual(await h.event("before_agent_start", { systemPrompt: "base" }), { systemPrompt: 'base\n\nThe user set a phone notification in /notify for when this happens: "x". As soon as you notice it has happened, call notify_me with a short reason. Call it once per occurrence.' });
+  await h.run("", "No condition", "Save and close");
+  h.emit("agent_start");
+  assert.equal((await h.notifyMe({})).content[0].text, "Notification armed for the next completed or errored run.");
+  h.event("message_end", reply("Summary: should stay local"));
+  h.emit("agent_before_settle", "completed");
+  h.emit("agent_settled");
+  await flush();
+  assert.deepEqual(h.sent.map(message => message.text.split(" · ").at(-1)), ["done", "done"]);
+});
+
+test("summaries toggle on the Notify tab shows on by default, says what is sent and saves off", async t => {
+  const h = await harness(t);
+  await h.write(COMMAND_CONFIG);
+  await h.run("", "Add a task summary on", "Save and close");
+  assert.match(tidy(h.dialogs[0].screen!), /Task summary: the agent's one-line summary of its reply, or the error text, goes to your destinations\./);
+  assert.equal((await saved(h)).summaries, false);
+  await h.run("", "Add a task summary off", "Save and close");
+  assert.equal((await saved(h)).summaries, true);
 });

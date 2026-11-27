@@ -15,6 +15,7 @@ const TYPE_CHAT = "Type a chat ID (advanced)";
 const REMOVE = "Remove";
 export const VALUE_COLUMN = 33;
 export const PROMPT_EXAMPLE = "Mid-task question: Pi asks you to pick an option or approve an action.";
+export const SUMMARY_NOTE = "Task summary: the agent's one-line summary of its reply, or the error text, goes to your destinations.";
 
 export interface Dialogs {
   menu(options: SetupMenuOptions): Promise<RowId | undefined>;
@@ -69,9 +70,10 @@ function connectorRow(connector: unknown, id: number): MenuRow {
   return { id, label, note: `${connectorValid(connector) ? "" : " (needs fixing)"}${editable(stored) ? "" : " (remove only)"}` };
 }
 
-export function toggleRow(draft: Draft, key: string, label: string): MenuRow {
-  const value = () => draft[key] === true ? " on " : " off";
-  return { id: key, label: label.padEnd(VALUE_COLUMN), note: value(), toggle: () => { draft[key] = draft[key] !== true; return value(); } };
+export function toggleRow(draft: Draft, key: string, label: string, fallback = false): MenuRow {
+  const on = () => (draft[key] ?? fallback) === true;
+  const value = () => on() ? " on " : " off";
+  return { id: key, label: label.padEnd(VALUE_COLUMN), note: value(), toggle: () => { draft[key] = !on(); return value(); } };
 }
 
 export function setupSections(draft: Draft): MenuSection[] {

@@ -6,20 +6,20 @@ import test from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadConfig, parseConfig } from "../src/config.ts";
 import { sendCommand, sendTelegram, SEND_TIMEOUT_MS } from "../src/connectors.ts";
-import { formatMessage } from "../src/message.ts";
+import { formatMessage, oneLine, summaryLine } from "../src/message.ts";
 import { NotifyState } from "../src/state.ts";
 
 const connector = { type: "telegram", botToken: "123:fake-token", chatId: "-123" } as const;
 const config = { connectors: [connector] };
 
 test("config validates shape, resolves env and never echoes secrets", async () => {
-  assert.deepEqual(parseConfig(config), { ...config, onPrompt: false, nerdFont: false });
+  assert.deepEqual(parseConfig(config), { ...config, onPrompt: false, nerdFont: false, summaries: true });
   assert.deepEqual(parseConfig({ connectors: [{ type: "command", run: "$RUN" }] }, { RUN: "echo test" }), {
-    onPrompt: false, nerdFont: false, connectors: [{ type: "command", run: "echo test" }],
+    onPrompt: false, nerdFont: false, summaries: true, connectors: [{ type: "command", run: "echo test" }],
   });
   assert.throws(() => parseConfig({ connectors: [{ type: "command", run: "$MISSING" }] }, {}));
   assert.deepEqual(parseConfig({ onPrompt: true, nerdFont: true, connectors: [{ ...connector, botToken: "$TOKEN", chatId: "$CHAT" }] }, { TOKEN: connector.botToken, CHAT: "@channel" }), {
-    onPrompt: true, nerdFont: true, connectors: [{ ...connector, chatId: "@channel" }],
+    onPrompt: true, nerdFont: true, summaries: true, connectors: [{ ...connector, chatId: "@channel" }],
   });
   for (const value of [null, [], {}, { connectors: [] }, { ...config, onPrompt: "true" }, { ...config, nerdFont: "true" },
     { connectors: [{ type: "command", run: " " }] }, { connectors: [{ ...connector, chatId: 123 }] },
@@ -34,7 +34,7 @@ test("config validates shape, resolves env and never echoes secrets", async () =
     await writeFile(path, "{ secret invalid json");
     await assert.rejects(loadConfig(path), /not valid JSON/);
     await writeFile(path, JSON.stringify(config));
-    assert.deepEqual(await loadConfig(path), { ...config, onPrompt: false, nerdFont: false });
+    assert.deepEqual(await loadConfig(path), { ...config, onPrompt: false, nerdFont: false, summaries: true });
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -266,4 +266,18 @@ test("notify_me with a reason sends now, consumes one-shot and is capped and cle
   await assert.rejects(tool.execute("id", { reason: "x" }, undefined, undefined, { ...ctx, mode: "rpc" }), /only available in TUI/);
   await writeFile(join(root, "pi-notify", "config.json"), "{}");
   await assert.rejects(tool.execute("id", { reason: "x" }, undefined, undefined, ctx), /not sent/);
+});
+
+test("summary lines keep file names and globs and are cut on whole characters", () => {
+  assert.equal(summaryLine("Done.\n**Summary:** Fixed __init__.py and src/**/*.ts globs"), "Fixed __init__.py and src/**/*.ts globs");
+  assert.equal(summaryLine("- Summary: first\nSummary: last"), "last");
+  for (const [line, summary] of [["Summary: __init__.py now exports X", "__init__.py now exports X"], ["Summary: Fixed the bug in __init__", "Fixed the bug in __init__"],
+    ["Summary: *args now forwarded", "*args now forwarded"], ["Summary: Updated globs to src/**", "Updated globs to src/**"], ["**Summary**: Fixed it", "Fixed it"],
+    ["__Summary: wrapped in bold__", "wrapped in bold"], ["_Summary:_ italic tag", "italic tag"], ["> Summary: quoted", "quoted"]]) {
+    assert.equal(summaryLine(line), summary);
+  }
+  assert.equal(summaryLine("Summary of changes: none"), undefined);
+  const cut = oneLine(`${"a".repeat(118)}😀😀😀`)!;
+  assert.equal(cut, `${"a".repeat(118)}😀…`);
+  assert.equal(oneLine(" \n "), undefined);
 });
