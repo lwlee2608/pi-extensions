@@ -9,13 +9,13 @@ const TAGGED = /^[\s>*_#-]*summary[*_\s]*:[*_\s]*(.*\S)/i;
 
 export function summaryLine(text: string): string | undefined {
   const line = text.split("\n").reverse().map(line => TAGGED.exec(line)?.[1]).find(Boolean);
-  return line && oneLine(line.replace(/\*\*|__/g, ""));
+  return line && oneLine(line.replace(/^(\*\*|__)|(\*\*|__)$/g, ""));
 }
 
 export function oneLine(text: string): string | undefined {
-  const line = text.replace(/[\x00-\x1f\x7f-\x9f\s]+/g, " ").trim();
-  if (!line) return undefined;
-  return line.length > MAX_SUMMARY ? `${line.slice(0, MAX_SUMMARY - 1).trimEnd()}…` : line;
+  const line = Array.from(text.replace(/[\x00-\x1f\x7f-\x9f\s]+/g, " ").trim());
+  if (!line.length) return undefined;
+  return line.length > MAX_SUMMARY ? `${line.slice(0, MAX_SUMMARY - 1).join("").trimEnd()}…` : line.join("");
 }
 
 export function formatMessage(name: string | undefined, cwd: string, outcome: Kind, home = homedir()): string {

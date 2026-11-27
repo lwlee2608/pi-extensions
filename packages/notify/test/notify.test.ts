@@ -6,7 +6,7 @@ import test from "node:test";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { loadConfig, parseConfig } from "../src/config.ts";
 import { sendCommand, sendTelegram, SEND_TIMEOUT_MS } from "../src/connectors.ts";
-import { formatMessage } from "../src/message.ts";
+import { formatMessage, oneLine, summaryLine } from "../src/message.ts";
 import { NotifyState } from "../src/state.ts";
 
 const connector = { type: "telegram", botToken: "123:fake-token", chatId: "-123" } as const;
@@ -266,4 +266,13 @@ test("notify_me with a reason sends now, consumes one-shot and is capped and cle
   await assert.rejects(tool.execute("id", { reason: "x" }, undefined, undefined, { ...ctx, mode: "rpc" }), /only available in TUI/);
   await writeFile(join(root, "pi-notify", "config.json"), "{}");
   await assert.rejects(tool.execute("id", { reason: "x" }, undefined, undefined, ctx), /not sent/);
+});
+
+test("summary lines keep file names and globs and are cut on whole characters", () => {
+  assert.equal(summaryLine("Done.\n**Summary:** Fixed __init__.py and src/**/*.ts globs**"), "Fixed __init__.py and src/**/*.ts globs");
+  assert.equal(summaryLine("- Summary: first\nSummary: last"), "last");
+  assert.equal(summaryLine("Summary of changes: none"), undefined);
+  const cut = oneLine(`${"a".repeat(118)}😀😀😀`)!;
+  assert.equal(cut, `${"a".repeat(118)}😀…`);
+  assert.equal(oneLine(" \n "), undefined);
 });
