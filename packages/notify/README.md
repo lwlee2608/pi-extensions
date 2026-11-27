@@ -124,7 +124,7 @@ A message contains the session name, the working directory, and one label of at 
 🔔 fix-login · ~/src/app · tests pass
 ```
 
-With **Add a task summary** on, the label can be the agent's summary line from its reply, or the provider's error text. That content goes to your destinations. Turn the setting off to send only `done` or `error`. No prompt, code, or dialog content is sent. Avoid sensitive session names and directory names if that matters to you.
+With **Add a task summary** on, the label can be the agent's summary line from its reply, or the provider's error text. That content goes to your destinations. Turn the setting off to send only `done` or `error`. Apart from that line, no prompt, code, or dialog content is sent. Avoid sensitive session names and directory names if that matters to you.
 
 ## Manual config
 

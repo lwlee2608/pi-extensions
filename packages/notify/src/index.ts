@@ -17,7 +17,7 @@ const instruction = (condition: string) => `The user set a phone notification in
   "As soon as you notice it has happened, call notify_me with a short reason. Call it once per occurrence.";
 const SUMMARY_ASK = 'End your final reply with one line "Summary: <one sentence: what you did and whether it worked, or what blocked you>".';
 const SUMMARY_PROMPT = `The user gets a phone notification when this run ends. ${SUMMARY_ASK}`;
-const blank = (): { reply?: string; summary?: string; failure?: string } => ({});
+const blank = (): { asked?: boolean; reply?: string; summary?: string; failure?: string } => ({});
 
 export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => void = () => {}): void {
   const path = join(getAgentDir(), "pi-notify", "config.json");
@@ -91,6 +91,7 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
     const on = ctx.mode === "tui" && state.armed !== "off";
     injected = on ? state.condition : undefined;
     const summaries = on && (await loadConfig(path).catch(() => undefined))?.summaries;
+    if (summaries) run.asked = true;
     const lines = [injected && instruction(injected), summaries && SUMMARY_PROMPT].filter(Boolean);
     if (lines.length) return { systemPrompt: [event.systemPrompt, ...lines].join("\n\n") };
   });
@@ -112,10 +113,10 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
     if (ctx.mode !== "tui") return;
     activeRun = false;
     const outcome = state.settle();
-    const { reply, summary, failure } = run;
+    const { asked, reply, summary, failure } = run;
     run = blank();
     status(ctx);
-    if (outcome) void send(ctx, outcome, outcome === "completed" ? reply : summary ?? failure);
+    if (outcome) void send(ctx, outcome, !asked ? undefined : outcome === "completed" ? reply : summary ?? failure);
   });
   async function panel(ctx: ExtensionContext, tab: number): Promise<void> {
     if (openPanel === controller) {
@@ -311,6 +312,7 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
       }
       await act("once", ctx, true);
       const summaries = (await loadConfig(path).catch(() => undefined))?.summaries;
+      if (summaries) run.asked = true;
       return { content: [{ type: "text", text: `Notification armed for the next completed or errored run.${summaries ? ` ${SUMMARY_ASK}` : ""}` }], details: undefined };
     },
   });

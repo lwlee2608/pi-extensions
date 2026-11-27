@@ -999,39 +999,43 @@ test("summaries: a completed run sends the final reply's summary line to every c
   assert.equal(await readFile(out, "utf8"), `✅ session · ${dir} · Fixed login redirect; all 12 tests pass.\n`);
 });
 
-test("summaries: only the current run's final reply counts, and an abort discards its summary", async t => {
+test("summaries: only the current run's final reply counts, an abort discards its summary, and a run armed mid-run by /notify stays plain", async t => {
   const h = await harness(t);
   await h.write(TELEGRAM_CONFIG());
+  const run = async (outcome: string, ...messages: object[]) => {
+    await h.event("before_agent_start", { systemPrompt: "base" });
+    h.emit("agent_start");
+    for (const message of messages) h.event("message_end", message);
+    h.emit("agent_before_settle", outcome);
+    h.emit("agent_settled");
+  };
+  h.emit("agent_start");
+  await h.run("once");
+  h.event("message_end", reply("Summary: not asked for"));
+  h.emit("agent_before_settle", "completed");
+  h.emit("agent_settled");
   await h.run("on");
-  h.emit("agent_start");
-  h.event("message_end", reply("Summary: aborted work"));
-  h.emit("agent_before_settle", "aborted");
-  h.emit("agent_settled");
-  h.emit("agent_start");
-  h.event("message_end", reply("Summary: done halfway"));
-  h.event("message_end", reply("Finished without a tag."));
-  h.emit("agent_before_settle", "completed");
-  h.emit("agent_settled");
-  h.emit("agent_start");
-  h.emit("agent_before_settle", "completed");
-  h.emit("agent_settled");
+  await run("aborted", reply("Summary: aborted work"));
+  await run("completed", reply("Summary: done halfway"), reply("Finished without a tag."));
+  await run("completed");
   await flush();
-  assert.deepEqual(h.sent.map(message => message.text.split(" · ").at(-1)), ["done", "done"]);
+  assert.deepEqual(h.sent.map(message => message.text.split(" · ").at(-1)), ["done", "done", "done"]);
 });
 
 test("summaries: an error run sends this run's summary line, else the provider error, on one capped line", async t => {
   const h = await harness(t);
   await h.write(TELEGRAM_CONFIG());
   await h.run("on");
-  const run = (...messages: object[]) => {
+  const run = async (...messages: object[]) => {
+    await h.event("before_agent_start", { systemPrompt: "base" });
     h.emit("agent_start");
     for (const message of messages) h.event("message_end", message);
     h.emit("agent_before_settle", "error");
     h.emit("agent_settled");
   };
-  run(reply("Summary: Tests pass; push was rejected."), reply("", { stopReason: "error", errorMessage: "overloaded" }));
-  run(reply("", { stopReason: "error", errorMessage: `rate limit\nhit${"!".repeat(200)}` }));
-  run(reply("", { stopReason: "error" }));
+  await run(reply("Summary: Tests pass; push was rejected."), reply("", { stopReason: "error", errorMessage: "overloaded" }));
+  await run(reply("", { stopReason: "error", errorMessage: `rate limit\nhit${"!".repeat(200)}` }));
+  await run(reply("", { stopReason: "error" }));
   await flush();
   const labels = h.sent.map(message => message.text.split(" · ").at(-1)!);
   assert.deepEqual(labels, ["Tests pass; push was rejected.", `rate limit hit${"!".repeat(105)}…`, "error"]);
@@ -1039,7 +1043,7 @@ test("summaries: an error run sends this run's summary line, else the provider e
   assert.ok(h.sent.every(message => message.text.startsWith("❌ ")));
 });
 
-test("summaries off: plain messages, an unchanged system prompt and notify_me result", async t => {
+test("summaries: notify_me asks for the line when on; off keeps plain messages, the system prompt and notify_me result", async t => {
   const h = await harness(t);
   await h.write(TELEGRAM_CONFIG());
   h.emit("agent_start");
