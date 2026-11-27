@@ -13,13 +13,13 @@ const connector = { type: "telegram", botToken: "123:fake-token", chatId: "-123"
 const config = { connectors: [connector] };
 
 test("config validates shape, resolves env and never echoes secrets", async () => {
-  assert.deepEqual(parseConfig(config), { ...config, onPrompt: false, nerdFont: false });
+  assert.deepEqual(parseConfig(config), { ...config, onPrompt: false, nerdFont: false, summaries: true });
   assert.deepEqual(parseConfig({ connectors: [{ type: "command", run: "$RUN" }] }, { RUN: "echo test" }), {
-    onPrompt: false, nerdFont: false, connectors: [{ type: "command", run: "echo test" }],
+    onPrompt: false, nerdFont: false, summaries: true, connectors: [{ type: "command", run: "echo test" }],
   });
   assert.throws(() => parseConfig({ connectors: [{ type: "command", run: "$MISSING" }] }, {}));
   assert.deepEqual(parseConfig({ onPrompt: true, nerdFont: true, connectors: [{ ...connector, botToken: "$TOKEN", chatId: "$CHAT" }] }, { TOKEN: connector.botToken, CHAT: "@channel" }), {
-    onPrompt: true, nerdFont: true, connectors: [{ ...connector, chatId: "@channel" }],
+    onPrompt: true, nerdFont: true, summaries: true, connectors: [{ ...connector, chatId: "@channel" }],
   });
   for (const value of [null, [], {}, { connectors: [] }, { ...config, onPrompt: "true" }, { ...config, nerdFont: "true" },
     { connectors: [{ type: "command", run: " " }] }, { connectors: [{ ...connector, chatId: 123 }] },
@@ -34,7 +34,7 @@ test("config validates shape, resolves env and never echoes secrets", async () =
     await writeFile(path, "{ secret invalid json");
     await assert.rejects(loadConfig(path), /not valid JSON/);
     await writeFile(path, JSON.stringify(config));
-    assert.deepEqual(await loadConfig(path), { ...config, onPrompt: false, nerdFont: false });
+    assert.deepEqual(await loadConfig(path), { ...config, onPrompt: false, nerdFont: false, summaries: true });
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

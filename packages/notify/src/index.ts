@@ -3,9 +3,9 @@ import { join } from "node:path";
 import { Type } from "typebox";
 import { loadConfig, loadDraft, readRaw, type Config } from "./config.ts";
 import { sendCommand, sendTelegram } from "./connectors.ts";
-import { formatMessage, type Kind } from "./message.ts";
+import { formatMessage, oneLine, summaryLine, type Kind } from "./message.ts";
 import { SWITCH_TAB, type MenuRow, type MenuSection, type RowId } from "./setup-menu.ts";
-import { ADD, dialogs, PROMPT_EXAMPLE, saveSetup, setupChoice, setupSections, toggleRow, VALUE_COLUMN, type SetupResult } from "./setup.ts";
+import { ADD, dialogs, PROMPT_EXAMPLE, saveSetup, setupChoice, setupSections, SUMMARY_NOTE, toggleRow, VALUE_COLUMN, type SetupResult } from "./setup.ts";
 import { NotifyState } from "./state.ts";
 
 const LABELS = { once: "next reply", on: "every reply" };
@@ -15,6 +15,9 @@ const clean = (text: string) => text.replace(/[\x00-\x1f\x7f-\x9f]/g, " ").trim(
 const short = (text: string) => text.length > 24 ? `${text.slice(0, 23)}…` : text;
 const instruction = (condition: string) => `The user set a phone notification in /notify for when this happens: "${condition}". ` +
   "As soon as you notice it has happened, call notify_me with a short reason. Call it once per occurrence.";
+const SUMMARY_ASK = 'End your final reply with one line "Summary: <one sentence: what you did and whether it worked, or what blocked you>".';
+const SUMMARY_PROMPT = `The user gets a phone notification when this run ends. ${SUMMARY_ASK}`;
+const blank = (): { reply?: string; summary?: string; failure?: string } => ({});
 
 export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => void = () => {}): void {
   const path = join(getAgentDir(), "pi-notify", "config.json");
@@ -27,6 +30,7 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
   let openPanel: AbortController | undefined;
   let injected: string | undefined;
   let muted = false;
+  let run = blank();
 
   function status(ctx: ExtensionContext): void {
     const when = state.condition ? ` · when ${short(state.condition)}` : "";
@@ -41,16 +45,18 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
     injected = undefined;
     muted = false;
     activeRun = false;
+    run = blank();
     if (ctx.mode === "tui") status(ctx);
   }
-  async function send(ctx: ExtensionContext, kind: Kind): Promise<boolean> {
+  async function send(ctx: ExtensionContext, kind: Kind, summary?: string): Promise<boolean> {
     const current = generation;
     const prompt = kind === "waiting for input";
-    const text = formatMessage(ctx.sessionManager.getSessionName(), ctx.cwd, kind);
+    const name = ctx.sessionManager.getSessionName();
     const signal = controller.signal;
     try {
       const config = await loadConfig(path);
       if (current !== generation || (prompt && (!config.onPrompt || !activeRun || state.armed === "off"))) return false;
+      const text = formatMessage(name, ctx.cwd, summary && config.summaries && (kind === "completed" || kind === "error") ? { outcome: kind, summary } : kind);
       const results = await Promise.all(config.connectors.map(async (connector, index) => {
         try {
           if (connector.type === "telegram") await sendTelegram(connector, text, signal);
@@ -79,11 +85,14 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
     }
   };
   pi.on("session_start", (event, ctx) => { reset(ctx); excludeOutsideTerminal(event, ctx); });
-  pi.on("before_agent_start", (event, ctx) => {
+  pi.on("before_agent_start", async (event, ctx) => {
     excludeOutsideTerminal(event, ctx);
     muted = false;
-    injected = ctx.mode === "tui" && state.armed !== "off" ? state.condition : undefined;
-    if (injected) return { systemPrompt: `${event.systemPrompt}\n\n${instruction(injected)}` };
+    const on = ctx.mode === "tui" && state.armed !== "off";
+    injected = on ? state.condition : undefined;
+    const summaries = on && (await loadConfig(path).catch(() => undefined))?.summaries;
+    const lines = [injected && instruction(injected), summaries && SUMMARY_PROMPT].filter(Boolean);
+    if (lines.length) return { systemPrompt: [event.systemPrompt, ...lines].join("\n\n") };
   });
   pi.on("session_shutdown", (_event, ctx) => reset(ctx));
   pi.on("agent_start", (_event, ctx) => { if (ctx.mode === "tui") { activeRun = true; state.start(); } });
@@ -92,13 +101,21 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
       void send(ctx, "waiting for input");
     }
   });
+  pi.on("message_end", ({ message }) => {
+    if (message.role !== "assistant") return;
+    run.reply = summaryLine(message.content.flatMap(part => part.type === "text" ? [part.text] : []).join("\n"));
+    run.summary = run.reply ?? run.summary;
+    run.failure = message.stopReason === "error" ? oneLine(message.errorMessage ?? "") : undefined;
+  });
   pi.on("agent_before_settle", (event, ctx) => { if (ctx.mode === "tui") state.beforeSettle(event.outcome); });
   pi.on("agent_settled", (_event, ctx) => {
     if (ctx.mode !== "tui") return;
     activeRun = false;
     const outcome = state.settle();
+    const { reply, summary, failure } = run;
+    run = blank();
     status(ctx);
-    if (outcome) void send(ctx, outcome);
+    if (outcome) void send(ctx, outcome, outcome === "completed" ? reply : summary ?? failure);
   });
   async function panel(ctx: ExtensionContext, tab: number): Promise<void> {
     if (openPanel === controller) {
@@ -141,8 +158,8 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
               arm.condition = clean(value) || undefined;
               if (arm.condition && arm.armed === "off") { arm.armed = "once"; touched.armed = true; }
             } } }] },
-        ...config ? [{ header: "Also, while notifications are on (saved for all sessions)", description: PROMPT_EXAMPLE,
-          rows: [toggleRow(config, "onPrompt", "Notify on mid-task questions")] }] : [],
+        ...config ? [{ header: "Also, while notifications are on (saved for all sessions)", description: `${PROMPT_EXAMPLE} ${SUMMARY_NOTE}`,
+          rows: [toggleRow(config, "onPrompt", "Notify on mid-task questions"), toggleRow(config, "summaries", "Add a task summary", true)] }] : [],
       ];
       const setupTab = (): MenuSection[] => activeRun ? [{ header: "Pi is working. Setup opens when it finishes.", rows: [] }]
         : !config ? [{ header: (draft as Error).message, rows: [] }]
@@ -293,7 +310,8 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
         return { content: [{ type: "text", text: await alert(ctx, reason) }], details: undefined };
       }
       await act("once", ctx, true);
-      return { content: [{ type: "text", text: "Notification armed for the next completed or errored run." }], details: undefined };
+      const summaries = (await loadConfig(path).catch(() => undefined))?.summaries;
+      return { content: [{ type: "text", text: `Notification armed for the next completed or errored run.${summaries ? ` ${SUMMARY_ASK}` : ""}` }], details: undefined };
     },
   });
 }

@@ -38,6 +38,7 @@ Also when something specific happens
 
 Also, while notifications are on (saved for all sessions)
   Notify on mid-task questions      off
+  Add a task summary                on
 ```
 
 | Command or prompt | Result |
@@ -53,25 +54,28 @@ Also, while notifications are on (saved for all sessions)
 
 - **Specific condition:** type a condition such as `the tests pass`. The agent decides when it happens and sends a notification at once.
 - **Notify on mid-task questions:** also notify when Pi waits for you in a dialog, such as a question picker or an approval prompt. This does not use up a one-shot. Other dialogs opened during a run, such as `/sessions` or `/model-plus`, can also trigger it.
+- **Add a task summary** (on by default): while notifications are on, the agent ends its final reply with a `Summary:` line, and that line replaces `done` or `error` in the message. A failed run without one sends the provider's error text. See [Privacy](#privacy).
 - The status bar shows `🔔 next reply` or `🔔 every reply` while armed. New, resumed, and forked sessions start with notifications off.
 
 ## Scenarios
+
+With **Add a task summary** on (the default), end-of-run messages show the agent's summary line. Turned off, or when the agent writes no summary, they show `done` or `error`, as in the later scenarios.
 
 **One-shot: `/notify once`**
 
 ```text
 /notify once
 "fix the login bug"
-  agent works ...... run ends ──▶ ✅ my-session · ~/src/app · done
+  agent works ...... run ends ──▶ ✅ my-session · ~/src/app · Fixed login redirect; tests pass.
   later runs ───────────────────▶ (nothing; the one-shot is used)
 ```
 
 **Every run: `/notify on`**
 
 ```text
-run 1 ── completed ──▶ ✅ … · done
-run 2 ── API error ──▶ ❌ … · error
-run 3 ── completed ──▶ ✅ … · done      (until /notify off)
+run 1 ── completed ──▶ ✅ … · Added the export button; 8 tests pass.
+run 2 ── API error ──▶ ❌ … · 429 rate limit exceeded
+run 3 ── completed ──▶ ✅ … · done      (no summary line in the reply)
 ```
 
 **Ask in the prompt: "fix the tests, notify me when they pass"**
@@ -110,16 +114,17 @@ you answer, run ends ───────────▶ ✅ … · done
 
 ## Privacy
 
-A message contains only the session name, the working directory, and the outcome or the agent's short reason (one line, at most 120 characters):
+A message contains the session name, the working directory, and one label of at most 120 characters on one line:
 
 ```text
+✅ fix-login · ~/src/app · Fixed login redirect; all 12 tests pass.
+❌ fix-login · ~/src/app · 429 rate limit exceeded
 ✅ fix-login · ~/src/app · done
-❌ fix-login · ~/src/app · error
 🔔 fix-login · ~/src/app · waiting for input
 🔔 fix-login · ~/src/app · tests pass
 ```
 
-No prompt, reply, code, or dialog content is sent. Avoid sensitive session names and directory names if that matters to you.
+With **Add a task summary** on, the label can be the agent's summary line from its reply, or the provider's error text. That content goes to your destinations. Turn the setting off to send only `done` or `error`. No prompt, code, or dialog content is sent. Avoid sensitive session names and directory names if that matters to you.
 
 ## Manual config
 
@@ -129,6 +134,7 @@ Setup writes `~/.pi/agent/pi-notify/config.json` (under `PI_CODING_AGENT_DIR` wh
 {
   "onPrompt": true,
   "nerdFont": false,
+  "summaries": true,
   "connectors": [
     { "type": "telegram", "botToken": "$TELEGRAM_BOT_TOKEN", "chatId": "$TELEGRAM_CHAT_ID" }
   ]
@@ -136,7 +142,7 @@ Setup writes `~/.pi/agent/pi-notify/config.json` (under `PI_CODING_AGENT_DIR` wh
 ```
 
 - A value that is only `$VAR` comes from Pi's environment. Literal strings also work.
-- `onPrompt` is **Notify on mid-task questions** (default `false`). `nerdFont` shows the Nerd Font bell in the status bar instead of 🔔.
+- `onPrompt` is **Notify on mid-task questions** (default `false`). `summaries` is **Add a task summary** (default `true`). `nerdFont` shows the Nerd Font bell in the status bar instead of 🔔.
 - Every connector gets each notification. Edits apply at the next send, without `/reload`.
 - Keep tokens private. Setup saves the file with mode `0600`.
 

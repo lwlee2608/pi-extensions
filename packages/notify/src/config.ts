@@ -4,7 +4,7 @@ import { dirname, resolve as resolvePath } from "node:path";
 
 export interface TelegramConnector { type: "telegram"; botToken: string; chatId: string }
 export interface CommandConnector { type: "command"; run: string }
-export interface Config { onPrompt: boolean; nerdFont: boolean; connectors: (TelegramConnector | CommandConnector)[] }
+export interface Config { onPrompt: boolean; nerdFont: boolean; summaries: boolean; connectors: (TelegramConnector | CommandConnector)[] }
 export type Draft = Record<string, unknown> & { connectors: unknown[] };
 
 const VARIABLE = /^\$([A-Za-z_][A-Za-z0-9_]*)$/;
@@ -22,8 +22,9 @@ function object(value: unknown): value is Record<string, unknown> {
 export function parseConfig(value: unknown, env: NodeJS.ProcessEnv = process.env): Config {
   if (!object(value) || (value.onPrompt !== undefined && typeof value.onPrompt !== "boolean") ||
       (value.nerdFont !== undefined && typeof value.nerdFont !== "boolean") ||
+      (value.summaries !== undefined && typeof value.summaries !== "boolean") ||
       !Array.isArray(value.connectors) || value.connectors.length === 0) {
-    throw new Error("Notify config needs a non-empty connectors array and optional boolean onPrompt and nerdFont.");
+    throw new Error("Notify config needs a non-empty connectors array and optional boolean onPrompt, nerdFont and summaries.");
   }
   function resolve(value: unknown, field: string): string {
     if (typeof value !== "string") throw new Error(`Notify config needs a string ${field}.`);
@@ -35,6 +36,7 @@ export function parseConfig(value: unknown, env: NodeJS.ProcessEnv = process.env
   return {
     onPrompt: value.onPrompt ?? false,
     nerdFont: value.nerdFont ?? false,
+    summaries: value.summaries ?? true,
     connectors: value.connectors.map(connector => {
       if (!object(connector)) throw new Error("Notify config needs connector objects.");
       if (connector.type === "command") return { type: "command", run: resolve(connector.run, "run") };
