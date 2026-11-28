@@ -5,12 +5,12 @@ import { loadConfig, loadDraft, readRaw, type Config } from "./config.ts";
 import { sendCommand, sendTelegram } from "./connectors.ts";
 import { formatMessage, oneLine, summaryLine, type Kind } from "./message.ts";
 import { SWITCH_TAB, type MenuRow, type MenuSection, type RowId } from "./setup-menu.ts";
-import { ADD, dialogs, PROMPT_EXAMPLE, saveSetup, setupChoice, setupSections, SUMMARY_NOTE, toggleRow, VALUE_COLUMN, type SetupResult } from "./setup.ts";
-import { NotifyState } from "./state.ts";
+import { ADD, dialogs, saveSetup, setupChoice, setupSections } from "./setup.ts";
+import { NotifyState, type Armed } from "./state.ts";
 
 const LABELS = { once: "next reply", on: "every reply" };
 const MAX_REASON = 120;
-const TIP = 'To get notified when something specific happens, choose "Specific condition" in /notify or say "notify me when <something>" in your prompt.';
+const TIP = 'To get notified when something specific happens, set a condition in /notify or say "notify me when <something>" in your prompt.';
 const clean = (text: string) => text.replace(/[\x00-\x1f\x7f-\x9f]/g, " ").trim().slice(0, MAX_REASON);
 const short = (text: string) => text.length > 24 ? `${text.slice(0, 23)}…` : text;
 const instruction = (condition: string) => `The user set a phone notification in /notify for when this happens: "${condition}". ` +
@@ -142,71 +142,64 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
         ui.warn((draft as Error).message);
         return;
       }
-      const start = { armed: state.armed, condition: state.condition };
-      const arm = { ...start };
-      const touched = { armed: false, condition: false };
-      const armChanged = () => arm.armed !== start.armed || arm.condition !== start.condition;
+      let touched = false;
+      let condition: string | undefined;
       const configChanged = () => JSON.stringify(config) !== original;
       const setupMode = tab === 1;
-      const row = (id: RowId, label: string, on = arm.armed === id): MenuRow => ({ id, label: label.padEnd(VALUE_COLUMN), note: on ? " ✓" : "" });
+      const radio = (id: Armed, label: string): MenuRow => ({ id, label: `${state.armed === id ? "●" : "○"} ${label}` });
       const notifyTab = (): MenuSection[] => [
-        { header: "When Pi finishes and waits for you", description: "Sent once Pi is done and it is your turn to reply.",
-          rows: [row("on", "After every reply"), row("once", "After the next reply only"), row("off", "Off")] },
-        { header: "Also when something specific happens", description: "The agent judges when it happens. You can also say it in your prompt.",
-          rows: [row("nocondition", "No condition", !arm.condition), { ...row("condition", "Specific condition"), note: arm.condition ? ` ✓ "${arm.condition}"` : "",
-            edit: { value: arm.condition ?? "", placeholder: "e.g. the tests pass", set: value => {
-              touched.condition = true;
-              arm.condition = clean(value) || undefined;
-              if (arm.condition && arm.armed === "off") { arm.armed = "once"; touched.armed = true; }
-            } } }] },
-        ...config ? [{ header: "Also, while notifications are on (saved for all sessions)", description: `${PROMPT_EXAMPLE} ${SUMMARY_NOTE}`,
-          rows: [toggleRow(config, "onPrompt", "Notify on mid-task questions"), toggleRow(config, "summaries", "Add a task summary", true)] }] : [],
+        { header: "When Pi finishes", rows: [radio("off", "Off"), radio("once", "After the next reply"), radio("on", "After every reply")] },
+        { header: "Also when something happens", rows: [{ id: "condition", label: "Condition   ", note: state.condition ?? "(none)",
+          edit: { value: state.condition ?? "", placeholder: "e.g. the tests pass", set: value => { condition = clean(value) || undefined; } } }] },
       ];
       const setupTab = (): MenuSection[] => activeRun ? [{ header: "Pi is working. Setup opens when it finishes.", rows: [] }]
         : !config ? [{ header: (draft as Error).message, rows: [] }]
         : [...setupSections(config), { rows: [{ id: "test", label: "Send a test" }] }];
       const save = async (): Promise<boolean> => {
-        let result: SetupResult | undefined;
-        if (config && (configChanged() || setupMode)) {
-          result = await saveSetup(ui, path, config, opened, signal);
-          if (!result) return false;
-          nerdFont = config.nerdFont === true;
-        }
+        if (!config || !(configChanged() || setupMode)) return true;
+        const result = await saveSetup(ui, path, config, opened, signal);
+        if (!result) return false;
+        nerdFont = config.nerdFont === true;
         if (signal.aborted) return true;
-        const condition = touched.condition ? arm.condition : state.condition;
-        const armed = touched.armed ? arm.armed : condition && state.armed === "off" ? "once" : state.armed;
-        if (armed !== state.armed || condition !== state.condition) {
-          if (armed !== "off") state.condition = condition;
-          await act(armed, ctx);
-        } else {
-          status(ctx);
-        }
-        if (!result || !(setupMode || JSON.stringify(config?.connectors) !== connectors)) return true;
+        status(ctx);
+        if (!(setupMode || JSON.stringify(config.connectors) !== connectors)) return true;
         ctx.ui.notify(result.valid ? `Settings saved.${state.armed === "off" ? " Run /notify to choose when to get a notification." : ""}` : "Saved. Notifications stay off until the problems are fixed.", result.valid ? "info" : "warning");
         if (result.valid && await ui.confirm("Send a test notification?", "Sends a test message to every destination now, including custom commands.")) void send(ctx, "test");
         return true;
       };
-      let initial: RowId | undefined = tab === 1 ? undefined : arm.armed === "off" ? "once" : arm.armed;
-      for (;;) {
-        const unsaved = armChanged() || configChanged();
-        const footer: MenuSection = { rows: [{ id: "save", label: "Save and close" }, { id: "discard", label: "Discard and close" }] };
-        const all = [notifyTab(), setupTab()].map(sections => [...sections, footer]);
-        const choice = await ui.menu({
-          title: `${tab === 0 ? "Notify me" : "Notify setup"}${unsaved ? " (unsaved changes)" : ""}`, tabs: { labels: ["Notify", "Setup"], active: tab, all },
-          hint: "↑↓ move   enter choose   tab switch   esc discard", initial, sections: all[tab],
-        });
-        if (choice === undefined || choice === "discard" || signal.aborted) return;
-        initial = choice;
-        if (choice === SWITCH_TAB) { tab = 1 - tab; initial = undefined; }
-        else if (choice === "save") { if (await save()) return; }
-        else if (choice === "test") {
-          if (configChanged()) ui.warn("Save first, then send a test.");
-          else void send(ctx, "test");
+      const announce = async () => {
+        if (!touched) return;
+        const onPrompt = state.armed !== "off" && (await loadConfig(path).catch(() => undefined))?.onPrompt === true;
+        if (!signal.aborted) ctx.ui.notify(state.armed === "off" ? "Notifications are off." : armed(onPrompt), "info");
+      };
+      let initial: RowId | undefined = tab === 1 ? undefined : state.armed === "off" ? "once" : state.armed;
+      try {
+        for (;;) {
+          const footer: MenuSection = { rows: [{ id: "save", label: "Save and close" }, { id: "discard", label: "Discard and close" }] };
+          const all = [notifyTab(), [...setupTab(), footer]];
+          const choice = await ui.menu({
+            title: `${tab === 0 ? "Notify me" : "Notify setup"}${configChanged() ? " (unsaved changes)" : ""}`, tabs: { labels: ["Notify", "Setup"], active: tab, all },
+            hint: `↑↓ move   enter choose   tab switch   esc ${configChanged() ? "discard" : "close"}`, initial, sections: all[tab],
+          });
+          if (choice === undefined || choice === "discard" || signal.aborted) return;
+          initial = choice;
+          if (choice === SWITCH_TAB) { tab = 1 - tab; initial = undefined; }
+          else if (choice === "save") { if (await save()) return; }
+          else if (choice === "test") {
+            if (configChanged()) ui.warn("Save first, then send a test.");
+            else void send(ctx, "test");
+          }
+          else if (choice === "off" || choice === "once" || choice === "on") { touched = true; await act(choice, ctx, false, true); }
+          else if (choice === "condition") {
+            touched = true;
+            state.condition = condition;
+            if (!condition && state.armed === "off") status(ctx);
+            else await act(state.armed === "off" ? "once" : state.armed, ctx, false, true);
+          }
+          else if (config && (typeof choice === "number" || choice === ADD)) await setupChoice(ui, config, choice);
         }
-        else if (choice === "nocondition") { touched.condition = true; arm.condition = undefined; }
-        else if (choice === "off") { touched.armed = touched.condition = true; arm.armed = "off"; arm.condition = undefined; }
-        else if (choice === "on" || choice === "once") { touched.armed = true; arm.armed = choice; }
-        else if (config && (typeof choice === "number" || choice === ADD)) await setupChoice(ui, config, choice);
+      } finally {
+        if (!signal.aborted) await announce();
       }
     } finally {
       if (openPanel === current) openPanel = undefined;
@@ -232,7 +225,7 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
       condition && activeRun && injected !== condition && "The condition applies from your next prompt.",
     ].filter(Boolean).join(" ");
   }
-  async function act(args: string, ctx: ExtensionContext, tool = false): Promise<void> {
+  async function act(args: string, ctx: ExtensionContext, tool = false, quiet = false): Promise<void> {
     if (ctx.mode !== "tui") {
       if (tool) throw new Error("notify_me is only available in TUI mode.");
       return;
@@ -260,14 +253,14 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
     }
     if (stale()) return;
     if (action === "off") {
-      ctx.ui.notify("Notifications are off.", "info");
+      if (!quiet) ctx.ui.notify("Notifications are off.", "info");
     } else if (action === "test") {
       void send(ctx, "test");
     } else if (action === "once" || action === "on") {
       muted = false;
       state.armed = action === "on" || (tool && state.armed === "on") ? "on" : "once";
       status(ctx);
-      if (!tool) ctx.ui.notify(armed(config.onPrompt), "info");
+      if (!tool && !quiet) ctx.ui.notify(armed(config.onPrompt), "info");
     } else {
       ctx.ui.notify(`Usage: /notify [once|on|off|test|setup]. ${TIP}`, "warning");
     }

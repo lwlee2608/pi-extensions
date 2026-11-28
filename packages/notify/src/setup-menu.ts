@@ -64,8 +64,9 @@ export class SetupMenu implements Component, Focusable {
       lines.push("", `${bar.join("   ")}${theme.fg("dim", "   tab ⇄")}`, theme.fg("border", "━".repeat(Math.max(0, width - 2))));
     }
     const { sections } = this.options;
-    const head = this.body(sections.slice(0, -1), width);
-    const tail = this.body(sections.slice(-1), width);
+    const footer = sections.at(-1)?.header === undefined ? 1 : 0;
+    const head = this.body(sections.slice(0, sections.length - footer), width);
+    const tail = this.body(sections.slice(sections.length - footer), width);
     const tallest = Math.max(0, ...(tabs?.all ?? []).map(other => this.body(other, width).lines.length));
     const pad = Math.max(0, tallest - head.lines.length - tail.lines.length);
     const at = head.at >= 0 ? lines.length + head.at : tail.at >= 0 ? lines.length + head.lines.length + pad + tail.at : 0;
@@ -93,7 +94,7 @@ export class SetupMenu implements Component, Focusable {
 
   private confirm(row: MenuRow): void {
     if (row.edit) this.edit(row, row.edit);
-    else if (row.toggle) row.note = row.toggle();
+    else if (row.toggle) row.label = row.toggle();
     else this.done(row.id);
   }
 
