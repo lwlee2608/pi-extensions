@@ -2,6 +2,10 @@
 
 Phone notifications for the Pi runs you choose to watch, via Telegram or any shell command. Off by default and TUI only: print, JSON, RPC, and subagent sessions never send.
 
+![The /notify menu on the Notify tab, choosing to get a notification after the next reply and typing a condition](https://github.com/lwlee2608/pi-extensions/releases/download/media/notify-demo.png)
+
+![The /notify Setup tab with a Telegram destination and option checkboxes](https://github.com/lwlee2608/pi-extensions/releases/download/media/notify-setup-demo.png)
+
 ## Install
 
 ```sh
