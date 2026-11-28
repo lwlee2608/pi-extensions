@@ -194,7 +194,7 @@ const ALREADY_OPEN = "Notify settings are already open. If you cannot see them, 
 test("from no config, the dialogs write a config loadConfig accepts with owner-only permissions", async t => {
   const h = await harness(t);
   await h.run("setup", ...TELEGRAM, "[ ] Notify on mid-task questions", "[ ] Nerd Font bell icon", ...SAVE_NO_TEST);
-  assert.deepEqual(h.dialogs[0].options, ["+ Add destination", "[ ] Notify on mid-task questions", "[x] Add a task summary", "[ ] Nerd Font bell icon", "Send a test", "Save and close", "Discard and close"]);
+  assert.deepEqual(h.dialogs[0].options, ["+ Add destination", "Send a test", "[ ] Notify on mid-task questions", "[x] Add a task summary", "[ ] Nerd Font bell icon", "Save and close", "Discard and close"]);
   assert.deepEqual(await loadConfig(h.path), {
     onPrompt: true, nerdFont: true, summaries: true, connectors: [{ type: "telegram", botToken: TOKEN, chatId: "-123" }],
   });
@@ -384,7 +384,7 @@ test("a row is marked remove only when its select offers only Remove, and shows 
   ];
   await h.run("setup", ...rows.flatMap(row => [row, undefined]), "Discard and close");
   assert.deepEqual(h.dialogs[0].options!.slice(0, rows.length), rows);
-  const actions = h.dialogs.filter(dialog => dialog.title !== "Notify setup").map(dialog => dialog.options);
+  const actions = h.dialogs.filter(dialog => dialog.title !== "Notify").map(dialog => dialog.options);
   assert.deepEqual(actions, rows.map(row => row.endsWith("(remove only)") ? ["Remove"] : ["Edit", "Remove"]));
 });
 
@@ -682,7 +682,7 @@ test("changing the file after opening asks first, and declining leaves the outsi
   await h.write(COMMAND_CONFIG);
   const outside = JSON.stringify({ connectors: [{ type: "command", run: "outside" }] });
   await h.run("setup", edit(h.path, outside, "Save and close"), false, "Discard and close");
-  assert.deepEqual(h.dialogs.map(dialog => dialog.title), ["Notify setup", OVERWRITE, "Notify setup"]);
+  assert.deepEqual(h.dialogs.map(dialog => dialog.title), ["Notify", OVERWRITE, "Notify"]);
   assert.equal(await readFile(h.path, "utf8"), outside);
 
   await h.run("setup", edit(h.path, COMMAND_CONFIG, "[ ] Nerd Font bell icon"), "Save and close", true, false);
@@ -825,7 +825,7 @@ test("/notify menu arms at once, explains the choice on close, and the answer pi
   assert.equal(h.notices.length, 1);
   assert.match(h.notices.pop()!, /after every reply.*until \/notify off\.$/);
   await h.run("", TAB, "[ ] Notify on mid-task questions", TAB, "○ After the next reply", undefined);
-  assert.equal(h.dialogs.at(-1)!.title, "Notify me (unsaved changes)");
+  assert.equal(h.dialogs.at(-1)!.title, "Notify (unsaved changes)");
   assert.ok(h.dialogs.at(-1)!.screen!.includes("esc discard"));
   assert.equal(h.status(), "🔔 next reply");
   assert.notEqual((await saved(h)).onPrompt, true);
@@ -847,7 +847,8 @@ test("/notify menu arms at once, explains the choice on close, and the answer pi
 test("/notify opens the Setup tab when not set up, stays quiet during a run and never arms after a reset", async t => {
   const h = await harness(t);
   await h.run("", undefined);
-  assert.equal(h.dialogs[0].title, "Notify setup");
+  assert.equal(h.dialogs[0].title, "Notify");
+  assert.ok(h.dialogs[0].screen!.includes("[ Setup ]"));
   assert.equal(h.dialogs[0].options![h.dialogs[0].cursor!], "+ Add destination");
   await h.write(JSON.stringify({ onPrompt: true, connectors: [{ type: "telegram", botToken: TOKEN, chatId: "-1" }] }));
   await h.run("on");

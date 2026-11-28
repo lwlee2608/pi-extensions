@@ -5,7 +5,7 @@ import { loadConfig, loadDraft, readRaw, type Config } from "./config.ts";
 import { sendCommand, sendTelegram } from "./connectors.ts";
 import { formatMessage, oneLine, summaryLine, type Kind } from "./message.ts";
 import { SWITCH_TAB, type MenuRow, type MenuSection, type RowId } from "./setup-menu.ts";
-import { ADD, dialogs, saveSetup, setupChoice, setupSections } from "./setup.ts";
+import { ADD, dialogs, saveSetup, setupChoice, setupSections, TEST } from "./setup.ts";
 import { NotifyState, type Armed } from "./state.ts";
 
 const LABELS = { once: "next reply", on: "every reply" };
@@ -154,7 +154,7 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
       ];
       const setupTab = (): MenuSection[] => activeRun ? [{ header: "Pi is working. Setup opens when it finishes.", rows: [] }]
         : !config ? [{ header: (draft as Error).message, rows: [] }]
-        : [...setupSections(config), { rows: [{ id: "test", label: "Send a test" }] }];
+        : setupSections(config);
       const save = async (): Promise<boolean> => {
         if (!config || !(configChanged() || setupMode)) return true;
         const result = await saveSetup(ui, path, config, opened, signal);
@@ -178,14 +178,14 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
           const footer: MenuSection = { rows: [{ id: "save", label: "Save and close" }, { id: "discard", label: "Discard and close" }] };
           const all = [notifyTab(), [...setupTab(), footer]];
           const choice = await ui.menu({
-            title: `${tab === 0 ? "Notify me" : "Notify setup"}${configChanged() ? " (unsaved changes)" : ""}`, tabs: { labels: ["Notify", "Setup"], active: tab, all },
+            title: `Notify${configChanged() ? " (unsaved changes)" : ""}`, tabs: { labels: ["Notify", "Setup"], active: tab, all },
             hint: `↑↓ move   enter choose   tab switch   esc ${configChanged() ? "discard" : "close"}`, initial, sections: all[tab],
           });
           if (choice === undefined || choice === "discard" || signal.aborted) return;
           initial = choice;
           if (choice === SWITCH_TAB) { tab = 1 - tab; initial = undefined; }
           else if (choice === "save") { if (await save()) return; }
-          else if (choice === "test") {
+          else if (choice === TEST) {
             if (configChanged()) ui.warn("Save first, then send a test.");
             else void send(ctx, "test");
           }

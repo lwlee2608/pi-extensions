@@ -7,6 +7,7 @@ import { TextInput, type TextInputOptions } from "./text-input.ts";
 export interface SetupResult { draft: Draft; valid: boolean }
 
 export const ADD = "+ Add destination";
+export const TEST = "Send a test";
 const TELEGRAM = "Telegram";
 const COMMAND = "Custom command (advanced)";
 const EDIT = "Edit";
@@ -75,7 +76,7 @@ function toggleRow(draft: Draft, key: string, label: string, fallback = false): 
 
 export function setupSections(draft: Draft): MenuSection[] {
   return [
-    { header: "Send notifications to", rows: [...draft.connectors.map(connectorRow), { id: ADD, label: ADD }] },
+    { header: "Send notifications to", rows: [...draft.connectors.map(connectorRow), { id: ADD, label: ADD }, { id: TEST, label: TEST }] },
     { header: "Options", rows: [
       toggleRow(draft, "onPrompt", "Notify on mid-task questions"),
       toggleRow(draft, "summaries", "Add a task summary", true),
