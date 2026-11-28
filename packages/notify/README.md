@@ -22,23 +22,18 @@ Bot tokens are masked as you type and never shown again. To use a shell command 
 
 ## Use
 
-`/notify` opens a menu. Tab or ←/→ switches between the **Notify** and **Setup** tabs. Nothing changes until **Save and close**.
+`/notify` opens a menu. Tab or ←/→ switches between the **Notify** and **Setup** tabs. A choice on the Notify tab applies at once and lasts for this session. Changes on the Setup tab are saved for all sessions, but only when you choose **Save and close**. The Setup tab does not open while Pi is working.
 
 ```text
 [ Notify ]     Setup     tab ⇄
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-When Pi finishes and waits for you
-  After every reply
-→ After the next reply only
-  Off                               ✓
+When Pi finishes
+  ○ Off
+→ ● After the next reply
+  ○ After every reply
 
-Also when something specific happens
-  No condition                      ✓
-  Specific condition
-
-Also, while notifications are on (saved for all sessions)
-  Notify on mid-task questions      off
-  Add a task summary                on
+Also when something happens
+  Condition   the tests pass
 ```
 
 | Command or prompt | Result |
@@ -52,10 +47,10 @@ Also, while notifications are on (saved for all sessions)
 | "Notify me when you finish" | The agent arms a one-shot notification. |
 | "Notify me when the tests pass" | The agent notifies when the tests pass, or at the end of the run if they never pass. |
 
-- **Specific condition:** type a condition such as `the tests pass`. The agent decides when it happens and sends a notification at once.
+- **Condition:** type a condition such as `the tests pass`. The agent decides when it happens and sends a notification at once. If notifications are off, setting a condition turns on **After the next reply**. Clear the text to remove the condition.
 - A reply that ends with a question to you counts as finished, so it sends and uses up a one-shot.
-- **Notify on mid-task questions:** also notify when Pi waits for you in a dialog, such as a question picker or an approval prompt. This does not use up a one-shot. Other dialogs opened during a run, such as `/sessions` or `/model-plus`, can also trigger it.
-- **Add a task summary** (on by default): while notifications are on, the agent ends its final reply with a `Summary:` line, and that line replaces `done` or `error` in the message. A failed run without one sends the provider's error text. See [Privacy](#privacy).
+- **Notify on mid-task questions** (Setup tab): also notify when Pi waits for you in a dialog, such as a question picker or an approval prompt. This does not use up a one-shot. Other dialogs opened during a run, such as `/sessions` or `/model-plus`, can also trigger it.
+- **Add a task summary** (Setup tab, on by default): while notifications are on, the agent ends its final reply with a `Summary:` line, and that line replaces `done` or `error` in the message. A failed run without one sends the provider's error text. See [Privacy](#privacy).
 - The status bar shows `🔔 next reply` or `🔔 every reply` while armed. New, resumed, and forked sessions start with notifications off.
 
 ## Scenarios

@@ -193,8 +193,8 @@ const ALREADY_OPEN = "Notify settings are already open. If you cannot see them, 
 
 test("from no config, the dialogs write a config loadConfig accepts with owner-only permissions", async t => {
   const h = await harness(t);
-  await h.run("setup", ...TELEGRAM, TAB, "Notify on mid-task questions off", TAB, "Nerd Font bell icon off", ...SAVE_NO_TEST);
-  assert.deepEqual(h.dialogs[0].options, ["+ Add destination", "Nerd Font bell icon off", "Send a test", "Save and close", "Discard and close"]);
+  await h.run("setup", ...TELEGRAM, "[ ] Notify on mid-task questions", "[ ] Nerd Font bell icon", ...SAVE_NO_TEST);
+  assert.deepEqual(h.dialogs[0].options, ["+ Add destination", "[ ] Notify on mid-task questions", "[x] Add a task summary", "[ ] Nerd Font bell icon", "Send a test", "Save and close", "Discard and close"]);
   assert.deepEqual(await loadConfig(h.path), {
     onPrompt: true, nerdFont: true, summaries: true, connectors: [{ type: "telegram", botToken: TOKEN, chatId: "-123" }],
   });
@@ -436,7 +436,7 @@ test("the cursor stays on the row acted on, clamps after a removal and falls bac
   const h = await harness(t);
   await h.write(JSON.stringify({ connectors: [{ type: "command", run: "a" }, { type: "command", run: "b" }] }));
   await h.run("setup",
-    "Nerd Font bell icon off",
+    "[ ] Nerd Font bell icon",
     "Command, b", undefined,
     "+ Add destination", undefined,
     "Command, b", "Remove",
@@ -445,7 +445,7 @@ test("the cursor stays on the row acted on, clamps after a removal and falls bac
   const menus = h.dialogs.filter(dialog => dialog.kind === "menu");
   assert.deepEqual(menus.map(dialog => dialog.options![dialog.cursor!]), [
     "Command, a",
-    "Nerd Font bell icon on",
+    "[x] Nerd Font bell icon",
     "Command, b",
     "+ Add destination",
     "Command, a",
@@ -455,19 +455,18 @@ test("the cursor stays on the row acted on, clamps after a removal and falls bac
 
 test("a toggle stays in the open menu without resolving, and only a save writes it", async t => {
   const chosen: unknown[] = [];
-  let value = " off";
-  const m = menu(id => chosen.push(id), { sections: [{ rows: [{ id: "x", label: "x", note: value, toggle: () => value = " on " }] }] });
+  const m = menu(id => chosen.push(id), { sections: [{ rows: [{ id: "x", label: "[ ] x", toggle: () => "[x] x" }] }] });
   m.handleInput(ENTER);
   assert.deepEqual(chosen, []);
-  assert.ok(m.render(30).some(line => line.startsWith(" → x on")));
+  assert.ok(m.render(30).some(line => line.startsWith(" → [x] x")));
 
   const h = await harness(t);
   const content = JSON.stringify({ onPrompt: "yes", connectors: [{ type: "command", run: "true" }] });
   await h.write(content);
-  await h.run("setup", "Nerd Font bell icon off", "Nerd Font bell icon on", "Nerd Font bell icon off", undefined);
+  await h.run("setup", "[ ] Nerd Font bell icon", "[x] Nerd Font bell icon", "[ ] Nerd Font bell icon", undefined);
   assert.equal(await readFile(h.path, "utf8"), content);
 
-  await h.run("setup", TAB, "Notify on mid-task questions off", ...SAVE_NO_TEST);
+  await h.run("setup", "[ ] Notify on mid-task questions", ...SAVE_NO_TEST);
   assert.equal((await saved(h)).onPrompt, true);
 });
 
@@ -536,7 +535,7 @@ test("saving an invalid config requires confirmation, offers no test and leaves 
   assert.equal(h.dialogs.at(-2)?.title, "Save with problems?");
 
   h.dialogs.length = 0;
-  await h.run("setup", "Nerd Font bell icon off", "Save and close", true);
+  await h.run("setup", "[ ] Nerd Font bell icon", "Save and close", true);
   assert.deepEqual(h.dialogs.filter(dialog => dialog.kind === "confirm").map(dialog => dialog.title), ["Save with problems?"]);
   assert.equal((await saved(h)).nerdFont, true);
   await assert.rejects(loadConfig(h.path));
@@ -686,7 +685,7 @@ test("changing the file after opening asks first, and declining leaves the outsi
   assert.deepEqual(h.dialogs.map(dialog => dialog.title), ["Notify setup", OVERWRITE, "Notify setup"]);
   assert.equal(await readFile(h.path, "utf8"), outside);
 
-  await h.run("setup", edit(h.path, COMMAND_CONFIG, "Nerd Font bell icon off"), "Save and close", true, false);
+  await h.run("setup", edit(h.path, COMMAND_CONFIG, "[ ] Nerd Font bell icon"), "Save and close", true, false);
   assert.deepEqual(await saved(h), { connectors: [{ type: "command", run: "outside" }], nerdFont: true });
 });
 
@@ -818,25 +817,31 @@ test("a malformed saved token re-opens the token step without showing it", async
   assert.equal((await saved(h)).connectors[0].botToken, TOKEN);
 });
 
-test("/notify menu arms, toggles the answer ping in config and explains when it fires", async t => {
+test("/notify menu arms at once, explains the choice on close, and the answer ping lives in Setup", async t => {
   const h = await harness(t);
   await h.write(COMMAND_CONFIG);
-  await h.run("", "After every reply", "Save and close");
+  await h.run("", "○ After every reply", undefined);
   assert.equal(h.status(), "🔔 every reply");
+  assert.equal(h.notices.length, 1);
   assert.match(h.notices.pop()!, /after every reply.*until \/notify off\.$/);
-  await h.run("", "Notify on mid-task questions off", "After the next reply only", "Off", undefined);
+  await h.run("", TAB, "[ ] Notify on mid-task questions", TAB, "○ After the next reply", undefined);
   assert.equal(h.dialogs.at(-1)!.title, "Notify me (unsaved changes)");
-  assert.equal(h.status(), "🔔 every reply");
+  assert.ok(h.dialogs.at(-1)!.screen!.includes("esc discard"));
+  assert.equal(h.status(), "🔔 next reply");
   assert.notEqual((await saved(h)).onPrompt, true);
-  await h.run("", "Notify on mid-task questions off", "After the next reply only", "Save and close");
+  h.notices.length = 0;
+  await h.run("", TAB, "[ ] Notify on mid-task questions", "Save and close");
   assert.equal((await saved(h)).onPrompt, true);
+  assert.deepEqual(h.notices, []);
+  await h.run("", "○ After every reply", "○ After the next reply", undefined);
   assert.equal(h.status(), "🔔 next reply");
+  assert.equal(h.notices.length, 1);
   assert.match(h.notices.pop()!, /after the next reply.*You also get one when Pi asks you mid-task to pick an option or approve an action\. Then notifications turn off\.$/);
-  await h.run("", "Off", "Discard and close");
-  assert.equal(h.status(), "🔔 next reply");
-  await h.run("", "Off", "Save and close");
+  await h.run("", "○ Off", undefined);
   assert.equal(h.status(), undefined);
-  assert.equal(h.notices.pop(), "Notifications are off.");
+  assert.deepEqual(h.notices, ["Notifications are off."]);
+  const screen = h.dialogs.at(-1)!.screen!;
+  assert.ok(!screen.includes("Save and close") && screen.includes("esc close"), screen);
 });
 
 test("/notify opens the Setup tab when not set up, stays quiet during a run and never arms after a reset", async t => {
@@ -854,7 +859,7 @@ test("/notify opens the Setup tab when not set up, stays quiet during a run and 
   assert.deepEqual(h.sent, []);
   h.emit("session_start");
   await open;
-  await h.run("", () => { h.emit("session_start"); return "After every reply"; });
+  await h.run("", () => { h.emit("session_start"); return "○ After every reply"; });
   assert.equal(h.status(), undefined);
 });
 
@@ -870,20 +875,27 @@ test("a reason send that finishes late does not use up a one-shot armed while it
   release!();
   assert.equal((await pending).content[0].text, "Notification sent.");
   assert.equal(h.status(), "🔔 next reply");
+  release = undefined;
+  const late = h.notifyMe({ reason: "tests pass" });
+  await until(() => release !== undefined);
+  await h.run("", "Condition (none)", "deploy is green", undefined);
+  release!();
+  assert.equal((await late).content[0].text, "Notification sent.");
+  assert.equal(h.status(), "🔔 next reply · when deploy is green");
 });
 
-test("an explicit choice in the menu applies even if it matches the state when the menu opened", async t => {
+test("a menu choice applies even if it matches the state the menu showed", async t => {
   const h = await harness(t);
   await h.write(COMMAND_CONFIG);
   await h.run("once");
   h.emit("agent_start");
   const settle = () => { h.emit("agent_before_settle", "completed"); h.emit("agent_settled"); };
-  await h.run("", () => { settle(); return "After the next reply only ✓"; }, "Save and close");
+  await h.run("", () => { settle(); return "● After the next reply"; }, undefined);
   assert.equal(h.status(), "🔔 next reply");
   h.emit("agent_start");
-  await h.run("", () => { settle(); return "No condition ✓"; }, "Save and close");
+  await h.run("", () => { settle(); return "Condition (none)"; }, "", undefined);
   assert.equal(h.status(), undefined);
-  await h.run("", "Specific condition", "x", "No condition", "Save and close");
+  await h.run("", "Condition (none, turns on next reply)", "x", "Condition x", "\x15", undefined);
   assert.equal(h.status(), "🔔 next reply");
 });
 
@@ -908,7 +920,7 @@ test("/notify specific condition reaches the agent, sends once and clears with t
   await h.write(JSON.stringify({ connectors: [{ type: "telegram", botToken: TOKEN, chatId: "-1" }] }));
   const prompt = async () => await h.event("before_agent_start", { systemPrompt: "base" }) as { systemPrompt: string } | undefined;
   assert.equal(await prompt(), undefined);
-  await h.run("", "Specific condition", " the tests pass ", "Save and close");
+  await h.run("", "Condition (none, turns on next reply)", " the tests pass ", undefined);
   assert.equal(h.status(), "🔔 next reply · when the tests pass");
   assert.match(h.notices.pop()!, /If "the tests pass" happens first, as judged by the agent, you get it then instead\. Then notifications turn off\.$/);
   h.emit("agent_start");
@@ -922,28 +934,28 @@ test("/notify specific condition reaches the agent, sends once and clears with t
   assert.deepEqual(h.sent.map(message => message.text), ["🔔 session · " + h.root.replace(homedir(), "~") + " · tests pass"]);
   assert.equal(await prompt(), undefined);
 
-  await h.run("", "After every reply", "Save and close");
-  await h.run("", "Specific condition", "deploy is green", "Save and close");
+  await h.run("", "○ After every reply", undefined);
+  await h.run("", "Condition (none)", "deploy is green", undefined);
   assert.equal(h.status(), "🔔 every reply · when deploy is green");
   assert.match(h.notices.pop()!, /each time "deploy is green" happens/);
-  await h.run("", "No condition", "Save and close");
+  await h.run("", "Condition deploy is green", "\x15", undefined);
   assert.equal(h.status(), "🔔 every reply");
-  await h.run("", "Specific condition", "deploy is green", "Save and close");
+  await h.run("", "Condition (none)", "deploy is green", undefined);
   await h.run("off");
   assert.equal(await prompt(), undefined);
   await h.run("once");
   assert.equal(h.status(), "🔔 next reply");
-  await h.run("", "Specific condition", "x", "Save and close");
+  await h.run("", "Condition (none)", "x", undefined);
   h.emit("session_start");
   assert.equal(await prompt(), undefined);
   assert.equal(h.status(), undefined);
 });
 
-test("/notify tabs keep pending edits until one Save, and Esc while typing keeps the old condition", async t => {
+test("/notify tabs: Notify choices apply at once, Setup edits wait for Save, and Esc while typing keeps the old condition", async t => {
   const h = await harness(t);
   await h.write(COMMAND_CONFIG);
-  await h.run("", "After every reply", TAB, "Nerd Font bell icon off", TAB, "Specific condition", "tests pass", "Save and close");
-  assert.equal(h.status(), " every reply · when tests pass");
+  await h.run("", "○ After every reply", TAB, "[ ] Nerd Font bell icon", TAB, "Condition (none)", "tests pass", TAB, "Save and close");
+  assert.equal(h.status(), "\uf0f3 every reply · when tests pass");
   assert.equal((await saved(h)).nerdFont, true);
   const tabs = h.dialogs.filter(dialog => dialog.kind === "menu").map(dialog => dialog.screen!.split("\n")[2].trimEnd());
   assert.deepEqual([...new Set(tabs)].map(line => line.trim()), ["[ Notify ]     Setup     tab ⇄", "Notify     [ Setup ]   tab ⇄"]);
@@ -951,27 +963,29 @@ test("/notify tabs keep pending edits until one Save, and Esc while typing keeps
   assert.equal(new Set(tabs.map(line => line.indexOf("tab ⇄"))).size, 1);
   const menus = h.dialogs.filter(dialog => dialog.kind === "menu").map(dialog => dialog.screen!.split("\n"));
   assert.equal(new Set(menus.map(lines => lines.length)).size, 1);
-  assert.equal(new Set(menus.map(lines => lines.findIndex(line => line.includes("Save and close")))).size, 1);
-  await h.run("", 'Specific condition ✓ "tests pass"', undefined, "Discard and close");
-  assert.equal(h.status(), " every reply · when tests pass");
-  await h.run("", 'Specific condition ✓ "tests pass"', "\x15", "Save and close");
-  assert.equal(h.status(), " every reply");
+  assert.ok(menus.every(lines => lines[2].includes("[ Setup ]") === lines.some(line => line.includes("Save and close"))));
+  await h.run("", "Condition tests pass", undefined, undefined);
+  assert.equal(h.status(), "\uf0f3 every reply · when tests pass");
+  await h.run("", "Condition tests pass", "\x15", "○ After the next reply", TAB, "[x] Nerd Font bell icon", undefined);
+  assert.equal(h.status(), "\uf0f3 next reply");
+  assert.equal((await saved(h)).nerdFont, true);
 });
 
-test("/notify Save after only looking at Setup leaves the file alone, and never re-arms a one-shot that fired meanwhile", async t => {
+test("/notify Save after only looking at Setup leaves the file alone, and closing never re-arms a one-shot that fired meanwhile", async t => {
   const h = await harness(t);
   await h.write(COMMAND_CONFIG);
-  await h.run("", TAB, TAB, "After every reply", "Save and close");
+  await h.run("", TAB, "Save and close");
   assert.equal(await readFile(h.path, "utf8"), COMMAND_CONFIG);
-  assert.equal(h.status(), "🔔 every reply");
   await h.run("once");
+  h.notices.length = 0;
   h.emit("agent_start");
   await h.run("", () => {
     h.emit("agent_before_settle", "completed");
     h.emit("agent_settled");
-    return "Save and close";
+    return undefined;
   });
   assert.equal(h.status(), undefined);
+  assert.deepEqual(h.notices, []);
 });
 
 const TELEGRAM_CONFIG = (extra: object = {}) => JSON.stringify({ ...extra, connectors: [{ type: "telegram", botToken: TOKEN, chatId: "-1" }] });
@@ -1053,9 +1067,9 @@ test("summaries: notify_me asks for the line when on; off keeps plain messages, 
   await h.write(TELEGRAM_CONFIG({ summaries: false }));
   await h.run("on");
   assert.equal(await h.event("before_agent_start", { systemPrompt: "base" }), undefined);
-  await h.run("", "Specific condition", "x", "Save and close");
+  await h.run("", "Condition (none)", "x", undefined);
   assert.deepEqual(await h.event("before_agent_start", { systemPrompt: "base" }), { systemPrompt: 'base\n\nThe user set a phone notification in /notify for when this happens: "x". As soon as you notice it has happened, call notify_me with a short reason. Call it once per occurrence.' });
-  await h.run("", "No condition", "Save and close");
+  await h.run("", "Condition x", "\x15", undefined);
   h.emit("agent_start");
   assert.equal((await h.notifyMe({})).content[0].text, "Notification armed for the next completed or errored run.");
   h.event("message_end", reply("Summary: should stay local"));
@@ -1065,12 +1079,11 @@ test("summaries: notify_me asks for the line when on; off keeps plain messages, 
   assert.deepEqual(h.sent.map(message => message.text.split(" · ").at(-1)), ["done", "done"]);
 });
 
-test("summaries toggle on the Notify tab shows on by default, says what is sent and saves off", async t => {
+test("summaries toggle on the Setup tab shows on by default and saves off", async t => {
   const h = await harness(t);
   await h.write(COMMAND_CONFIG);
-  await h.run("", "Add a task summary on", "Save and close");
-  assert.match(tidy(h.dialogs[0].screen!), /Task summary: the agent's one-line summary of its reply, or the error text, goes to your destinations\./);
+  await h.run("", TAB, "[x] Add a task summary", "Save and close");
   assert.equal((await saved(h)).summaries, false);
-  await h.run("", "Add a task summary off", "Save and close");
+  await h.run("", TAB, "[ ] Add a task summary", "Save and close");
   assert.equal((await saved(h)).summaries, true);
 });

@@ -13,9 +13,6 @@ const EDIT = "Edit";
 const FIND = "Find my chat";
 const TYPE_CHAT = "Type a chat ID (advanced)";
 const REMOVE = "Remove";
-export const VALUE_COLUMN = 33;
-export const PROMPT_EXAMPLE = "Mid-task question: Pi asks you to pick an option or approve an action.";
-export const SUMMARY_NOTE = "Task summary: the agent's one-line summary of its reply, or the error text, goes to your destinations.";
 
 export interface Dialogs {
   menu(options: SetupMenuOptions): Promise<RowId | undefined>;
@@ -70,16 +67,20 @@ function connectorRow(connector: unknown, id: number): MenuRow {
   return { id, label, note: `${connectorValid(connector) ? "" : " (needs fixing)"}${editable(stored) ? "" : " (remove only)"}` };
 }
 
-export function toggleRow(draft: Draft, key: string, label: string, fallback = false): MenuRow {
+function toggleRow(draft: Draft, key: string, label: string, fallback = false): MenuRow {
   const on = () => (draft[key] ?? fallback) === true;
-  const value = () => on() ? " on " : " off";
-  return { id: key, label: label.padEnd(VALUE_COLUMN), note: value(), toggle: () => { draft[key] = !on(); return value(); } };
+  const box = () => `${on() ? "[x]" : "[ ]"} ${label}`;
+  return { id: key, label: box(), toggle: () => { draft[key] = !on(); return box(); } };
 }
 
 export function setupSections(draft: Draft): MenuSection[] {
   return [
     { header: "Send notifications to", rows: [...draft.connectors.map(connectorRow), { id: ADD, label: ADD }] },
-    { header: "Options", rows: [toggleRow(draft, "nerdFont", "Nerd Font bell icon")] },
+    { header: "Options", rows: [
+      toggleRow(draft, "onPrompt", "Notify on mid-task questions"),
+      toggleRow(draft, "summaries", "Add a task summary", true),
+      toggleRow(draft, "nerdFont", "Nerd Font bell icon"),
+    ] },
   ];
 }
 
