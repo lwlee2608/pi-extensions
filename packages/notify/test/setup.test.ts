@@ -895,7 +895,7 @@ test("a menu choice applies even if it matches the state the menu showed", async
   h.emit("agent_start");
   await h.run("", () => { settle(); return "Condition (none)"; }, "", undefined);
   assert.equal(h.status(), undefined);
-  await h.run("", "Condition (none)", "x", "Condition x", "\x15", undefined);
+  await h.run("", "Condition (none, turns on next reply)", "x", "Condition x", "\x15", undefined);
   assert.equal(h.status(), "🔔 next reply");
 });
 
@@ -920,7 +920,7 @@ test("/notify specific condition reaches the agent, sends once and clears with t
   await h.write(JSON.stringify({ connectors: [{ type: "telegram", botToken: TOKEN, chatId: "-1" }] }));
   const prompt = async () => await h.event("before_agent_start", { systemPrompt: "base" }) as { systemPrompt: string } | undefined;
   assert.equal(await prompt(), undefined);
-  await h.run("", "Condition (none)", " the tests pass ", undefined);
+  await h.run("", "Condition (none, turns on next reply)", " the tests pass ", undefined);
   assert.equal(h.status(), "🔔 next reply · when the tests pass");
   assert.match(h.notices.pop()!, /If "the tests pass" happens first, as judged by the agent, you get it then instead\. Then notifications turn off\.$/);
   h.emit("agent_start");

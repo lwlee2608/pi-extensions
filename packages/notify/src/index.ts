@@ -149,7 +149,7 @@ export default function (pi: ExtensionAPI, onDialog: (dialog: Promise<void>) => 
       const radio = (id: Armed, label: string): MenuRow => ({ id, label: `${state.armed === id ? "●" : "○"} ${label}` });
       const notifyTab = (): MenuSection[] => [
         { header: "When Pi finishes", rows: [radio("off", "Off"), radio("once", "After the next reply"), radio("on", "After every reply")] },
-        { header: "Also when something happens", rows: [{ id: "condition", label: "Condition   ", note: state.condition ?? "(none)",
+        { header: "Also when something happens", rows: [{ id: "condition", label: "Condition   ", note: state.condition ?? (state.armed === "off" ? "(none, turns on next reply)" : "(none)"),
           edit: { value: state.condition ?? "", placeholder: "e.g. the tests pass", set: value => { condition = clean(value) || undefined; } } }] },
       ];
       const setupTab = (): MenuSection[] => activeRun ? [{ header: "Pi is working. Setup opens when it finishes.", rows: [] }]
